@@ -1,0 +1,70 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>br.com.fzlbpms</groupId>
+  <artifactId>fzlparent</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>fzlparent</name>
+  <url>http://maven.apache.org</url>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <!--
+      http://ggl-consulting.blogspot.com.br/2014/12/nexus-kick-start.html
+  -->
+  <!--
+      https://books.sonatype.com/nexus-book/reference/staging-deployment.html
+  
+ <distributionmanagement>
+   <repository>
+     <id>deployment</id>
+     <url>http://localhost:8081/nexus/content/repositories/releases</url>
+   </repository>
+   <snapshotrepository>
+     <id>deployment</id>
+     <url>http://localhost:8081/nexus/content/repositories/snapshots</url>
+   </snapshotrepository>
+ </distributionmanagement>
+  -->
+  
+  <distributionManagement>
+    <snapshotRepository>
+      <id>nexus-snapshots</id>
+      <url>http://localhost:8081/nexus/content/repositories/snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
+  
+ <build>
+   <plugins>
+     <plugin>
+       <groupId>org.sonatype.plugins</groupId>
+       <artifactId>nexus-staging-maven-plugin</artifactId>
+       <version>1.6.3</version>
+       <executions>
+         <execution>
+           <id>default-deploy</id>
+           <phase>deploy</phase>
+           <goals>
+             <goal>deploy</goal>
+           </goals>
+         </execution>
+       </executions> 
+       <configuration>
+         <serverid>deployment</serverid>
+         <nexusurl>http://localhost:8081/nexus/</nexusurl>
+  
+         <!-- <stagingProfileId>1296f79efe04a4d0</stagingProfileId> -->
+  
+         <skipstaging>true</skipstaging>
+       </configuration>
+     </plugin>
+   </plugins>
+   </build>
+  
+</project>
+

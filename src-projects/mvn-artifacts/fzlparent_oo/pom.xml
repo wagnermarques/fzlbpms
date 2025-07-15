@@ -1,0 +1,92 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+      https://wiki.openoffice.org/wiki/OpenOffice_Maven2_Integration
+      https://wiki.openoffice.org/wiki/JavaEclipseTuto
+      
+      A Uno component use registries to:
+      UNO knows which implementation is about what specification
+      (types.rdb)   -> describe component specifications
+      (services.rdb)->
+      translates the implementation into specifications and is
+      generated from the implementation.
+
+1)
+ the specifications are compiled and merged into one types.rdb
+ registry.
+
+2)
+ Class files are generated from that file to translate the
+ specifications into a Java class definition file
+
+ which is built with the implementation into a class using the java
+ compiler.
+
+All the classes are delivered as a jar file with a specific manifest
+as we will see further in this tutorial.
+
+ This doesn't make a usable OpenOffice.org: the types.rdb and jar file
+ will have to be zipped into a .uno.pkg file
+ described with another manifest. 
+  -->
+  <groupId>br.com.fzlbpms</groupId>
+  <artifactId>fzlparent_oo</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>fzl_parent_oo</name>
+  <url>http://maven.apache.org</url>
+
+  <parent>
+    <groupId>br.com.fzlbpms</groupId>
+    <artifactId>fzlparent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+  </parent>
+
+  
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!--
+        Allows the
+        boostrapping of a ServicemManager
+        and gives
+        access to the native component loader.
+        http://www.openoffice.org/udk/
+    -->
+    <dependency>
+      <groupId>org.openoffice</groupId>
+      <artifactId>juh</artifactId>
+      <version>4.1.2</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openoffice</groupId>
+      <artifactId>jurt</artifactId>
+      <version>4.1.2</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openoffice</groupId>
+      <artifactId>ridl</artifactId>
+      <version>4.1.2</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openoffice</groupId>
+      <artifactId>unoil</artifactId>
+      <version>4.1.2</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openoffice</groupId>
+      <artifactId>officebean</artifactId>
+      <version>4.1.2</version>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0"
+           xsi:schemaLocation="
+             http://www.osgi.org/xmlns/blueprint/v1.0.0 https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+             http://camel.apache.org/schema/blueprint http://camel.apache.org/schema/blueprint/camel-blueprint.xsd
+             http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0 http://aries.apache.org/schemas/blueprint-cm/blueprint-cm-1.1.0.xsd">
+
+  <camelContext id="FZL_BluePrintXml_CamelContext" xmlns="http://camel.apache.org/schema/blueprint">
+    <route id="WatchDirectoryCamelRoute">
+      <from uri="file:/dir_input/?delete=false"/>
+      <setHeader headerName="fileExtension">
+        <simple>${file:ext}</simple>
+      </setHeader>
+      <log message="Processing file: ${file:name}"/>
+      <choice>
+        <!-- Audio files -->
+        <when>
+          <simple>${header.fileExtension} in 'mp3,ogg,wav'</simple>
+          <log message="Processing audio file: ${file:name}"/>
+          <to uri="file:/container_output_dir/audio/?fileName=copy-of-${file:name}"/>
+        </when>
+        <!-- Video files -->
+        <when>
+          <simple>${header.fileExtension} in 'mp4,avi,mov'</simple>
+          <log message="Processing video file: ${file:name}"/>
+          <to uri="file:/container_output_dir/video/?fileName=copy-of-${file:name}"/>
+        </when>
+        <!-- Other files (not audio or video) -->
+        <otherwise>
+          <log message="Processing other file: ${file:name}"/>
+          <to uri="file:/container_output_dir/others/?fileName=copy-of-${file:name}"/>
+        </otherwise>
+      </choice>
+    </route>
+  </camelContext>
+
+</blueprint>

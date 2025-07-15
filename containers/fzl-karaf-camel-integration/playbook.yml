@@ -1,0 +1,29 @@
+- name: Build and run Apache Karaf container
+  hosts: localhost
+  gather_facts: true
+  vars:
+    - KARAF_VERSION: 4.4.7
+
+  tasks:
+    - name: Build Karaf Docker image
+      docker_image:
+        name: fzl-apache-karaf
+        source: build        
+        build:
+          path: "{{ playbook_dir }}"
+
+    - name: Start Apache Karaf container
+      docker_container:
+        name: fzl-apache-karaf
+        image: fzl-apache-karaf
+        ports:
+          - "8181:8181"
+          - "8101:8101"
+        volumes:
+          - "{{ playbook_dir }}/custom_karaf_etc/etc-from-4.4.7:/opt/karaf/etc:Z"
+          - "{{ playbook_dir }}/../karaf_data:/opt/karaf/data:Z"
+          - "{{ playbook_dir }}/../karaf_deploy:/opt/deploy:Z"
+          - "{{ playbook_dir }}/../dir_input:/dir_input:Z"
+          - "{{ playbook_dir }}/../dir_output:/dir_output:Z"
+          - "{{ playbook_dir }}/../dir_sources:/dir_sources:Z"
+          - "/var/run/docker.sock:/var/run/docker.sock:Z"

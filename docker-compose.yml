@@ -1,0 +1,141 @@
+---
+services:
+
+  fzl-nginx:
+    build:
+      context: ./containers/fzl-nginx
+      dockerfile: Dockerfile
+    container_name: fzl-nginx
+    ports:
+      - "8055:80"
+    volumes:
+      - ./../src-projects/var_www_html:/usr/share/nginx/html
+    networks:
+      - fzl-network
+
+  fzl-php8-fpm:
+    build:
+      context: ./containers/fzl-php8-fpm/
+      dockerfile: Dockerfile
+    container_name: fzl-php8-fpm
+    volumes:
+      - ./../src-projects/var_www_html/:/var/www/html
+    networks:
+      - fzl-network
+
+  fzl-mysql:
+    image: mysql:8.0
+    container_name: fzl-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_DATABASE: fzl_db
+      MYSQL_USER: fzl_user
+      MYSQL_PASSWORD: 1234
+    volumes:
+      - fzl-mysql-data:/var/lib/mysql
+    networks:
+      - fzl-network
+
+  fzl-postgresql:
+    build:
+      context: ./containers/fzl-postgresql
+    container_name: fzl-postgresql
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: fzl_user
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: fzl_db
+      POSTGRES_INITDB_ARGS: "--locale=pt_BR.UTF-8" # Para garantir o locale na criacao do DB
+    volumes:
+      - fzl-postgresql-data:/var/lib/postgresql/data
+      - ./containers/fzl-postgresql/init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - fzl-network
+    healthcheck: # Adiciona um healthcheck para verificar se o DB esta pronto
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+  fzl-karaf-camel-integration:
+    build:
+      context: ./containers/fzl-karaf-camel-integration
+      dockerfile: Dockerfile
+    container_name: fzl-karaf-camel-integration
+    volumes:
+      - ./../projects/karaf_bundles:/opt/karaf/deploy_bundles:ro
+      - ./../projects/karaf_deploy_dir:/opt/karaf/deploy
+      - ./../projects/karaf_input_dir:/opt/karaf/input_data
+      - ./../projects/karaf_output_dir:/opt/karaf/output_data
+      - ./../projects/karaf_project_sources_dir:/opt/karaf/sources:rw
+      - fzl-karaf-data:/opt/karaf/data
+    networks:
+      - fzl-network
+    restart: unless-stopped
+
+  fzl-angular-frontend:
+    image: fzl-angular-frontend:0.0.1
+    build:
+      context: ./containers/fzl-angular-frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: fzl-angular-frontend
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./../projects/fzl-angular-frontend:/app
+    networks:
+      - fzl-network
+          
+  fzl-nexus:
+    build:
+      context: ./containers/fzl-nexus
+    container_name: fzl-nexus
+    restart: always
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
+      # critico para nao perder repositorios, configuracoes etc
+      - fzl-nexus-data:/nexus-data
+    environment:
+      # Aumenta a memoria RAM disponivel para o Nexus (ajuste conforme necessario)
+      # Nexus exige bastante RAM, o padrao pode ser insuficiente.
+      # Exemplo: 2GB de heap
+      MAX_HEAP_SIZE: "2048m"
+      MIN_HEAP_SIZE: "2048m"
+      # Ou usar JAVA_OPTS para mais controle:
+      # JAVA_OPTS: "-Xms2g -Xmx2g -Djava.net.preferIPv4Stack=true"
+    networks:
+      - fzl-network
+    healthcheck:  # Adiciona um healthcheck basico para verificar se o Nexus esta UP
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/nexus/repository/maven-public/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s # Da mais tempo para o Nexus iniciar
+      
+  fzl-phpmgyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: fzl-phpmyadmin
+    ports:
+      - '8889:80'
+    environment:
+      - PMA_ARBITRARY=1
+      - PMA_HOST=fzl-mysql
+    depends_on:
+      - fzl-mysql
+    networks:
+      - fzl-network
+
+volumes:
+  fzl-postgresql-data:
+  fzl-mysql-data:    
+  fzl-karaf-data:
+  fzl-nexus-data:
+      
+networks:
+  fzl-network:
+    driver: bridge

@@ -1,0 +1,22 @@
+#+Title: Install and Configuration
+
+* Clone and runs
+#+name: 
+#+begin_src shell
+  docker compose -up
+#+end_src
+
+#+name: 
+#+begin_src shell
+  docker ps
+  3a87b1c5a02e   phpmyadmin/phpmyadmin                              "/docker-entrypoint..."    37 seconds ago   Up 36 seconds            0.0.0.0:8889->80/tcp, [::]:8889->80/tcp         projeto-ava-eteczl-fzlzl-phpmyadmin-1
+  6e6c21819bfc   projeto-ava-eteczl-fzlzl-php8-fpm                  "docker-php-entrypoi..."   37 seconds ago   Up 37 seconds            9000/tcp                                        fzlzls-php8-fpm
+  5267ba0ef527   projeto-ava-eteczl-fzlzl-karaf-camel-integration   "karaf run"                37 seconds ago   Up 37 seconds            1099/tcp, 8101/tcp, 8181/tcp, 44444/tcp         fzlzl-karaf-camel-integration
+  5af6e4248476   mysql:8.0                                          "docker-entrypoint.s..."   37 seconds ago   Up 37 seconds            3306/tcp, 33060/tcp                             fzlzl-mysql
+#+end_src
+
+* configure karaf
+
+
+* Ref
+https://karaf.apache.org/get-started.html

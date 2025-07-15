@@ -1,0 +1,15 @@
+#+Title: ava
+
+
+* Componentes
+** [[http://localhost:8081][nexus]]
+*** Documentação
+
+https://help.sonatype.com/en/repository-manager-concepts.html
+
+https://my.sonatype.com/
+
+
+* instalation
+
+

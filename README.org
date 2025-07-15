@@ -1,13 +1,22 @@
-#+Title: ava
+#+Title: fzlbpms
+
+* Dashboard
+
+** karaf
+*** acesso via console
+
+firefox http://localhost:8181/system/console
+*** ver logs
 
 
-* Componentes
 ** [[http://localhost:8081][nexus]]
+
 *** Documentação
 
 https://help.sonatype.com/en/repository-manager-concepts.html
 
 https://my.sonatype.com/
+
 
 
 * instalation

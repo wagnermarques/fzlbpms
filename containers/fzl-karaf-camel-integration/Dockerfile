@@ -6,6 +6,10 @@ ENV KARAF_HOME=/opt/karaf
 ENV PATH=$KARAF_HOME/bin:$PATH
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Create appuser and install base packages
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && mkdir -p /home/appuser && chown appuser:appuser /home/appuser
+
 # Install necessary packages in a single layer
 RUN apt-get update && apt-get install -y \
     # Python and development tools
@@ -27,7 +31,7 @@ RUN apt-get update && apt-get install -y \
     git \
     sudo \
     ca-certificates \
-    # Docker CLI
+    # Docker CLI dependencies
     apt-transport-https \
     gnupg \
     lsb-release \
@@ -44,43 +48,15 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /
 RUN wget https://archive.apache.org/dist/karaf/${KARAF_VERSION}/apache-karaf-${KARAF_VERSION}.tar.gz \
     && tar xzf apache-karaf-${KARAF_VERSION}.tar.gz -C /opt \
     && mv /opt/apache-karaf-${KARAF_VERSION} $KARAF_HOME \
-    && rm apache-karaf-${KARAF_VERSION}.tar.gz
-
-# Create user and set permissions
-RUN groupadd -r appuser \
-    && useradd -r -g appuser -d /home/appuser -s /bin/bash appuser \
-    && mkdir -p /home/appuser \
-    && chown -R appuser:appuser /home/appuser \
+    && rm apache-karaf-${KARAF_VERSION}.tar.gz \
     && chown -R appuser:appuser $KARAF_HOME
 
-# Add user to docker group (group ID will be mapped from host)
-RUN groupadd -g 999 docker || true \
+
+# Configure docker group safely
+RUN if ! getent group docker >/dev/null; then \
+        groupadd -r docker; \
+    fi \
     && usermod -aG docker appuser
-
-# Add sudo permissions
-RUN echo "appuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-
-# Install Python packages for video downloading
-RUN pip3 install --no-cache-dir \
-    yt-dlp \
-    youtube-dl \
-    requests \
-    beautifulsoup4
-
-# Create useful directories
-RUN mkdir -p /workspace /projects /downloads \
-    && chown -R appuser:appuser /workspace /projects /downloads
-
-# Set working directory
-WORKDIR /workspace
-
-# Switch to non-root user
-USER appuser
-
-# Create useful aliases and environment setup
-RUN echo 'alias ll="ls -la"' >> /home/appuser/.bashrc \
-    && echo 'alias docker="sudo docker"' >> /home/appuser/.bashrc \
-    && echo 'export PATH=$PATH:/home/appuser/.local/bin' >> /home/appuser/.bashrc
 
 # Expose Karaf ports
 EXPOSE 8101 8181 1099 44444
@@ -92,9 +68,14 @@ RUN echo '#!/bin/bash' > /home/appuser/start.sh \
     && echo 'else' >> /home/appuser/start.sh \
     && echo '    exec "$@"' >> /home/appuser/start.sh \
     && echo 'fi' >> /home/appuser/start.sh \
-    && chmod +x /home/appuser/start.sh
+    && chmod +x /home/appuser/start.sh \
+    && chown appuser:appuser /home/appuser/start.sh
+
+COPY --chown=appuser:appuser ./custom_karaf_etc/etc-from-4.4.7 /opt/karaf/etc
 
 # Set entrypoint to our startup script
+USER appuser
+WORKDIR /home/appuser
 ENTRYPOINT ["/home/appuser/start.sh"]
 
 # Default to bash for interactive use

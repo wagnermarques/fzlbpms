@@ -9,7 +9,7 @@ services:
     ports:
       - "8055:80"
     volumes:
-      - ./../src-projects/var_www_html:/usr/share/nginx/html
+      - ./src-projects/var_www_html:/usr/share/nginx/html
     networks:
       - fzl-network
 
@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-php8-fpm
     volumes:
-      - ./../src-projects/var_www_html/:/var/www/html
+      - ./src-projects/var_www_html/:/var/www/html
     networks:
       - fzl-network
 
@@ -32,6 +32,7 @@ services:
       MYSQL_USER: fzl_user
       MYSQL_PASSWORD: 1234
     volumes:
+      - ./src-projects:/sql-scripts
       - fzl-mysql-data:/var/lib/mysql
     networks:
       - fzl-network
@@ -49,11 +50,12 @@ services:
       POSTGRES_DB: fzl_db
       POSTGRES_INITDB_ARGS: "--locale=pt_BR.UTF-8" # Para garantir o locale na criacao do DB
     volumes:
+      - ./src-projects:/sql-scripts
       - fzl-postgresql-data:/var/lib/postgresql/data
       - ./containers/fzl-postgresql/init-scripts:/docker-entrypoint-initdb.d
     networks:
       - fzl-network
-    healthcheck: # Adiciona um healthcheck para verificar se o DB esta pronto
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
@@ -65,27 +67,27 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-karaf-camel-integration
     volumes:
-      - ./../projects/karaf_bundles:/opt/karaf/deploy_bundles:ro
-      - ./../projects/karaf_deploy_dir:/opt/karaf/deploy
-      - ./../projects/karaf_input_dir:/opt/karaf/input_data
-      - ./../projects/karaf_output_dir:/opt/karaf/output_data
-      - ./../projects/karaf_project_sources_dir:/opt/karaf/sources:rw
+      - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
+      - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy
+      - ./src-projects/karaf_input_dir:/opt/karaf/input_data
+      - ./src-projects/karaf_output_dir:/opt/karaf/output_data
+      - ./src-projects/karaf_project_sources_dir:/opt/karaf/sources:rw
       - fzl-karaf-data:/opt/karaf/data
     networks:
       - fzl-network
     restart: unless-stopped
 
-  fzl-angular-frontend:
-    image: fzl-angular-frontend:0.0.1
+  fzl-angular-dev:
+    image: fzl-angular-dev:0.0.1
     build:
-      context: ./containers/fzl-angular-frontend
+      context: ./containers/fzl-angular-dev
       dockerfile: Dockerfile
       target: development
-    container_name: fzl-angular-frontend
+    container_name: fzl-angular-dev
     ports:
       - "4200:4200"
     volumes:
-      - ./../projects/fzl-angular-frontend:/app
+      - ./containers/fzl-angular-dev/src-projects/:/app
     networks:
       - fzl-network
           

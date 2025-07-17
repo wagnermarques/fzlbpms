@@ -1,0 +1,46 @@
+#+Title: dashboard
+
+* system
+
+** nexus
+
+
+** karaf
+
+*** docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/status
+
+
+*** docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/client -u karaf -p admin123
+
+#+begin_src
+wgn@fedora:/run/media/wgn/EnvsBk/__devenv__/projeto-fzlbpms-avaetec$ docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/client -u karaf -p admin123
+client: Ignoring predefined value for KARAF_HOME
+Logging in as karaf
+        __ __                  ____      
+       / //_/____ __________ _/ __/      
+      / ,<  / __ `/ ___/ __ `/ /_        
+     / /| |/ /_/ / /  / /_/ / __/        
+    /_/ |_|\__,_/_/   \__,_/_/         
+
+  Apache Karaf (4.4.7)
+
+Hit '<tab>' for a list of available commands
+and '[cmd] --help' for help on a specific command.
+Hit 'system:shutdown' to shutdown Karaf.
+Hit '<ctrl-d>' or type 'logout' to disconnect shell from current session.
+
+karaf@root()>                               
+#+end_src
+
+
+*** karaf links
+
+[[https://dlcdn.apache.org/karaf/documentation/4_x.html][oficial docs: commands available]]
+
+
+
+** postgresql
+
+
+* apps deployed
+** moodle

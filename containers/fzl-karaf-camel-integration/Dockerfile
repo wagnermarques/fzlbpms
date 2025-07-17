@@ -6,77 +6,53 @@ ENV KARAF_HOME=/opt/karaf
 ENV PATH=$KARAF_HOME/bin:$PATH
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Create appuser and install base packages
-RUN groupadd -r appuser && useradd -r -g appuser appuser \
-    && mkdir -p /home/appuser && chown appuser:appuser /home/appuser
+# 1. Instala TODAS as dependências e cria o usuário em uma única camada
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Ferramenta para troca de usuário (essencial para a solução)
+    gosu \
+    # Dependências do Docker CLI
+    apt-transport-https gnupg lsb-release \
+    # Utilitários de sistema e desenvolvimento
+    wget curl git sudo ca-certificates \
+    python3 python3-pip python3-venv \
+    ffmpeg build-essential make cmake clang \
+    && rm -rf /var/lib/apt/lists/* \
+    # Cria o usuário e o grupo de forma limpa
+    && groupadd -r appuser && useradd -r -g appuser -d /home/appuser -s /bin/bash appuser \
+    && mkdir -p /home/appuser
 
-# Install necessary packages in a single layer
-RUN apt-get update && apt-get install -y \
-    # Python and development tools
-    python3 \
-    python3-pip \
-    python3-venv \
-    # Media processing
-    ffmpeg \
-    # Development tools
-    gcc \
-    g++ \
-    make \
-    cmake \
-    clang \
-    build-essential \
-    # System utilities
-    wget \
-    curl \
-    git \
-    sudo \
-    ca-certificates \
-    # Docker CLI dependencies
-    apt-transport-https \
-    gnupg \
-    lsb-release \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Docker CLI
+# 2. Instala o Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update \
-    && apt-get install -y docker-ce-cli \
+    && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and extract Apache Karaf
-RUN wget https://archive.apache.org/dist/karaf/${KARAF_VERSION}/apache-karaf-${KARAF_VERSION}.tar.gz \
-    && tar xzf apache-karaf-${KARAF_VERSION}.tar.gz -C /opt \
-    && mv /opt/apache-karaf-${KARAF_VERSION} $KARAF_HOME \
-    && rm apache-karaf-${KARAF_VERSION}.tar.gz \
-    && chown -R appuser:appuser $KARAF_HOME
-
-
-# Configure docker group safely
-RUN if ! getent group docker >/dev/null; then \
-        groupadd -r docker; \
-    fi \
+# 3. Adiciona o appuser ao grupo do docker
+RUN if ! getent group docker >/dev/null; then groupadd -r docker; fi \
     && usermod -aG docker appuser
 
-# Expose Karaf ports
+# 4. Baixa e extrai o Apache Karaf
+RUN wget -q "https://archive.apache.org/dist/karaf/${KARAF_VERSION}/apache-karaf-${KARAF_VERSION}.tar.gz" -O /tmp/karaf.tar.gz \
+    && tar xzf /tmp/karaf.tar.gz -C /opt \
+    && mv "/opt/apache-karaf-${KARAF_VERSION}" "${KARAF_HOME}" \
+    && rm /tmp/karaf.tar.gz
+
+# 5. Copia os arquivos necessários e define as permissões
+COPY --chown=appuser:appuser ./custom_karaf_etc/etc-from-4.4.7/ ${KARAF_HOME}/etc/
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chown -R appuser:appuser /home/appuser
+
+# Expõe as portas do Karaf
 EXPOSE 8101 8181 1099 44444
 
-# Create a startup script
-RUN echo '#!/bin/bash' > /home/appuser/start.sh \
-    && echo 'if [ "$1" = "karaf" ]; then' >> /home/appuser/start.sh \
-    && echo '    exec $KARAF_HOME/bin/karaf run' >> /home/appuser/start.sh \
-    && echo 'else' >> /home/appuser/start.sh \
-    && echo '    exec "$@"' >> /home/appuser/start.sh \
-    && echo 'fi' >> /home/appuser/start.sh \
-    && chmod +x /home/appuser/start.sh \
-    && chown appuser:appuser /home/appuser/start.sh
-
-COPY --chown=appuser:appuser ./custom_karaf_etc/etc-from-4.4.7 /opt/karaf/etc
-
-# Set entrypoint to our startup script
-USER appuser
+# Define o diretório de trabalho
 WORKDIR /home/appuser
-ENTRYPOINT ["/home/appuser/start.sh"]
 
-# Default to bash for interactive use
-CMD ["/bin/bash"]
+#COPY ./custom_karaf_etc/etc-from-4.4.7/ /opt/karaf/etc/
+
+# 6. Define o entrypoint. O container iniciará como root para executar este script.
+ENTRYPOINT ["entrypoint.sh"]
+
+# 7. Define o comando padrão. Será passado para o entrypoint.sh
+CMD ["/opt/karaf/bin/karaf", "run"]

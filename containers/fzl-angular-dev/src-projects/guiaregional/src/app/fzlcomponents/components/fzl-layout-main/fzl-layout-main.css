@@ -1,0 +1,45 @@
+/* src/app/fzl-components/components/fzl-layout-main/fzl-layout-main.css */
+
+/* Adiciona estilos ao próprio elemento <app-fzl-layout-main> */
+:host {
+  display: block; /* Garante que o componente se comporte como um container de bloco */
+  height: 100%;   /* Faz o componente ocupar 100% da altura do seu pai (o <body>) */
+}
+
+
+/* Estilos Padrão (Mobile-First) */
+.sidenav-container {
+  height: 100%; /* Ocupa a altura total da tela */
+}
+
+.sidenav {
+  width: 250px; /* Largura do menu lateral */
+}
+
+.mat-toolbar {
+  /* Alinha o botão do menu à esquerda e o título à direita */
+  display: flex;
+  justify-content: space-between;
+}
+mat-toolbar {
+  /* Alinha o botão do menu à esquerda e o título à direita */
+  display: flex;
+  justify-content: space-between;
+}
+/* O container do Material Sidenav também precisa ocupar 100% da altura do seu pai (o :host) */
+mat-sidenav-container {
+  height: 100%;
+}
+
+.main-content {
+  padding: 20px; /* Um espaçamento para o conteúdo principal */
+}
+
+
+
+/* Para telas maiores, o botão de menu é escondido */
+@media (min-width: 768px) {
+  mat-toolbar > button {
+    display: none;
+  }
+}

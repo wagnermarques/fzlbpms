@@ -9,7 +9,7 @@ services:
     ports:
       - "8055:80"
     volumes:
-      - ./src-projects/var_www_html:/usr/share/nginx/html
+      - ./src-projects/var_www_html:/var/www/html:rw #na conf do nginx: root /var/www/html;
     networks:
       - fzl-network
 

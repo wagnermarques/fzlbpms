@@ -1,7 +1,11 @@
 # Usa a imagem oficial nginx:stable-alpine como base
 FROM nginx:stable-alpine
 
-#COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Removendo o arquivo de configuração padrão para evitar conflitos
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+# Certifique-se que o caminho de origem (containers/fzl-nginx/nginx-conf.d/my_app.conf)
+COPY  nginx-conf.d/fzlbpms.conf /etc/nginx/conf.d/fzlbpms.conf
 
 # Expõe a porta 80, que é a porta padrão para o tráfego HTTP
 EXPOSE 80

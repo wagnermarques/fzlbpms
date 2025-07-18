@@ -1,0 +1,25 @@
+    - name: Install Git on Debian/Ubuntu
+      apt:
+        name: git
+        state: present
+      when: "ansible_distribution in ['Debian', 'Ubuntu']"
+
+    - name: Install Git on Fedora
+      dnf:
+        name: git
+        state: present
+      when: ansible_distribution == 'Fedora'
+
+    - name: Install Git on Alpine Linux
+      apk:
+        name: git
+        state: present
+      when: ansible_distribution == 'Alpine'
+
+    - name: Configure Git Global Settings
+      command: git config --global core.filemode false
+      ignore_errors: yes
+
+    - name: Set core.autocrlf to false
+      command: git config --global core.autocrlf false
+      ignore_errors: yes

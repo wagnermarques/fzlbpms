@@ -1,0 +1,81 @@
+---
+- name: Playbook para Instalar e Configurar o Moodle em Ambiente Docker
+  hosts: localhost
+  become: true
+  vars:
+    # --- Configuracoess do Moodle ---
+    moodle_version_to_clone: "MOODLE_500_STABLE"
+
+    # Local onde o Moodle sera clonado e que sera mapeado para o Nginx/PHP-FPM
+    # Isso corresponde ao volume ./src-projects/var_www_html:/var/www/html
+    moodle_app_host_path: "{{ playbook_dir }}/../../src-projects/var_www/html/moodle"
+
+    moodledata_host_path: "{{ playbook_dir }}/../../src-projects/var_www/html/moodledata"
+
+    # --- Configuracoes do Banco de Dados (para o fzl-mysql) ---
+    # db_type: "mysqli" # ou "pgsql" para PostgreSQL
+    # db_host: "fzl-mysql"
+    # db_name: "fzl_db"
+    # db_user: "fzl_user"
+    # db_password: "1234"
+
+    # --- Configuracoess do Banco de Dados (para o fzl-mysql) ---
+    db_type: "pgsql"
+    db_host: "fzl-postgresql"
+    db_name: "moodle"
+    db_user: "moodle"
+    db_password: "1234"
+
+    # --- Configuracoess de URL do Moodle ---
+    # URL base para acessar o Moodle
+    moodle_wwwroot: "http://localhost/moodle"
+
+  tasks:
+    - name: 1. Instalar git e outras dependencias (se necessario no host)
+      ansible.builtin.package:
+        name: git
+        state: present
+
+    - name: 2. Clonar as fontes do Moodle do Git
+      ansible.builtin.git:
+        repo: "https://github.com/moodle/moodle.git"
+        dest: "{{ moodle_app_host_path }}"
+        version: "{{ moodle_version_to_clone }}"
+        update: false  # Nao atualizar se ja existir
+        depth: 1 # Adicione esta linha para um clone raso
+
+    - name: 3. Criar o diretorio moodledata no host
+      ansible.builtin.file:
+        path: "{{ moodledata_host_path }}"
+        state: directory
+        mode: "0777"
+        owner: "www-data"  # Usuario do PHP-FPM dentro do conteiner
+        group: "www-data"  # Grupo do PHP-FPM dentro do conteiner
+
+    - name: 4. Copiar o template config.php para o diretorio do Moodle
+      ansible.builtin.template:
+        src: "templates/config.php.j2"
+        dest: "{{ moodle_app_host_path }}/config.php"
+        mode: "0777"  # ajustar depois
+
+
+    - name: 5. Definir permissoes para os diretorios do Moodle
+      ansible.builtin.file:
+        path: "{{ moodle_app_host_path }}"
+        state: directory
+        recurse: true
+        mode: "0777"  # ajustar corretamente depois
+
+    - name: 6. Definir permissoes para os arquivos do Moodle
+      ansible.builtin.file:
+        path: "{{ moodle_app_host_path }}"
+        state: file
+        recurse: true
+        mode: "0777"  # ajustar depois
+
+
+    - name: 7. Garantir que o diretorio cache do Moodle seja gravavel
+      ansible.builtin.file:
+        path: "{{ moodle_app_host_path }}/localcache"
+        state: directory
+        mode: "0777"  # ajustar depois

@@ -1,0 +1,63 @@
+
+    - name: Check if apache2-moodle-dev (Ubuntu)  container is running
+      docker_container_info:
+        name: "{{ MOODLE_SERVICE_APACHE2_DOCKER_CONTAINER_NAME }}"
+      register: ubuntu_apache2_moodle_dev_info
+      ignore_errors: true
+
+    - name: Install networktools in ubuntu_apache2_moodle_dev_info
+      package:
+        name:
+          - iputils-ping
+          - curl
+          - wget
+          - nmap
+      when: ubuntu_apache2_moodle_dev_info is success
+    
+    - name: Check if php-fpm-container (Debian)  container is running
+      docker_container_info:
+        name: "{{  MOODLE_SERVICE_PHPFPM_DOCKER_CONTAINER_NAME  }}"
+      register: debian_php_fpm_container_info
+      ignore_errors: true
+
+    - name: Install networktools in debian-php-fpm-container (Debian) container
+      package:
+        name:
+          - iputils
+          - curl
+          - wget
+          - nmap
+      when: debian_php_fpm_container_info is success 
+
+#    - name: Check if Ubuntu container is running
+#      docker_container_info:
+#        name: your_ubuntu_container_name
+#      register: ubuntu_container_info
+#      ignore_errors: true
+#
+#    - name: Install packages for Ubuntu
+#      package:
+#        name:
+#          - iputils-ping
+#          - curl
+#          - wget
+#          - nmap
+#      when: ubuntu_container_info is success
+#
+#
+#
+#    - name: Check if Alpine container is running
+#      docker_container_info:
+#        name: your_alpine_container_name
+#      register: alpine_container_info
+#      ignore_errors: true
+#
+#    - name: Install packages for Alpine
+#      package:
+#        name:
+#          - iputils
+#          - curl
+#          - wget
+#          - nmap
+#      when: alpine_container_info is success
+##########

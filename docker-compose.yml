@@ -7,9 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-nginx
     ports:
-      - "8055:80"
+      - "80:80"
     volumes:
-      - ./src-projects/var_www_html:/var/www/html:rw #na conf do nginx: root /var/www/html;
+      - ./src-projects/var_www/html:/var/www/html:rw #na conf do nginx: root /var/www/html;
     networks:
       - fzl-network
 
@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-php8-fpm
     volumes:
-      - ./src-projects/var_www_html/:/var/www/html
+      - ./src-projects/var_www/html:/var/www/html
     networks:
       - fzl-network
 

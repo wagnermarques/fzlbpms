@@ -1,0 +1,13 @@
+#+Title: osgi blueprint
+
+
+https://camel.apache.org/camel-karaf/3.22.x/blueprint.html
+
+https://docs.redhat.com/en/documentation/red_hat_fuse/7.11/html/deploying_into_apache_karaf/deploysimple
+
+https://github.com/eclipse-gemini/gemini.blueprint
+
+https://projects.eclipse.org/projects/rt.gemini.blueprint
+
+spring dm is deprecated
+https://stackoverflow.com/questions/53431043/does-there-exist-an-overview-of-osgi-terminology-frameworks-and-their-relations

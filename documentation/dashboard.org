@@ -1,5 +1,9 @@
 #+Title: dashboard
 
+* docker containers
+
+docker compose up -d --force-recreate fzl-nginx fzl-php8-fpm
+
 * system
 
 ** nginx
@@ -8,6 +12,7 @@ docker compose exec fzl-nginx nginx -s reload
 
 docker compose restart fzl-nginx
 
+docker exec -it fzl-nginx ls -la /var/www/html
 
 
 ** nexus
@@ -23,7 +28,6 @@ docker exec -it fzl-karaf-camel-integration tail -f /opt/karaf/data/log/karaf.lo
 
 docker exec -it fzl-karaf-camel-integration tail -f /opt/karaf/data/log/security.log
 
-
 *** karaf links
 
 [[https://dlcdn.apache.org/karaf/documentation/4_x.html][oficial docs: commands available]]
@@ -32,6 +36,11 @@ docker exec -it fzl-karaf-camel-integration tail -f /opt/karaf/data/log/security
 
 ** postgresql
 
+** php8-fpm
+docker exec -it fzl-php8-fpm ls -la /usr/local/etc/php/conf.d/
+
 
 * apps deployed
+
 ** moodle
+*** instalar

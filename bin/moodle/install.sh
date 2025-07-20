@@ -114,6 +114,12 @@ docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "\l"
 echo -e "\n${YELLOW}[6/6] Ajustando permissoes no banco criado ..${NC}"
 docker exec -it fzl-postgresql psql -U postgres -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE moodle TO postgres;"
 
+
+# --- criando o diretorio moodledata no container php-fpm
+docker exec -it fzl-php8.3-fpm mkdir /var/www/moodledata
+docker exec -it fzl-php8.3-fpm chown www-data:www-data -R /var/www/moodledata
+
+
 # --- 4. Rodar o instalador CLI do Moodle no container php-fpm ---
 # --- requisitos
 # --- o container php-fpm deve estar rodando
@@ -141,20 +147,23 @@ docker exec -it "${PHP_FPM_CONTAINER_NAME}" php "${MOODLE_APP_PATH_IN_CONTAINER}
   --fullname="${MOODLE_SITE_FULLNAME}" \
   --shortname="${MOODLE_SITE_SHORTNAME}" 
 
-
+# 
 echo -e "${GREEN}Instalador CLI do Moodle executado. Verifique a saída acima para erros.${NC}"
 
 
-# --- 5. Definir propriedade www-data para arquivos do moodle e moodledata
+# --- 5. Definir permissoes www-data para arquivos do moodle e moodledata
 # --- requisitos
 # --- o container php-fpm deve estar rodando (ja verificado acima)
 # --- o diretorio onde o moodle foi clonado tem que estar montado dentro do container (ja verificado acima)
 # --- diretorios presentes /var/www/html/mooodle e /var/www/moodledata
-#echo -e "\n${YELLOW}[6/6] Rodando o instalador CLI do Moodle dentro do contêiner PHP-FPM...${NC}"
-#echo "${YELLOW}Verifica se o contêiner $PHP_FPM_CONTAINER_NAME está rodando"
+echo -e "\n${YELLOW}[6/6] dando permissoes www-data dentro dos containers php-fpm e nginx"
+docker exec -it "${PHP_FPM_CONTAINER_NAME}" chown -R www-data:www-data "${MOODLE_APP_PATH_IN_CONTAINER}" "${MOODLE_DATAROOT_IN_CONTAINER}"
+docker exec -it "fzl-nginx" chown -R www-data:www-data "${MOODLE_APP_PATH_IN_CONTAINER}" 
+
+# --- X backup do config.php, rename as config-YYYYMMDD_HHMMSS.php
+docker cp "${PHP_FPM_CONTAINER_NAME}:${MOODLE_APP_PATH_IN_CONTAINER}/config.php" $SCRIPT_DIR/config-$(date +%Y%m%d_%H%M%S).php
 
 
-# --- X backup do config.php
 # --- X dump do banco criado pela instalacao
 
 

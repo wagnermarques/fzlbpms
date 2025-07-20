@@ -91,3 +91,6 @@ Dica Extra: Comandos \ vs. Comandos SQL
 
 *** moodle
 **** instalar
+
+* emacs notes
+** treemacs

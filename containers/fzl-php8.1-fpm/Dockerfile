@@ -1,4 +1,4 @@
-FROM php:8.1-fpm # Base Debian/Ubuntu
+FROM php:8.1-fpm
 
 LABEL maintainer="wagnerdocri@gmail.com"
 

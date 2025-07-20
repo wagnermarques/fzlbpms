@@ -21,9 +21,9 @@
 
 
 * install applications
+
 ** install moodle
-   cd fzlbpms/bin/moodle
-   ansible-playbook playbook-moodle-installation-dev.yml
+
 
 
    

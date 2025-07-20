@@ -1,12 +1,17 @@
 #+Title: dashboard
 
-* docker containers
+* Usage and access
 
-docker compose up -d --force-recreate fzl-nginx fzl-php8-fpm
 
-* system
+* Admin
 
-** nginx
+* Admin infra-structure
+
+** docker containers
+
+   docker compose up -d --force-recreate fzl-nginx fzl-php8-fpm
+
+*** nginx
 
 docker compose exec fzl-nginx nginx -s reload
 
@@ -15,10 +20,10 @@ docker compose restart fzl-nginx
 docker exec -it fzl-nginx ls -la /var/www/html
 
 
-** nexus
+*** nexus
 
 
-** karaf
+*** karaf
 
 docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/status
 
@@ -28,19 +33,61 @@ docker exec -it fzl-karaf-camel-integration tail -f /opt/karaf/data/log/karaf.lo
 
 docker exec -it fzl-karaf-camel-integration tail -f /opt/karaf/data/log/security.log
 
+
 *** karaf links
 
 [[https://dlcdn.apache.org/karaf/documentation/4_x.html][oficial docs: commands available]]
 
 
 
-** postgresql
+*** comandos
+| Comando      | Descrição                                                                                                      | Exemplo de Uso               |
+|--------------+----------------------------------------------------------------------------------------------------------------+------------------------------|
+| \l ou \l+    | Lista todos os bancos de dados no servidor. A versão + adiciona mais detalhes.                                 | \l                           |
+| \c [db]      | Conecta a um banco de dados específico.                                                                        | \c moodle                    |
+| \dt ou \dt+  | Descreve as tabelas (lista as tabelas) do banco de dados atual.                                                | \dt                          |
+| \d [tabela]  | Descreve a estrutura de uma tabela específica (colunas, tipos, índices).                                       | \d mdl_user                  |
+| \dn          | Descreve os namespaces (schemas) do banco. Útil em bancos mais complexos.                                      | \dn                          |
+| \du          | Descreve os usuários (roles) e suas permissões.                                                                | \du                          |
+| \x           | Ativa/desativa o modo de exibição expandida. Perfeito para ver tabelas com muitas colunas sem quebra de linha. | \x                           |
+| \i [arquivo] | Executa comandos de um arquivo .sql. Ótimo para popular um banco.                                              | \i /sql-scripts/meu_dump.sql |
+| \?           | Mostra a ajuda para todos os comandos \ (meta-comandos) do psql.                                               | \?                           |
+| \h [comando] | Mostra a ajuda para um comando SQL específico.                                                                 | \h SELECT                    |
+| \q           | Sai (quit) do psql.                                                                                            | \q                           |
+|              |                                                                                                                |                              |
 
-** php8-fpm
-docker exec -it fzl-php8-fpm ls -la /usr/local/etc/php/conf.d/
+Dica Extra: Comandos \ vs. Comandos SQL
+**** postgresql
+**** referencias
+[[https://www.postgresql.org/docs/current/][documentation]]
 
 
-* apps deployed
+*** php8-fpm
+    docker exec -it fzl-php8-fpm ls -la /usr/local/etc/php/conf.d/
 
-** moodle
-*** instalar
+
+*** postgresql
+
+| docker exec -it fzl-postgresql psql -Upostgres | obtem propt do banco |
+
+
+| docker exec -it fzl-postgresql psql -U postgres -d postgres -c "\l" | lista bancos |
+
+| docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "ALTER DATABASE ${DB_NAME} RENAME TO ${DB_NAME}_old;" | renomeia bd |
+
+| docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE ${DB_NAME} WITH OWNER ${DB_USER} ENCODING 'UTF8' TEMPLATE template0;" | cria banco |
+
+| docker exec fzl-postgresql pg_dump -U postgres -F c moodle > pg_dump_moodle.dump | faz backup de banco |
+
+-F c: A flag specifying the output Format. The c stands for custom format, which is a compressed binary archive. This is a flexible and recommended format for use with pg_restore.
+
+|   |   |
+
+    
+
+    
+
+** apps deployed
+
+*** moodle
+**** instalar

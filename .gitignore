@@ -1,4 +1,4 @@
-# Diretórios gerados por sistemas operacionais
+# Diretï¿½rios gerados por sistemas operacionais
 .DS_Store
 Thumbs.db
 *.swp
@@ -125,7 +125,7 @@ lerna-debug.log*
 ehthumbs.db
 Thumbs.db
 
-# Arquivos temporários
+# Arquivos temporï¿½rios
 *.tmp
 *.bak
 *.swp
@@ -150,3 +150,5 @@ Thumbs.db
 .cache/
 *.rbc
 *.pyc
+pg_dump_moodle.dump
+containers/fzl-ia-sdks-python/main (copiar 1).py

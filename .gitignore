@@ -152,3 +152,12 @@ Thumbs.db
 *.pyc
 pg_dump_moodle.dump
 containers/fzl-ia-sdks-python/main (copiar 1).py
+
+src-projects/.env
+src-projects/.env.local
+src-projects/.env.development
+src-projects/.env.test
+src-projects/.env.production
+
+src-projects/var_www/html/moodle
+src-projects/moodledata

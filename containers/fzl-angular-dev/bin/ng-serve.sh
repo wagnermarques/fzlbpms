@@ -12,9 +12,11 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Define o diretório raiz do projeto (um nível acima da pasta 'bin')
 PROJECT_ROOT_DIR="$SCRIPT_DIR/.."
+ls -l $PROJECT_ROOT_DIR;
+exit 0;
 
-# caminho para o seu arquivo docker-compose.yml
-# Verifique se este caminho está correto para a sua estrutura de pastas!
+# caminho para o arquivo docker-compose.yml
+# Verifique se este caminho está correto para a estrutura de pastas!
 COMPOSE_FILE_PATH="$PROJECT_ROOT_DIR/build-containers/nodejs/docker-compose.yml" 
 # Se o seu arquivo estiver em outro lugar, ajuste aqui. Exemplo:
 # COMPOSE_FILE_PATH="$PROJECT_ROOT_DIR/build-containers/nodejs/docker-compose.yml"

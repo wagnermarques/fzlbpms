@@ -2,8 +2,8 @@ FROM php:8.3-fpm
 
 LABEL maintainer="wagnerdocri@gmail.com"
 
-# 1. Instala pacotes do sistema (lib*-dev são dependências de compilacao de extensoes PHP)
-#    Inclui dependências para Composer, Git, e todas as extensões PHP comuns para Moodle
+# 1. Instala pacotes do sistema (lib*-dev sao dependencias de compilacao de extensoes PHP)
+#    Inclui dependencias para Composer, Git, e todas as extensoes PHP comuns para Moodle
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Ferramentas gerais
     curl \
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gnupg \
     dirmngr \
-    # Dependências para extensões PHP
+    # Dependencias para extensoes PHP
     libpng-dev \
     libjpeg-dev \
     libfreetype6-dev \
@@ -26,17 +26,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 2. Instala e configura as extensões PHP
+# 2. Instala e configura as extensoes PHP
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    # Compila e instala as extensões com a otimização de múltiplos núcleos (-j$(nproc))
+    # Compila e instala as extensoes com a otimizaÃ§Ã£o de mÃºltiplos nÃºcleos (-j$(nproc))
     && docker-php-ext-install -j$(nproc) \
     pdo \
     pdo_mysql \
     mysqli \
-    # Extensões específicas para PostgreSQL
+    # Extensoes especificas para PostgreSQL
     pdo_pgsql \
     pgsql \
-    # Extensões comuns do Moodle
+    # Extensoes comuns do Moodle
     gd \
     xml \
     intl \
@@ -47,7 +47,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     opcache \
     sodium \
     bcmath \
-    # Instala a extensão Imagick via PECL
+    # Instala a extensao Imagick via PECL
     && pecl install imagick \
     && docker-php-ext-enable imagick
 
@@ -55,32 +55,37 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
 # Baixa o instalador do Composer
 COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
-# 4. Configuração do Xdebug (seus arquivos .ini)
+# 4. Configuracao do Xdebug (seus arquivos .ini)
 RUN pecl install xdebug && docker-php-ext-enable xdebug
 COPY 90-xdebug.ini /usr/local/etc/php/conf.d/90-xdebug.ini
 COPY custom-php.ini /usr/local/etc/php/conf.d/custom-php.ini
 
-# 5. Define o diretório de trabalho padrão dentro do container (para php-fpm)
+# 5. Define o diretÃ³rio de trabalho padrÃ£o dentro do container (para php-fpm)
 WORKDIR /var/www/html
 
-# 6. Permissões de diretórios (importante para volume mounts)
-# Estas permissões garantem que o usuário 'www-data' (padrão do php-fpm)
-# tenha acesso aos arquivos e possa criar/escrever onde necessário.
-# Para volumes, as permissões do HOST afetam, mas estas são boas como base.
+# 6. Permissoes de diretorios (importante para volume mounts)
+# Estas permissoes garantem que o usuario 'www-data' (padrao do php-fpm)
+# tenha acesso aos arquivos e possa criar/escrever onde necessario.
+# Para volumes, as permissoes do HOST afetam, mas estas sao boas como base.
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 755 /var/www
 
-# 7. Opcional: Criar diretório de assets e garantir permissões
-# Se este diretório for sempre gerenciado por um volume no docker-compose,
-# essa parte pode ser redundante ou apenas para garantir a existência na imagem.
-# Se o 'assets' for o único diretório que precisa ser gravável pela aplicação
-# (ex: para upload de arquivos), você pode ajustar as permissões aqui.
+# 7. Opcional: Criar diretÃ³rio de assets e garantir permissÃµes
+# Se este diretÃ³rio for sempre gerenciado por um volume no docker-compose,
+# essa parte pode ser redundante ou apenas para garantir a existÃªncia na imagem.
+# Se o 'assets' for o Ãºnico diretÃ³rio que precisa ser gravÃ¡vel pela aplicaÃ§Ã£o
+# (ex: para upload de arquivos), vocÃª pode ajustar as permissÃµes aqui.
 # RUN mkdir -p /var/www/html/web/assets \
 #    && chown -R www-data:www-data /var/www/html/web/assets \
 #    && chmod -R 775 /var/www/html/web/assets
 
-# Expondo a porta 9000 (padrão do PHP-FPM)
+# Expondo a porta 9000 (padrao do PHP-FPM)
 EXPOSE 9000
 
-# Comando padrão para iniciar o PHP-FPM (já é o padrão da imagem php-fpm)
+
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Comando padrÃ£o para iniciar o PHP-FPM (jÃ¡ Ã© o padrÃ£o da imagem php-fpm)
 CMD ["php-fpm"]

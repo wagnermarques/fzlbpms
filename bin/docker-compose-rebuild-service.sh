@@ -53,6 +53,13 @@ fi
 
 echo "Sucesso: O serviço '$SERVICE_NAME' foi reconstruído e iniciado."
 
+echo "Configuracoes de start de servico"
+if [  $SERVICE_NAME == "fzl-php8.3-fpm" ]; then
+    echo .
+    echo "Configuracoes de start do servico SERVICE_NAME=$SERVICE_NAME"
+    source ./php8.3-fpm-permissions-setup-on-host.sh
+fi
+
 docker logs -f $SERVICE_NAME &
 
-exit 0
+exit 0;

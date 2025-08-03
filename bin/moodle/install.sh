@@ -1,18 +1,27 @@
 #!/bin/bash
 
-# Este script para a execu��o se qualquer comando falhar.
+echo "bin/moodle/install.sh running..."
+_THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+# Caminho base do script para resolver os caminhos relativos corretamente
+
+source $_THIS_DIR/../utils.sh
+ECHO_PREFIX="bin/moodle/install.sh"
+fzlecho $ECHO_PREFIX "Executando bin/moodle/install.sh from ${_THIS_DIR}"
+
+# ------------------------------------------------------------------------------
+
+# Este script para a execucao se qualquer comando falhar.
 set -e
 
 ################################################################################
-# --- VARI�VEIS DE CONFIGURA��O ---
+# --- VARIAVEIS DE CONFIGURACAO ---
 ################################################################################
+fzlecho $ECHO_PREFIX "Definindo variavies de configuracao e de instalacao"
 
-# Vers�o do Moodle a ser clonada do Git
+# Versao do Moodle a ser clonada do Git
 MOODLE_VERSION_TO_CLONE="MOODLE_500_STABLE" # Moodle 5.0.x
 MOODLE_ZIP_URL="https://packaging.moodle.org/stable500/moodle-latest-500.tgz"
 
-# Caminho base do script para resolver os caminhos relativos corretamente
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 
 # --- Configura��es do Banco de Dados (para fzl-postgresql) ---
 DB_TYPE="pgsql"
@@ -21,28 +30,32 @@ DB_NAME="moodle"         # Nome do banco de dados (deve existir no fzl-postgresq
 DB_USER="postgres"         # Usu�rio do banco de dados (deve existir no fzl-postgresql)
 DB_PASSWORD="1234"       # Senha do banco de dados (deve existir no fzl-postgresql)
 
+
+
+
 # Caminho no HOST onde os fontes do Moodle ser�o clonados
 # Corresponde a ./src-projects/var_www/html/moodle
-MOODLE_APP_HOST_PATH="${SCRIPT_DIR}/../../src-projects/var_www/html/moodle"
+MOODLE_APP_HOST_PATH="$_THIS_DIR/../../src-projects/var_www/html/moodle"
+fzlecho $ECHO_PREFIX "Definindo o caminho do Moodle no host: ${MOODLE_APP_HOST_PATH}"
 
 # Caminho no HOST para o diret�rio moodledata (FORA do webroot por seguran�a)
 # Corresponde a ./src-projects/moodledata
-MOODLEDATA_HOST_PATH="${SCRIPT_DIR}/../../src-projects/moodledata"
+MOODLEDATA_HOST_PATH="$_THIS_DIR/../../src-projects/moodledata"
+fzlecho $ECHO_PREFIX "Definindo o caminho do moodledata no host: ${MOODLEDATA_HOST_PATH}"
+
+
 
 # --- Configura��es de URL do Moodle ---
 # URL base para acessar o Moodle (deve corresponder ao mapeamento de porta do Nginx)
 MOODLE_WWWROOT="http://localhost/moodle" # Se Nginx na porta 80 do host
-MOODLE_APP_PATH_IN_CONTAINER="/var/www/html/moodle" # Caminho DO Moodle dentro do cont�iner Nginx/PHP-FPM
-MOODLE_DATAROOT_IN_CONTAINER="/var/www/moodledata" # Caminho DO moodledata dentro do cont�iner PHP-FPM
+MOODLE_APP_PATH_IN_CONTAINER="/var/www/html/moodle" # Caminho DO Moodle dentro do container Nginx/PHP-FPM
+MOODLE_DATAROOT_IN_CONTAINER="/var/www/moodledata" # Caminho DO moodledata dentro do container PHP-FPM
 
 MOODLE_ADMIN_USER="admin"
 MOODLE_ADMIN_USER_PASS="SuaSenhaAdminForte" # MUDE ESTA SENHA!
 MOODLE_SITE_FULLNAME="EtecZL PPPs"
 MOODLE_SITE_SHORTNAME="Escola Tecnica Estadual Zona Leste (Progress�es Parciais)"
 MOODLE_ADMIN_EMAIL="wagnerdocri@gmail.com"
-
-MOODLE_APP_HOST_PATH="/run/media/wgn/EnvsBk/__devenv__/projeto-fzlbpms-avaetec/src-projects/var_www/html/moodle"
-MOODLE_DATAROOT_HOST_PATH="/run/media/wgn/EnvsBk/__devenv__/projeto-fzlbpms-avaetec/src-projects/moodledata"
 
 
 PHP_FPM_CONTAINER_NAME="fzl-php8.3-fpm" # Certifique-se que o nome corresponde ao docker-compose.yml
@@ -53,7 +66,7 @@ WEB_USER="wgn"
 WEB_GROUP="wgn"
 
 ################################################################################
-# --- IN�CIO DA EXECU��O ---
+# --- INICIO DA EXECUCAO ---
 ################################################################################
 
 # Define c�digos de cores para uma sa�da mais leg�vel
@@ -156,11 +169,15 @@ docker exec -it fzl-php8.3-fpm chown www-data:www-data -R /var/www/moodledata
 # --- o diretorio onde o moodle foi clonado tem que estar montado dentro do container
 # cria��o do dataroot e gera��o do config.php
 echo -e "\n${YELLOW}[6/6] Rodando o instalador CLI do Moodle dentro do cont�iner PHP-FPM...${NC}"
-echo "${YELLOW}Verifica se o cont�iner $PHP_FPM_CONTAINER_NAME est� rodando"
+echo "${YELLOW}Verifica se o container $PHP_FPM_CONTAINER_NAME esta rodando"
 if ! docker ps --filter "name=${PHP_FPM_CONTAINER_NAME}" --format "{{.ID}}" | grep -q .; then
-    echo -e "${RED}Erro: Cont�iner '${PHP_FPM_CONTAINER_NAME}' n�o est� rodando. Por favor, inicie-o primeiro.${NC}"
+    echo -e "${RED}Erro: Cont�iner '${PHP_FPM_CONTAINER_NAME}' nao esta rodando. Por favor, inicie-o primeiro.${NC}"
     exit 1
 fi
+
+fzlecho $ECHO_PREFIX "Executando o instalador CLI do Moodle no container ${PHP_FPM_CONTAINER_NAME}..."
+docker exec -it "${PHP_FPM_CONTAINER_NAME}" ls -la 
+
 
 docker exec -it "${PHP_FPM_CONTAINER_NAME}" php "${MOODLE_APP_PATH_IN_CONTAINER}/admin/cli/install.php" \
   --lang=pt_br \
@@ -178,16 +195,23 @@ docker exec -it "${PHP_FPM_CONTAINER_NAME}" php "${MOODLE_APP_PATH_IN_CONTAINER}
   --shortname="${MOODLE_SITE_SHORTNAME}" 
 
 # 
-echo -e "${GREEN}Instalador CLI do Moodle executado. Verifique a sa�da acima para erros.${NC}"
-
+echo -e "${GREEN}Instalador CLI do Moodle executado. Verifique a saida acima para erros.${NC}"
 
 # --- 5. Definir permissoes www-data para arquivos do moodle e moodledata
 # --- requisitos
 # --- o container php-fpm deve estar rodando (ja verificado acima)
 # --- o diretorio onde o moodle foi clonado tem que estar montado dentro do container (ja verificado acima)
 # --- diretorios presentes /var/www/html/mooodle e /var/www/moodledata
-echo -e "\n${YELLOW}[6/6] dando permissoes www-data dentro dos containers php-fpm e nginx"
-docker exec -it "${PHP_FPM_CONTAINER_NAME}" chown -R www-data:www-data "${MOODLE_APP_PATH_IN_CONTAINER}" "${MOODLE_DATAROOT_IN_CONTAINER}"
+fzlecho $ECHO_PREFIX " => Dando permissoes www-data dentro dos containers php-fpm e nginx"
+
+fzlecho $ECHO_PREFIX MOODLE_APP_PATH_IN_CONTAINER=${MOODLE_APP_PATH_IN_CONTAINER}
+docker exec -it "${PHP_FPM_CONTAINER_NAME}" ls -la "${MOODLE_APP_PATH_IN_CONTAINER}"
+
+fzlecho $ECHO_PREFIX MOODLE_DATAROOT_IN_CONTAINER=${MOODLE_DATAROOT_IN_CONTAINER}
+docker exec -it "${PHP_FPM_CONTAINER_NAME}" chown -R www-data:www-data "${MOODLE_APP_PATH_IN_CONTAINER}"
+docker exec -it "${PHP_FPM_CONTAINER_NAME}" chown -R www-data:www-data "${MOODLE_DATAROOT_IN_CONTAINE}"
+
+fzlecho $ECHO_PREFIX "Dando permissoes www-data no container nginx"
 docker exec -it "fzl-nginx" chown -R nginx:nginx "${MOODLE_APP_PATH_IN_CONTAINER}" 
 
 # --- X backup do config.php, rename as config-YYYYMMDD_HHMMSS.php
@@ -195,14 +219,12 @@ docker cp "${PHP_FPM_CONTAINER_NAME}:${MOODLE_APP_PATH_IN_CONTAINER}/config.php"
 
 # no host tambem precisa dar permissao
 sudo chown -R wgn:wgn "$MOODLE_APP_HOST_PATH"
-sudo chown -R www-data:www-data "$MOODLE_DATAROOT_HOST_PATH" # moodledata precisa ser do www-data no host para que o container possa escrever
 
 sudo find "$MOODLE_APP_HOST_PATH" -type d -exec chmod 0755 {} \; # Diretorios
 sudo find "$MOODLE_APP_HOST_PATH" -type f -exec chmod 0644 {} \; # Arquivos
 
 
 # --- X dump do banco criado pela instalacao
-
 
 echo -e "\n${GREEN}=========================================${NC}"
 echo -e "${GREEN}� Configura��o do Moodle conclu�da!� ${NC}"

@@ -1,0 +1,12 @@
+#+Title: moodle install
+
+a partir da pasta do projeto:
+
+sudo ./bin/moodle/install.sh
+
+
+o container do nginx ja tem uma configuracao adequada pra encaminhar
+corretamente as requiscoes para um php8.3-fpm e servir o conteudo
+estatico a partir do contexto /moodle
+
+

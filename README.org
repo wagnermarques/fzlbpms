@@ -21,4 +21,9 @@ https://my.sonatype.com/
 
 * instalation
 
+* apps installations
+** moodle
+** yii2 apps
+
+
 

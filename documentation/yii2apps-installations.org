@@ -1,0 +1,7 @@
+#+Title: yii2 apps installations
+
+a partir da pasta do projeto
+
+./bin/yii2apps/install.sh
+
+

@@ -5,8 +5,10 @@
 # nao ajusta permissao de pastas e arquivos no host
 # rodando esse script ja roda chown e chmod nos volumes binded
 
-source ./utils.sh
+source ./bin/utils.sh
 
 PREFIX="docker-compose-up-d.sh |"
 
 fzlecho $PREFIX "Iniciando o docker-compose up -d..."
+
+docker compose up -d

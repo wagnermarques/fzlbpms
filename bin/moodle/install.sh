@@ -23,44 +23,47 @@ MOODLE_VERSION_TO_CLONE="MOODLE_500_STABLE" # Moodle 5.0.x
 MOODLE_ZIP_URL="https://packaging.moodle.org/stable500/moodle-latest-500.tgz"
 
 
-# --- Configura��es do Banco de Dados (para fzl-postgresql) ---
+# --- Configuraï¿½ï¿½es do Banco de Dados (para fzl-postgresql) ---
 DB_TYPE="pgsql"
 DB_HOST="fzl-postgresql" # Nome do servico PostgreSQL no Docker Compose
 DB_NAME="moodle"         # Nome do banco de dados (deve existir no fzl-postgresql)
-DB_USER="postgres"         # Usu�rio do banco de dados (deve existir no fzl-postgresql)
+DB_USER="postgres"       # Usuario do banco de dados (deve existir no fzl-postgresql)
 DB_PASSWORD="1234"       # Senha do banco de dados (deve existir no fzl-postgresql)
 
 
 
 
-# Caminho no HOST onde os fontes do Moodle ser�o clonados
+# Caminho no HOST onde os fontes do Moodle serï¿½o clonados
 # Corresponde a ./src-projects/var_www/html/moodle
 MOODLE_APP_HOST_PATH="$_THIS_DIR/../../src-projects/var_www/html/moodle"
 fzlecho $ECHO_PREFIX "Definindo o caminho do Moodle no host: ${MOODLE_APP_HOST_PATH}"
 
-# Caminho no HOST para o diret�rio moodledata (FORA do webroot por seguran�a)
+# Caminho no HOST para o diretï¿½rio moodledata (FORA do webroot por seguranï¿½a)
 # Corresponde a ./src-projects/moodledata
 MOODLEDATA_HOST_PATH="$_THIS_DIR/../../src-projects/moodledata"
 fzlecho $ECHO_PREFIX "Definindo o caminho do moodledata no host: ${MOODLEDATA_HOST_PATH}"
 
 
 
-# --- Configura��es de URL do Moodle ---
+# --- Configuracoes de URL do Moodle ---
 # URL base para acessar o Moodle (deve corresponder ao mapeamento de porta do Nginx)
 MOODLE_WWWROOT="http://localhost/moodle" # Se Nginx na porta 80 do host
 MOODLE_APP_PATH_IN_CONTAINER="/var/www/html/moodle" # Caminho DO Moodle dentro do container Nginx/PHP-FPM
 MOODLE_DATAROOT_IN_CONTAINER="/var/www/moodledata" # Caminho DO moodledata dentro do container PHP-FPM
 
+MOODLE_SITE_FULLNAME="EtecZL - Auxilio Domiciliar e PPs"
+MOODLE_SITE_SHORTNAME="Escola Tecnica Estadual da Zona Leste"
 MOODLE_ADMIN_USER="admin"
 MOODLE_ADMIN_USER_PASS="SuaSenhaAdminForte" # MUDE ESTA SENHA!
 MOODLE_SITE_FULLNAME="EtecZL PPPs"
-MOODLE_SITE_SHORTNAME="Escola Tecnica Estadual Zona Leste (Progress�es Parciais)"
+MOODLE_SITE_SHORTNAME="Escola Tecnica Estadual Zona Leste (Progressï¿½es Parciais)"
 MOODLE_ADMIN_EMAIL="wagnerdocri@gmail.com"
 
 
 PHP_FPM_CONTAINER_NAME="fzl-php8.3-fpm" # Certifique-se que o nome corresponde ao docker-compose.yml
+WEB_CONTAINER_USER="www-data" # Usuario do container PHP-FPM que executa o Moodle
 
-# Usu�rio do host que precisa ter acesso aos arquivos do Moodle
+# Usuï¿½rio do host que precisa ter acesso aos arquivos do Moodle
 # dentro do php fpm sera o www-data
 WEB_USER="wgn"
 WEB_GROUP="wgn"
@@ -69,19 +72,19 @@ WEB_GROUP="wgn"
 # --- INICIO DA EXECUCAO ---
 ################################################################################
 
-# Define c�digos de cores para uma sa�da mais leg�vel
+# Define codigos de cores para uma saï¿½da mais legï¿½vel
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # Sem Cor
 
-echo -e "${YELLOW}Iniciando a instala��o e configura��o do Moodle...${NC}"
+echo -e "${YELLOW}Iniciando a instalaï¿½ï¿½o e configuraï¿½ï¿½o do Moodle...${NC}"
 
 
-# --- 1. Instalar depend�ncias no host ---
-# checka se o git est� instalado caso n�o esteja, informa o usuario do script e para a execucao
+# --- 1. Instalar dependï¿½ncias no host ---
+# checka se o git estï¿½ instalado caso nï¿½o esteja, informa o usuario do script e para a execucao
 if ! command -v git &> /dev/null; then
-    echo -e "${RED}Erro: Git n�o est� instalado. Por favor, instale o Git antes de continuar.${NC}"
+    echo -e "${RED}Erro: Git nï¿½o estï¿½ instalado. Por favor, instale o Git antes de continuar.${NC}"
     exit 1
 fi
 
@@ -91,18 +94,18 @@ sudo echo $(pwd)
 # --- 2. Clonar as fontes do Moodle ---
 echo -e "\n${YELLOW}[2/6] Verificando e obtendo o Moodle...${NC}"
 if [ -d "$MOODLE_APP_HOST_PATH" ]; then
-    # Se o diret�rio j� existe, removemos para garantir um clone limpo
-    # Isso � importante para evitar conflitos de vers�o ou arquivos antigos
+    # Se o diretï¿½rio jï¿½ existe, removemos para garantir um clone limpo
+    # Isso ï¿½ importante para evitar conflitos de versï¿½o ou arquivos antigos
     # nao remove a pasta, simplesmente renomeia por seguranca
-    echo -e "${YELLOW}O diret�rio '${MOODLE_APP_HOST_PATH}' j� existe. Renomeando pasta antiga para um clone limpo...${NC}"
+    echo -e "${YELLOW}O diretï¿½rio '${MOODLE_APP_HOST_PATH}' jï¿½ existe. Renomeando pasta antiga para um clone limpo...${NC}"
     #sudo mv $MOODLE_APP_HOST_PATH "${MOODLE_APP_HOST_PATH}_backup_$(date +%Y%m%d_%H%M%S)"    
     rm -rf "$MOODLE_APP_HOST_PATH"
 fi
 
-#echo "Clonando Moodle (vers�o ${MOODLE_VERSION_TO_CLONE})... Isso pode levar um momento."
+#echo "Clonando Moodle (versï¿½o ${MOODLE_VERSION_TO_CLONE})... Isso pode levar um momento."
 #git clone -b "$MOODLE_VERSION_TO_CLONE" "https://github.com/moodle/moodle.git" "$MOODLE_APP_HOST_PATH"
 #echo -e "${GREEN}Moodle clonado com sucesso em '${MOODLE_APP_HOST_PATH}'.${NC}"
-echo "Baixando Moodle (versão estável 5.0)... Isso pode levar um momento."
+echo "Baixando Moodle (versÃ£o estÃ¡vel 5.0)... Isso pode levar um momento."
 MOODLE_ARCHIVE_PATH="/tmp/moodle.tgz"
 
 # fazendo o download do Moodle usando curl
@@ -110,9 +113,9 @@ echo -e "${YELLOW}Baixando Moodle usando curl...${NC}"
 echo "$MOODLE_ZIP_URL"
 curl --fail --silent --show-error --max-time 600 -o "$MOODLE_ARCHIVE_PATH" "$MOODLE_ZIP_URL"
 
-# Verifica o código de saída do curl. Se for diferente de 0, o download falhou.
+# Verifica o cÃ³digo de saÃ­da do curl. Se for diferente de 0, o download falhou.
 if [ $? -ne 0 ]; then
-  echo -e "${RED}Erro: O download do Moodle falhou. Verifique sua conexão ou a URL.${NC}"
+  echo -e "${RED}Erro: O download do Moodle falhou. Verifique sua conexÃ£o ou a URL.${NC}"
   # Remove o arquivo incompleto para evitar erros futuros
   rm -f "$MOODLE_ARCHIVE_PATH"
   exit 1
@@ -125,28 +128,30 @@ mkdir -p "$MOODLE_APP_HOST_PATH"
 tar -xzf "$MOODLE_ARCHIVE_PATH" -C "$MOODLE_APP_HOST_PATH" --strip-components=1
 rm "$MOODLE_ARCHIVE_PATH"
 
-echo -e "${GREEN}Moodle baixado e extraído com sucesso em '${MOODLE_APP_HOST_PATH}'.${NC}"
+echo -e "${GREEN}Moodle baixado e extraÃ­do com sucesso em '${MOODLE_APP_HOST_PATH}'.${NC}"
  
 
-# --- 3. Definir permiss�es no host (nao no container) para os arquivos Moodle clonados no host ---
-echo -e "\n${YELLOW}[5/6] Definindo permiss�es iniciais para os arquivos do Moodle no host...${NC}"
+
+# --- 3. Definir permissï¿½es no host (nao no container) para os arquivos Moodle clonados no host ---
+echo -e "\n${YELLOW}[3/${TOTAL_STAGES}] Criando diretórios e definindo permissões no host...${NC}"
 # Permissoes para o www-data acessar, mas sem permitir escrita generalizada
 sudo chown -R ${WEB_USER}:${WEB_GROUP} "$MOODLE_APP_HOST_PATH" || echo -e "${YELLOW}Aviso: Nao foi possivel definir owner/group www-data. Verifique se o usuario existe no host ou ajuste manualmente.${NC}"
 sudo find "$MOODLE_APP_HOST_PATH" -type d -exec chmod 0755 {} \; # Diretorios
 sudo find "$MOODLE_APP_HOST_PATH" -type f -exec chmod 0644 {} \; # Arquivos
-echo -e "${GREEN}Permiss�es de arquivos Moodle definidas.${NC}"
+echo -e "${GREEN}Permissï¿½es de arquivos Moodle definidas.${NC}"
+
 
 
 # --- 4. preparar banco de dados
-# --- Verifica se o banco de dados j� existe
-echo -e "\n${YELLOW}[5/6] Verificando se o banco de dados '${DB_NAME}' j� existe...${NC}"
+# --- Verifica se o banco de dados jï¿½ existe
+echo -e "\n${YELLOW}[5/6] Verificando se o banco de dados '${DB_NAME}' jï¿½ existe...${NC}"
 if docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "\l" | grep -q "${DB_NAME}"; then
-    echo -e "${YELLOW}O banco de dados '${DB_NAME}' j� existe. Banco sera renomeado.${NC}"
+    echo -e "${YELLOW}O banco de dados '${DB_NAME}' jï¿½ existe. Banco sera renomeado.${NC}"
     # renomeando o banco de dados
     docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "ALTER DATABASE ${DB_NAME} RENAME TO ${DB_NAME}_old_$(date +%Y%m%d%H%M%S);"
     docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE ${DB_NAME} WITH OWNER ${DB_USER} ENCODING 'UTF8' TEMPLATE template0;"
 else
-    echo -e "${YELLOW}O banco de dados '${DB_NAME}' n�o existe. Criando o banco de dados...${NC}"
+    echo -e "${YELLOW}O banco de dados '${DB_NAME}' nï¿½o existe. Criando o banco de dados...${NC}"
     docker exec -it fzl-postgresql psql -U "${DB_USER}" -d postgres -c "CREATE DATABASE ${DB_NAME} WITH OWNER ${DB_USER} ENCODING 'UTF8' TEMPLATE template0;"
     echo -e "${GREEN}Banco de dados '${DB_NAME}' criado com sucesso.${NC}"
 fi
@@ -167,11 +172,11 @@ docker exec -it fzl-php8.3-fpm chown www-data:www-data -R /var/www/moodledata
 # --- requisitos
 # --- o container php-fpm deve estar rodando
 # --- o diretorio onde o moodle foi clonado tem que estar montado dentro do container
-# cria��o do dataroot e gera��o do config.php
-echo -e "\n${YELLOW}[6/6] Rodando o instalador CLI do Moodle dentro do cont�iner PHP-FPM...${NC}"
+# criaï¿½ï¿½o do dataroot e geraï¿½ï¿½o do config.php
+echo -e "\n${YELLOW}[6/6] Rodando o instalador CLI do Moodle dentro do contï¿½iner PHP-FPM...${NC}"
 echo "${YELLOW}Verifica se o container $PHP_FPM_CONTAINER_NAME esta rodando"
 if ! docker ps --filter "name=${PHP_FPM_CONTAINER_NAME}" --format "{{.ID}}" | grep -q .; then
-    echo -e "${RED}Erro: Cont�iner '${PHP_FPM_CONTAINER_NAME}' nao esta rodando. Por favor, inicie-o primeiro.${NC}"
+    echo -e "${RED}Erro: Contï¿½iner '${PHP_FPM_CONTAINER_NAME}' nao esta rodando. Por favor, inicie-o primeiro.${NC}"
     exit 1
 fi
 
@@ -227,6 +232,6 @@ sudo find "$MOODLE_APP_HOST_PATH" -type f -exec chmod 0644 {} \; # Arquivos
 # --- X dump do banco criado pela instalacao
 
 echo -e "\n${GREEN}=========================================${NC}"
-echo -e "${GREEN}� Configura��o do Moodle conclu�da!� ${NC}"
-echo -e "${GREEN}� Acesse: ${MOODLE_WWWROOT}� � � � � ${NC}"
+echo -e "${GREEN}ï¿½ Configuraï¿½ï¿½o do Moodle concluï¿½da!ï¿½ ${NC}"
+echo -e "${GREEN}ï¿½ Acesse: ${MOODLE_WWWROOT}ï¿½ ï¿½ ï¿½ ï¿½ ï¿½ ${NC}"
 echo -e "${GREEN}=========================================${NC}"

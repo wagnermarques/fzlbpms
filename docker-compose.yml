@@ -142,11 +142,25 @@ services:
     networks:
       - fzl-network
 
+#  fzl-overleaf:
+#    build:
+#      context: ./containers/fzl-overleaf
+#      dockerfile: Dockerfile
+#    container_name: fzl-overleaf
+#    restart: unless-stopped
+#    ports:
+#      - "8090:80" # Access Overleaf at http://localhost:8090
+#    volumes:
+#      # This volume is CRITICAL to persist your LaTeX projects
+#      - fzl-overleaf-data:/var/lib/sharelatex
+#    networks:
+#      - fzl-network      
 volumes:
   fzl-postgresql-data:
   fzl-mysql-data:    
   fzl-karaf-data:
   fzl-nexus-data:
+  fzl-overleaf-data:  
       
 networks:
   fzl-network:

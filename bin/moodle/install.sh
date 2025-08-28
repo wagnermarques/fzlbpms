@@ -97,7 +97,7 @@ if [ -d "$MOODLE_APP_HOST_PATH" ]; then
     # Se o diretï¿½rio jï¿½ existe, removemos para garantir um clone limpo
     # Isso ï¿½ importante para evitar conflitos de versï¿½o ou arquivos antigos
     # nao remove a pasta, simplesmente renomeia por seguranca
-    echo -e "${YELLOW}O diretï¿½rio '${MOODLE_APP_HOST_PATH}' jï¿½ existe. Renomeando pasta antiga para um clone limpo...${NC}"
+    echo -e "${YELLOW}O diretorio '${MOODLE_APP_HOST_PATH}' ja existe. Renomeando pasta antiga para um clone limpo...${NC}"
     #sudo mv $MOODLE_APP_HOST_PATH "${MOODLE_APP_HOST_PATH}_backup_$(date +%Y%m%d_%H%M%S)"    
     rm -rf "$MOODLE_APP_HOST_PATH"
 fi

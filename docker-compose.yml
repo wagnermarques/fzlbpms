@@ -30,8 +30,12 @@ services:
     container_name: fzl-php8.3-fpm
     volumes:
       - ./src-projects/var_www/html:/var/www/html
+      - ./fzl-php8.3-fpm/moodledata:/var/www/moodledata
     networks:
       - fzl-network
+    environment:
+       - MOODLE_XMLRPC_ENABLED=0
+       - MOODLE_MNET_DISPATCHER_MODE=off
       
   fzl-mysql:
     image: mysql:8.0
@@ -43,7 +47,8 @@ services:
       MYSQL_PASSWORD: 1234
     volumes:
       - ./src-projects:/sql-scripts
-      - fzl-mysql-data:/var/lib/mysql
+      - /home/wgn/fzlbpms/containers/fzl-mysql/mysql-data:/var/lib/mysql
+      #- fzl-mysql-data:/var/lib/mysql
     networks:
       - fzl-network
 
@@ -61,8 +66,10 @@ services:
       POSTGRES_INITDB_ARGS: "--locale=pt_BR.UTF-8" # Para garantir o locale na criacao do DB
     volumes:
       - ./src-projects:/sql-scripts
-      - fzl-postgresql-data:/var/lib/postgresql/data
       - ./containers/fzl-postgresql/init-scripts:/docker-entrypoint-initdb.d
+      - ./containers/fzl-postgresql/postgresql-data:/var/lib/postgresql/data
+      #- fzl-postgresql-data:/var/lib/postgresql/data #this is not portable to use in different docker deamons
+
     networks:
       - fzl-network
     healthcheck:

@@ -1,18 +1,21 @@
 #+Title: fzlbpms
 
+
+* TODOS
+** criar script moodle de backup do banco, arq config e plugins
+** criar script que configura cron do moodle
+
+** criar script que adiciona dados para teste
 * Dashboard
 
 ** karaf
 *** acesso via console
-
 firefox http://localhost:8181/system/console
+
 *** ver logs
 
-
 ** [[http://localhost:8081][nexus]]
-
-*** Documentação
-
+*** Documentaï¿½ï¿½o
 https://help.sonatype.com/en/repository-manager-concepts.html
 
 https://my.sonatype.com/

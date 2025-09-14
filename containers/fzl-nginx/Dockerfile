@@ -5,7 +5,7 @@ FROM nginx:stable-alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
 
 # Certifique-se que o caminho de origem (containers/fzl-nginx/nginx-conf.d/my_app.conf)
-COPY  nginx-conf.d/fzlbpms.conf /etc/nginx/conf.d/fzlbpms.conf
+COPY  nginx-conf.d /etc/nginx/conf.d
 
 RUN rm /var/log/nginx/access.log && \
     rm /var/log/nginx/error.log  

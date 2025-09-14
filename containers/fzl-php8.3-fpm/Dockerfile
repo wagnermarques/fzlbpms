@@ -47,9 +47,9 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     opcache \
     sodium \
     bcmath \
-    # Instala a extensao Imagick via PECL
-    && pecl install imagick \
-    && docker-php-ext-enable imagick
+    exif 
+
+RUN pecl install imagick && docker-php-ext-enable imagick
 
 # 3. Instala o Composer globalmente
 # Baixa o instalador do Composer

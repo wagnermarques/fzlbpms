@@ -1,4 +1,4 @@
-# Diret�rios gerados por sistemas operacionais
+# Diretorios gerados por sistemas operacionais
 .DS_Store
 Thumbs.db
 *.swp
@@ -125,7 +125,7 @@ lerna-debug.log*
 ehthumbs.db
 Thumbs.db
 
-# Arquivos tempor�rios
+# Arquivos temporï¿½rios
 *.tmp
 *.bak
 *.swp
@@ -160,4 +160,6 @@ src-projects/.env.test
 src-projects/.env.production
 
 src-projects/var_www/html/moodle
+src-projects/var_www/html/moodle_copy
+src-projects/moodle_plugins
 src-projects/moodledata

@@ -7,7 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-nginx
     ports:
-      - "80:80"
+      - "80:80" #ava211
+      - "8899:8899" #fzlbpms internal apps
+      - "8900:8900" # moodleun
     volumes:
       - ./src-projects/var_www/html:/var/www/html:rw #na conf do nginx: root /var/www/html;
     networks:

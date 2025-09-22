@@ -1,6 +1,6 @@
-FROM overleaf/sharelatex:latest
+FROM padmassun/overleaf-full:latest
 
-# Switch to the root user to gain permissions for installation
+# Switch to root for permissions (if needed for customizations)
 USER root
 
 # Update the package lists and install pandoc

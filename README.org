@@ -1,12 +1,15 @@
 #+Title: fzlbpms
 
-
 * Dashboard
 
 ** aplicacoes disponiveis
 *** http://localhost/ava211
+admin s3cret
+
 *** http://localhost:8900/moodle
-*** http://localhost:8899/karafconsole soon
+
+
+*** http://localhost:8899/karafconsole soon, not so
 
 ** karaf
 *** acesso via console
@@ -16,6 +19,7 @@ firefox http://localhost:8181/system/console
 
 ** [[http://localhost:8081][nexus]]
 http://localhost:8081/
+
 *** Documentacao
 https://help.sonatype.com/en/repository-manager-concepts.html
 

@@ -70,8 +70,6 @@ services:
       - ./src-projects:/sql-scripts
       - ./containers/fzl-postgresql/init-scripts:/docker-entrypoint-initdb.d
       - ./containers/fzl-postgresql/postgresql-data:/var/lib/postgresql/data
-      #- fzl-postgresql-data:/var/lib/postgresql/data #this is not portable to use in different docker deamons
-
     networks:
       - fzl-network
     healthcheck:
@@ -91,7 +89,7 @@ services:
       - ./src-projects/karaf_input_dir:/opt/karaf/input_data
       - ./src-projects/karaf_output_dir:/opt/karaf/output_data
       - ./src-projects/karaf_project_sources_dir:/opt/karaf/sources:rw
-      - fzl-karaf-data:/opt/karaf/data
+      - ./containers/fzl-karaf-camel-integration/karaf-data:/opt/karaf/data
     networks:
       - fzl-network
     restart: unless-stopped
@@ -120,7 +118,7 @@ services:
       - "8082:8082"
     volumes:
       # critico para nao perder repositorios, configuracoes etc
-      - fzl-nexus-data:/nexus-data
+      - ./containers/fzl-nexus/nexus-data:/nexus-data
     environment:
       # Aumenta a memoria RAM disponivel para o Nexus (ajuste conforme necessario)
       # Nexus exige bastante RAM, o padrao pode ser insuficiente.
@@ -151,25 +149,55 @@ services:
     networks:
       - fzl-network
 
-#  fzl-overleaf:
-#    build:
-#      context: ./containers/fzl-overleaf
-#      dockerfile: Dockerfile
-#    container_name: fzl-overleaf
-#    restart: unless-stopped
-#    ports:
-#      - "8090:80" # Access Overleaf at http://localhost:8090
-#    volumes:
-#      # This volume is CRITICAL to persist your LaTeX projects
-#      - fzl-overleaf-data:/var/lib/sharelatex
-#    networks:
-#      - fzl-network      
-volumes:
-  fzl-postgresql-data:
-  fzl-mysql-data:    
-  fzl-karaf-data:
-  fzl-nexus-data:
-  fzl-overleaf-data:  
+  fzl-elasticsearch:
+    build:
+      context: ./containers/fzl-elasticsearch
+      dockerfile: Dockerfile-Elasticsearch
+    container_name: fzl-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true  # Ative segurança para produção
+    ports:
+      - "9200:9200"
+    volumes:
+      - ./containers/elasticsearch/es-data:/usr/share/elasticsearch/data
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s      
+
+  fzl-kibana:
+    build:
+      context: ./containers/fzl-elasticsearch
+      dockerfile: Dockerfile-Kibana
+    container_name: fzl-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - fzl-elasticsearch
+    networks:
+      - fzl-network      
+      
+  fzl-overleaf:
+    build:
+      context: ./containers/fzl-overleaf
+      dockerfile: Dockerfile
+    container_name: fzl-overleaf
+    restart: unless-stopped
+    ports:
+      - "8090:80" # Access Overleaf at http://localhost:8090
+    volumes:
+      # This volume is CRITICAL to persist your LaTeX projects
+      - ./containers/fzl-overleaf/overleaf-data:/var/lib/sharelatex
+    networks:
+      - fzl-network      
+
       
 networks:
   fzl-network:

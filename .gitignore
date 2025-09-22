@@ -125,7 +125,7 @@ lerna-debug.log*
 ehthumbs.db
 Thumbs.db
 
-# Arquivos temporï¿½rios
+# Arquivos temporÃ¯Â¿Â½rios
 *.tmp
 *.bak
 *.swp
@@ -163,3 +163,6 @@ src-projects/var_www/html/moodle
 src-projects/var_www/html/moodle_copy
 src-projects/moodle_plugins
 src-projects/moodledata
+
+credentials
+bin/azure

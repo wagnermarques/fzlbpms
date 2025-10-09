@@ -1,0 +1,14 @@
+# Use a versão mais recente do Elasticsearch (ajuste conforme necessário)
+FROM docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+
+# Instala um plugin de análise (exemplo: ICU para suporte a idiomas)
+RUN /usr/share/elasticsearch/bin/elasticsearch-plugin install analysis-icu
+
+# Copia configurações personalizadas (opcional)
+# COPY elasticsearch.yml /usr/share/elasticsearch/config/elasticsearch.yml
+
+# Expõe a porta padrão do Elasticsearch
+EXPOSE 9200
+
+# Comando padrão (já configurado na imagem base)
+CMD ["/usr/local/bin/docker-entrypoint.sh"]

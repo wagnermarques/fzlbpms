@@ -108,15 +108,18 @@ services:
     networks:
       - fzl-network
           
+
+  # a porta 8081 do nexus ta conflitando com a 8081 do fakermail
+  # corrir qdo for usar o nexus
   fzl-nexus:
     build:
       context: ./containers/fzl-nexus
-    container_name: fzl-nexus
-    restart: always
-    ports:
-      - "8081:8081"
-      - "8082:8082"
-    volumes:
+      container_name: fzl-nexus
+      restart: always
+     ports:
+       - "8081:8081"
+       - "8082:8082"
+      volumes:
       # critico para nao perder repositorios, configuracoes etc
       - ./containers/fzl-nexus/nexus-data:/nexus-data
     environment:
@@ -153,14 +156,14 @@ services:
     build:
       context: ./containers/fzl-elasticsearch
       dockerfile: Dockerfile-Elasticsearch
-    container_name: fzl-es
+    container_name: fzl-elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=true  # Ative segurança para produção
+      - xpack.security.enabled=true  # Ative seguranÃ§a para produÃ§Ã£o
     ports:
       - "9200:9200"
     volumes:
-      - ./containers/elasticsearch/es-data:/usr/share/elasticsearch/data
+      - ./containers/fzl-elasticsearch/es-data:/usr/share/elasticsearch/data
     networks:
       - fzl-network
     healthcheck:
@@ -184,21 +187,71 @@ services:
     networks:
       - fzl-network      
       
-  fzl-overleaf:
-    build:
-      context: ./containers/fzl-overleaf
-      dockerfile: Dockerfile
-    container_name: fzl-overleaf
-    restart: unless-stopped
-    ports:
-      - "8090:80" # Access Overleaf at http://localhost:8090
-    volumes:
-      # This volume is CRITICAL to persist your LaTeX projects
-      - ./containers/fzl-overleaf/overleaf-data:/var/lib/sharelatex
-    networks:
-      - fzl-network      
+  # aguardando pra qdo for utilizar
+  #fzl-overleaf:
+  #  build:
+  #    context: ./containers/fzl-overleaf
+  #    dockerfile: Dockerfile
+  #  container_name: fzl-overleaf
+  #  restart: unless-stopped
+  #  ports:
+  #    - "8090:80" # Access Overleaf at http://localhost:8090
+  #  volumes:
+  #    # This volume is CRITICAL to persist your LaTeX projects
+  #    - ./containers/fzl-overleaf/overleaf-data:/var/lib/sharelatex
+  #  networks:
+  #    - fzl-network      
 
-      
+
+  fzl-mongodb: #used by overleaf container
+    image: mongo:4.4
+    container_name: fzl-mongodb
+    restart: unless-stopped
+    volumes:
+      # Critical to persist MongoDB data
+      - ./containers/fzl-mongodb/mongodb-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: overleaf
+      MONGO_INITDB_ROOT_PASSWORD: overleaf_pass
+      MONGO_INITDB_DATABASE: overleaf
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "mongo --eval 'db.adminCommand(\"ping\")'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  fzl-redis: #used by overleaf container
+    image: redis:7-alpine
+    container_name: fzl-redis
+    restart: unless-stopped
+    volumes:
+      - ./containers/fzl-redis/redis-data:/data
+    command: redis-server --appendonly yes  # Enable persistence
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  fzl-fakemail:
+    container_name: fzl-fakemail
+    image: gessnerfl/fake-smtp-server:latest
+    restart: always
+    environment:
+      - MH_UI_AUTH_FILE=/maildata/auth.txt
+    #ports:
+    #  - "5010:8080"
+    #  - "8035:8025"
+    network_mode: host #(entender melhor depois isso)
+    #networks:
+    #  - fzl-network
+            
 networks:
   fzl-network:
     driver: bridge

@@ -1,0 +1,5 @@
+schema-version: v1
+rulesets:
+  - php-best-practices
+  - php-security
+  - github-actions

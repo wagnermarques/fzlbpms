@@ -1,4 +1,11 @@
 # Diretorios gerados por sistemas operacionais
+
+containers/fzl-elasticsearch/es-data
+containers/fzl-mongodb/mongodb-data
+containers/fzl-nexus/nexus-data
+containers/fzl-redis/redis-data
+containers/fzl-php8.3-fpm/moodledata
+
 .DS_Store
 Thumbs.db
 *.swp

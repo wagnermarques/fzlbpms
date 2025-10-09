@@ -1,0 +1,8 @@
+#+Title: Use Cases
+
+#+BEGIN_SRC plantuml
+@startuml
+Alice -> Bob: Hello
+Bob --> Alice: Hi!
+@enduml
+#+END_SRC

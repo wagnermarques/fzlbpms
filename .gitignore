@@ -1,10 +1,12 @@
 # Diretorios gerados por sistemas operacionais
-
+containers/fzl-karaf-camel-integration/karaf-data/
 containers/fzl-elasticsearch/es-data
 containers/fzl-mongodb/mongodb-data
 containers/fzl-nexus/nexus-data
 containers/fzl-redis/redis-data
 containers/fzl-php8.3-fpm/moodledata
+fzl-php8.3-fpm/moodledata/
+src-projects/var_www/html/
 
 .DS_Store
 Thumbs.db

@@ -10,9 +10,9 @@
 # The *-data dirs need to be authorized for the softwares to write in them.
 # This command grants full permissions (777) recursively to all directories 
 # named with the suffix '-data' inside the 'containers' directory.
-echo "Setting permissions (chmod 777 -R) on all *-data directories..."
-sudo find ./containers/ -type d -iname "*-data" -print0 | xargs -0 chmod 777 -R
-echo "Permissions set."
+#echo "Setting permissions (chmod 777 -R) on all *-data directories..."
+#sudo find ./containers/ -type d -iname "*-data" -print0 | xargs -0 chmod 777 -R
+#echo "Permissions set."
 
 # --- Docker Compose Execution ---
 

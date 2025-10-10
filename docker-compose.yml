@@ -42,6 +42,8 @@ services:
   fzl-mysql:
     image: mysql:8.0
     container_name: fzl-mysql
+    ports:
+      - "3316:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 1234
       MYSQL_DATABASE: fzl_db
@@ -114,13 +116,12 @@ services:
   fzl-nexus:
     build:
       context: ./containers/fzl-nexus
-      container_name: fzl-nexus
-      restart: always
-     ports:
-       - "8081:8081"
-       - "8082:8082"
-      volumes:
-      # critico para nao perder repositorios, configuracoes etc
+    container_name: fzl-nexus
+    restart: always
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
       - ./containers/fzl-nexus/nexus-data:/nexus-data
     environment:
       # Aumenta a memoria RAM disponivel para o Nexus (ajuste conforme necessario)

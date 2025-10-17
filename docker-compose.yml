@@ -252,7 +252,26 @@ services:
     network_mode: host #(entender melhor depois isso)
     #networks:
     #  - fzl-network
-            
+
+    
+    # portainer to manage docker containers
+  fzl-portainer:
+    image: portainer/portainer-ce:latest
+    container_name: fzl-portainer
+    restart: always
+    ports:
+      - "9000:9000" # Porta web para acesso ao Portainer
+      - "9043:9043"
+    volumes:
+      # Monta o socket Docker do Host para que o Portainer possa gerenciar o Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Volume nomeado para persistir as configurações do Portainer
+      - ./containers/fzl-portainer/portainer-data:/data
+    #networks:
+    #  # Conecta à rede fzl-network para ter visibilidade dos outros contêineres
+    #  - fzl-network
+    
+
 networks:
   fzl-network:
     driver: bridge

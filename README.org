@@ -1,8 +1,41 @@
 #+Title: fzlbpms
 
 * Dashboard
+** containers
 
-** aplicacoes disponiveis
+*** fzl-portainer
+http://localhost:9000/
+
+*** fzl-nginx
+
+*** fzl-nexus
+
+*** fzl-mysql
+
+*** fzl-fakemail
+
+*** fzl-kibana
+
+*** fzl-phpmyadmin
+
+*** fzl-overleaf
+
+*** fzl-php8.3-fpm
+
+*** fzl-php8.1-fpm
+
+*** fzl-mongodb
+
+*** fzl-postgresql
+
+*** fzl-karaf-camel-integration
+
+*** fzl-elasticsearch
+
+*** fzl-redis
+
+
+** aplicacoes disponiveis - ambiente dev
 *** http://localhost/ava211
 admin s3cret
 
@@ -11,11 +44,15 @@ admin s3cret
 
 *** http://localhost:8899/karafconsole soon, not so
 
+
+
 ** karaf
 *** acesso via console
 firefox http://localhost:8181/system/console
 
 *** ver logs
+
+
 
 ** [[http://localhost:8081][nexus]]
 http://localhost:8081/

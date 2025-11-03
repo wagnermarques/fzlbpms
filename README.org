@@ -2,6 +2,30 @@
 
 * Dashboard
 ** containers
+*** the stack
+#+name: the stack
+#+begin_src shell :session s1 :exports both :results output
+docker compose ps
+#+end_src
+
+#+RESULTS: the stack
+#+begin_example
+NAME                          IMAGE                                 COMMAND                  SERVICE                       CREATED          STATUS                      PORTS
+fzl-elasticsearch             fzlbpms-fzl-elasticsearch             "/bin/tini -- /usr/lâ¦"   fzl-elasticsearch             11 minutes ago   Up 11 minutes (unhealthy)   0.0.0.0:9200->9200/tcp, [::]:9200->9200/tcp, 9300/tcp
+fzl-fakemail                  gessnerfl/fake-smtp-server:latest     "java -Djava.securitâ¦"   fzl-fakemail                  11 minutes ago   Up 11 minutes               
+fzl-karaf-camel-integration   fzlbpms-fzl-karaf-camel-integration   "entrypoint.sh /opt/â¦"   fzl-karaf-camel-integration   11 minutes ago   Up 11 minutes               1099/tcp, 8101/tcp, 8181/tcp, 44444/tcp
+fzl-kibana                    fzlbpms-fzl-kibana                    "/bin/tini -- /usr/lâ¦"   fzl-kibana                    11 minutes ago   Up 11 minutes               0.0.0.0:5601->5601/tcp, [::]:5601->5601/tcp
+fzl-mongodb                   mongo:4.4                             "docker-entrypoint.sâ¦"   fzl-mongodb                   11 minutes ago   Up 11 minutes (healthy)     27017/tcp
+fzl-mysql                     mysql:8.0                             "docker-entrypoint.sâ¦"   fzl-mysql                     11 minutes ago   Up 11 minutes               33060/tcp, 0.0.0.0:3316->3306/tcp, [::]:3316->3306/tcp
+fzl-nexus                     fzlbpms-fzl-nexus                     "/opt/sonatype/nexusâ¦"   fzl-nexus                     11 minutes ago   Up 11 minutes (unhealthy)   0.0.0.0:8082->8082/tcp, [::]:8082->8082/tcp, 0.0.0.0:8088->8081/tcp, [::]:8088->8081/tcp
+fzl-nginx                     fzlbpms-fzl-nginx                     "/docker-entrypoint.â¦"   fzl-nginx                     11 minutes ago   Up 11 minutes               0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:8899-8900->8899-8900/tcp, [::]:8899-8900->8899-8900/tcp
+fzl-php8.1-fpm                fzlbpms-fzl-php8.1-fpm                "docker-php-entrypoiâ¦"   fzl-php8.1-fpm                11 minutes ago   Up 11 minutes               9000/tcp
+fzl-php8.3-fpm                fzlbpms-fzl-php8.3-fpm                "docker-entrypoint.sâ¦"   fzl-php8.3-fpm                11 minutes ago   Up 11 minutes               9000/tcp
+fzl-phpmyadmin                phpmyadmin/phpmyadmin                 "/docker-entrypoint.â¦"   fzl-phpmgyadmin               11 minutes ago   Up 11 minutes               0.0.0.0:8889->80/tcp, [::]:8889->80/tcp
+fzl-portainer                 portainer/portainer-ce:latest         "/portainer"             fzl-portainer                 13 days ago      Up 20 minutes               0.0.0.0:9000->9000/tcp, [::]:9000->9000/tcp, 8000/tcp, 9443/tcp, 0.0.0.0:9043->9043/tcp, [::]:9043->9043/tcp
+fzl-postgresql                fzlbpms-fzl-postgresql                "docker-entrypoint.sâ¦"   fzl-postgresql                11 minutes ago   Up 11 minutes (healthy)     0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+fzl-redis                     redis:7-alpine                        "docker-entrypoint.sâ¦"   fzl-redis                     11 minutes ago   Up 11 minutes (healthy)     6379/tcp
+#+end_example
 
 *** fzl-portainer
 http://localhost:9000/

@@ -1,42 +1,9 @@
 #+Title: Ambiente de desenvolvimento nodejs/angular
 
 * como utilizar
-** clonar o projeto DockerArtifacts
-#+name: 
-#+begin_src shell
-wgn@fedora:~$ git clone https://github.com/wagnermarques/DockerArtifacts.git
-Cloning into 'DockerArtifacts'...
-remote: Enumerating objects: 4708, done.
-remote: Counting objects: 100% (213/213), done.
-remote: Compressing objects: 100% (158/158), done.
-remote: Total 4708 (delta 33), reused 197 (delta 24), pack-reused 4495 (from 1)
-Receiving objects: 100% (4708/4708), 5.47 MiB | 1.76 MiB/s, done.
-Resolving deltas: 100% (2090/2090), done.
-#+end_src
 
 
 
-** entrar na pasta "./DockerArtifacts/ambiente-dev-nodejs-for-angular"
-#+name: 
-#+begin_src shell
-wgn@fedora:~$ cd DockerArtifacts/ambiente-dev-nodejs-for-angular/
-wgn@fedora:~/DockerArtifacts/ambiente-dev-nodejs-for-angular$ ls -la ./bin/
-total 16
-drwxr-xr-x 1 wgn wgn  120 jul  5 20:14 .
-drwxr-xr-x 1 wgn wgn   90 jul  5 20:14 ..
--rwxr-xr-x 1 wgn wgn   55 jul  5 20:14 docker-exec-it-bash.sh
--rw-r--r-- 1 wgn wgn   11 jul  5 20:14 envvars-setup.sh
--rwxr-xr-x 1 wgn wgn 2377 jul  5 20:14 ng-new.sh
--rwxr-xr-x 1 wgn wgn   24 jul  5 20:14 node.sh
--rwxr-xr-x 1 wgn wgn    0 jul  5 20:14 npm.sh
-#+end_src
-
-** buildar o container
-#+name: 
-#+begin_src shell
-wgn@fedora:~/DockerArtifacts/ambiente-dev-nodejs-for-angular/build-containers/nodejs$ docker compose build
-ambdev_angular  Built                                        
-#+end_src
 
 
 ** utilizar o container pra criar um projeto
@@ -105,4 +72,17 @@ wgn@fedora:~/DockerArtifacts/ambiente-dev-nodejs-for-angular$
 ** editando o projeto
 
 wgn@fedora:~/DockerArtifacts/ambiente-dev-nodejs-for-angular/src-projects/meuprojetoangular$ code .
+
+
+* troubleshots
+** The Fix: Force Extension Update/Clear Cache
+Manually navigate to your VS Code local storage directory. On Linux, this is usually:
+/home/wgn/.vscode/extensions/
+
+Find and delete any directories or files related to the Angular
+Language Service (angular.ng-template).
+
+This ensures VS Code is forced to download a fresh copy.
+
+* refs
 

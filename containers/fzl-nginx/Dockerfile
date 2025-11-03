@@ -2,7 +2,8 @@
 FROM nginx:stable-alpine
 
 # Removendo o arquivo de configuraÃ§Ã£o padrÃ£o para evitar conflitos
-RUN rm -f /etc/nginx/conf.d/default.conf
+RUN rm -f /etc/nginx/conf.d/01_fzlbpms.conf
+
 
 # Certifique-se que o caminho de origem (containers/fzl-nginx/nginx-conf.d/my_app.conf)
 COPY  nginx-conf.d /etc/nginx/conf.d

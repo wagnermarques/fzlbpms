@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "tasktoday": {
+    "fzlbpmsgui": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -14,9 +14,6 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/main.ts",
-            "polyfills": [
-              "zone.js"
-            ],
             "tsConfig": "tsconfig.app.json",
             "assets": [
               {
@@ -56,10 +53,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "tasktoday:build:production"
+              "buildTarget": "fzlbpmsgui:build:production"
             },
             "development": {
-              "buildTarget": "tasktoday:build:development"
+              "buildTarget": "fzlbpmsgui:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -70,10 +67,6 @@
         "test": {
           "builder": "@angular/build:karma",
           "options": {
-            "polyfills": [
-              "zone.js",
-              "zone.js/testing"
-            ],
             "tsConfig": "tsconfig.spec.json",
             "assets": [
               {
@@ -88,8 +81,5 @@
         }
       }
     }
-  },
-  "cli": {
-    "analytics": false
   }
 }

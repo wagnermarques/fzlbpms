@@ -1,4 +1,4 @@
-FROM openjdk:21-jdk-slim
+FROM eclipse-temurin:21-jdk-jammy
 
 # Set environment variables
 ENV KARAF_VERSION=4.4.7
@@ -6,26 +6,34 @@ ENV KARAF_HOME=/opt/karaf
 ENV PATH=$KARAF_HOME/bin:$PATH
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Instala TODAS as dependÍncias e cria o usu·rio em uma ˙nica camada
+# 1. Instala TODAS as depend√™ncias e cria o usu√°rio em uma √∫nica camada
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Ferramenta para troca de usu·rio (essencial para a soluÁ„o)
+    # Ferramenta para troca de usu√°rio (essencial para a solu√ß√£o)
     gosu \
-    # DependÍncias do Docker CLI
+    # Depend√™ncias do Docker CLI
     apt-transport-https gnupg lsb-release \
-    # Utilit·rios de sistema e desenvolvimento
+    # Utilit√°rios de sistema e desenvolvimento
     wget curl git sudo ca-certificates \
     python3 python3-pip python3-venv \
     ffmpeg build-essential make cmake clang \
     && rm -rf /var/lib/apt/lists/* \
-    # Cria o usu·rio e o grupo de forma limpa
+    # Cria o usu√°rio e o grupo de forma limpa
     && groupadd -r appuser && useradd -r -g appuser -d /home/appuser -s /bin/bash appuser \
     && mkdir -p /home/appuser
 
+
 # 2. Instala o Docker CLI
-RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+# if jdk image use debian like openjdk
+#RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+#    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+#    && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
+#    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
+
 
 # 3. Adiciona o appuser ao grupo do docker
 RUN if ! getent group docker >/dev/null; then groupadd -r docker; fi \
@@ -37,22 +45,22 @@ RUN wget -q "https://archive.apache.org/dist/karaf/${KARAF_VERSION}/apache-karaf
     && mv "/opt/apache-karaf-${KARAF_VERSION}" "${KARAF_HOME}" \
     && rm /tmp/karaf.tar.gz
 
-# 5. Copia os arquivos necess·rios e define as permissıes
+# 5. Copia os arquivos necess√°rios e define as permiss√µes
 COPY --chown=appuser:appuser ./custom_karaf_etc/etc-from-4.4.7/ ${KARAF_HOME}/etc/
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chown -R appuser:appuser /home/appuser
 
-# Expıe as portas do Karaf
+# Exp√µe as portas do Karaf
 EXPOSE 8101 8181 1099 44444
 
-# Define o diretÛrio de trabalho
+# Define o diret√≥rio de trabalho
 WORKDIR /home/appuser
 
 #COPY ./custom_karaf_etc/etc-from-4.4.7/ /opt/karaf/etc/
 
-# 6. Define o entrypoint. O container iniciar· como root para executar este script.
+# 6. Define o entrypoint. O container iniciar√° como root para executar este script.
 ENTRYPOINT ["entrypoint.sh"]
 
-# 7. Define o comando padr„o. Ser· passado para o entrypoint.sh
+# 7. Define o comando padr√£o. Ser√° passado para o entrypoint.sh
 CMD ["/opt/karaf/bin/karaf", "run"]

@@ -7,9 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-nginx
     ports:
-      - "80:80" #ava211
-      - "8899:8899" #fzlbpms internal apps
-      - "8900:8900" # moodleun
+      - "80:80"
+      - "8899:8899" #01_fzlbpms.conf -> fzlbpms internal apps
+      - "8900:8900" # 
     volumes:
       - ./src-projects/var_www/html:/var/www/html:rw #na conf do nginx: root /var/www/html;
     networks:
@@ -40,7 +40,7 @@ services:
        - MOODLE_MNET_DISPATCHER_MODE=off
       
   fzl-mysql:
-    image: mysql:8.0
+    image: mysql:8.4.6
     container_name: fzl-mysql
     ports:
       - "3316:3306"
@@ -51,8 +51,11 @@ services:
       MYSQL_PASSWORD: 1234
     volumes:
       - ./src-projects:/sql-scripts
-      - /home/wgn/fzlbpms/containers/fzl-mysql/mysql-data:/var/lib/mysql
+      - ./containers/fzl-mysql/mysql-data:/var/lib/mysql
+      #- edutec2rodrr:/var/lib/mysql
+      #- /home/wgn/fzlbpms/containers/fzl-mysql/mysql-data:/var/lib/mysql
       #- fzl-mysql-data:/var/lib/mysql
+      
     networks:
       - fzl-network
 

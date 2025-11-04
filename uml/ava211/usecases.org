@@ -1,8 +1,33 @@
-#+Title: Use Cases
+#+Title: Use Cases and Activity Diagrams
+
+* Use Case Example: Authentication System
 
 #+BEGIN_SRC plantuml
 @startuml
-Alice -> Bob: Hello
-Bob --> Alice: Hi!
+left to right direction
+actor "User" as user
+rectangle "Authentication System" {
+  usecase "Login" as UC_LOGIN
+  usecase "Logout" as UC_LOGOUT
+}
+user -- UC_LOGIN
+user -- UC_LOGOUT
+@enduml
+#+END_SRC
+
+* Activity Diagram Example: Login Process
+
+#+BEGIN_SRC plantuml
+@startuml
+title Login Activity Diagram
+
+start
+:Enter Credentials;
+if (Credentials are valid?) then (yes)
+  :Display Welcome Screen;
+else (no)
+  :Display Error Message;
+endif
+stop
 @enduml
 #+END_SRC

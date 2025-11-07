@@ -1,0 +1,6 @@
+#+Title: moodle commands
+
+clear cache
+docker exec -it fzl-php8.3-fpm php ava211/admin/cli/purge_caches.php
+
+php ava211/admin/cli/install_database.php --adminuser=moodleadmin --adminpass=1234 --adminemail=wagner.marques3@etec.sp.gov.br --agree-license --fullname=avaEtecZl --shortname=ava211 --supportemail=wagnerdocri@gmail.com

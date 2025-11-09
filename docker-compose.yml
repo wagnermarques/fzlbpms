@@ -275,6 +275,16 @@ services:
     #  - fzl-network
     
 
+  fzl-rust-restservices:
+    build:
+      context: ./containers/fzl-rust-restservices
+      dockerfile: Dockerfile
+    container_name: fzl-rust-restservices
+    ports:
+      - "8089:8080"
+    networks:
+      - fzl-network
+
 networks:
   fzl-network:
     driver: bridge

@@ -1,0 +1,30 @@
+{
+  "productName": "fzlbpmsadmin",
+  "version": "0.1.0",
+  "identifier": "com.tauri.moodle-admin",
+  "build": {
+    "frontendDist": "www/browser"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Moodle Admin",
+        "width": 1200,
+        "height": 800
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["rpm", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+[package]
+name = "fzlbpmsadmin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# DependÃªncias do Tauri v2 (RC - Release Candidate)
+tauri = { version = "2.0.0-rc.13", features = ["tray-icon"] }
+tauri-plugin-http = "2.0.0-rc.5"
+tauri-plugin-shell = "2.0.0-rc.5"
+
+# Suas dependÃªncias originais
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+dotenv = "0.15.0"
+
+[build-dependencies]
+tauri-build = { version = "2.5.1", features = [] }

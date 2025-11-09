@@ -1,0 +1,9 @@
+#+Title: Fzlbpms Administrator
+
+It is a rust tauri application
+
+* to build it and run
+to build: cd tauri-src/ && cargo tauri build
+to run: cd tauri-src/ && cargo tauri dev
+or run the binary: ./target/release/binaryappcreated
+

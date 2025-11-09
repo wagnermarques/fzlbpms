@@ -1,0 +1,5 @@
+target
+#the tauri shows www in the browser
+#this code is generated from build of front-end by npm command
+#so we do not want to send it to github
+www

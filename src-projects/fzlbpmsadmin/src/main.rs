@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod moodle_api;
+mod containers;
 
 use dotenv::dotenv;
 use std::env;
@@ -67,7 +68,13 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_site_info, get_users, get_courses])
+        .invoke_handler(tauri::generate_handler![
+            get_site_info,
+            get_users,
+            get_courses,
+            containers::list_running_containers,
+            containers::get_container_logs
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

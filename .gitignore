@@ -4,9 +4,24 @@ containers/fzl-elasticsearch/es-data
 containers/fzl-mongodb/mongodb-data
 containers/fzl-nexus/nexus-data
 containers/fzl-redis/redis-data
+containers/fzl-mysql/mysql-data
 containers/fzl-php8.3-fpm/moodledata
-fzl-php8.3-fpm/moodledata/
+
+#theese files is generated after to starts the portainer container
+#we don't want to send it to repo
+containers/fzl-portainer/portainer-data/portainer.pub
+containers/fzl-portainer/portainer-data/portainer.key
+containers/fzl-portainer/portainer-data/portainer.db
+containers/fzl-portainer/portainer-data/docker_config/config.json
+containers/fzl-portainer/portainer-data/chisel/private-key.pem
+containers/fzl-portainer/portainer-data/certs/cert.pem
+containers/fzl-portainer/portainer-data/certs/key.pem
+
+#the web apps sites lives in this html dir
 src-projects/var_www/html/
+
+#moodle data
+fzl-php8.3-fpm/moodledata/
 
 .DS_Store
 Thumbs.db

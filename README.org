@@ -1,5 +1,9 @@
 #+Title: fzlbpms
 
+* Developers
+** fzpbmsadmin app
+wgn@fedora:/run/media/wgn/ext4/Projects-Srcs/fzlbpms/src-projects/fzlbpmsadmin/angular-ui$ npm run tauri:dev
+
 * Dashboard
 ** containers
 *** the stack
@@ -89,6 +93,7 @@ https://my.sonatype.com/
 
 
 * instalation
+
 
 * apps installations
 ** moodle

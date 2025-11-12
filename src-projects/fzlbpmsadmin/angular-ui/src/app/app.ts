@@ -1,35 +1,45 @@
-import { Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
-import { invoke } from '@tauri-apps/api/tauri';
+import { Component, ViewChild, HostListener } from '@angular/core';
+import { RouterOutlet, RouterLink } from '@angular/router';
+import { invoke } from '@tauri-apps/api/core';
+import { FixedHead } from './components/layout/fixed-head/fixed-head';
+import { FixedStatusbar } from "./components/layout/fixed-statusbar/fixed-statusbar";
+
+import { MatSidenavModule, MatDrawer } from '@angular/material/sidenav';
+import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
 
 @Component({
   selector: 'app-root',
-  standalone: true,
-  imports: [RouterOutlet],
-  template: `
-    <main class="main">
-      <button (click)="listContainers()">List Containers</button>
-    </main>
-    <router-outlet />
-  `,
-  styles: `
-    .main {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-  `
+  templateUrl: './app.html',
+  styleUrl: './app.css',
+  imports: [
+    RouterOutlet, 
+    RouterLink,
+    MatSidenavModule,
+    MatListModule,
+    MatIconModule,
+    FixedHead, 
+    FixedStatusbar
+  ],
 })
 export class App {
-  protected readonly title = signal('angular-ui');
+  @ViewChild('drawer') drawer!: MatDrawer;
+  isSmallScreen = false;
 
-  async listContainers() {
-    try {
-      const containers = await invoke('list_running_containers');
-      console.log(containers);
-    } catch (e) {
-      console.error(e);
-    }
+  constructor() {
+    this.checkScreenSize();
+  }
+
+  @HostListener('window:resize', ['$event'])
+  onResize() {
+    this.checkScreenSize();
+  }
+  
+  toggleDrawer() {
+    this.drawer.toggle();
+  }
+
+  checkScreenSize() {
+    this.isSmallScreen = window.innerWidth < 768;
   }
 }

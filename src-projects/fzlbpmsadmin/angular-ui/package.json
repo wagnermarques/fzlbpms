@@ -4,7 +4,7 @@
   "scripts": {
     "build-dev": "ng build --configuration development",
     "tauri:build-dev": "npm run build-dev && cd ../ && cargo tauri build",
-    "tauri:dev": "npm run tauri:build-dev && cd ../ && cargo tauri dev",
+    "tauri:dev": "concurrently \"ng build --configuration development --watch\" \"cd ../ && cargo tauri dev\"",
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
@@ -43,6 +43,7 @@
     "@angular/cli": "^20.3.9",
     "@angular/compiler-cli": "^20.3.0",
     "@types/jasmine": "~5.1.0",
+    "concurrently": "^9.2.1",
     "jasmine-core": "~5.9.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",

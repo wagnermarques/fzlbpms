@@ -27,6 +27,7 @@
 
 #echo " ==> Permissions set."
 
+stack1_containers=( "fzl-portainer" "fzl-mysql"  "fzl-postgresql" "fzl-nginx" "fzl-php8.3-fpm")
 
 
 echo " ==> --- Docker Compose Execution ---"
@@ -37,6 +38,17 @@ if [ "$#" -eq 0 ]; then
     # If no parameters, start all services in detached mode
     docker-compose up -d
 else
+
+    if [ "$1" == "stack1" ]; then
+        echo " ==> Starting Stack 1 containers only..."
+        for container in "${stack1_containers[@]}"; do
+            docker-compose up -d $container --remove-orphans
+        done
+
+        echo " ==> Stack 1 startup complete. Run 'docker-compose ps' to check status."
+        exit 0
+    fi
+
     echo "Starting specified service(s): $*"
     # If parameters are provided, pass them to 'docker-compose up -d'
     # The "$@" expands to all arguments received by the script.

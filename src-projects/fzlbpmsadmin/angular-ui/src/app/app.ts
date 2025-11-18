@@ -7,6 +7,7 @@ import { FixedStatusbar } from "./components/layout/fixed-statusbar/fixed-status
 import { MatSidenavModule, MatDrawer } from '@angular/material/sidenav';
 import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
+import { MatDividerModule } from '@angular/material/divider';
 
 @Component({
   selector: 'app-root',
@@ -18,6 +19,7 @@ import { MatIconModule } from '@angular/material/icon';
     MatSidenavModule,
     MatListModule,
     MatIconModule,
+    MatDividerModule,
     FixedHead, 
     FixedStatusbar
   ],

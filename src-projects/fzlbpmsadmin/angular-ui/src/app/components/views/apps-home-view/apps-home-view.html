@@ -1,1 +1,18 @@
-<p>apps-home-view works!</p>
+<h2>Projects</h2>
+
+@for (project of projects(); track project.name) {
+  <div>
+    <h3>{{ project.name }}</h3>
+    <span class="link" (click)="openUrl(project.url)">{{ project.url }}</span>
+  </div>
+} @empty {
+  <p>No projects found.</p>
+}
+
+<h2>Install New Application</h2>
+
+<div>
+  <button mat-raised-button color="primary" (click)="installMoodle()">Install Moodle</button>
+  <button mat-raised-button color="accent" (click)="installJoomla()">Install Joomla</button>
+  <button mat-raised-button color="warn" (click)="createAngularApp()">Create Angular App</button>
+</div>

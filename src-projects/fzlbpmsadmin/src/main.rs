@@ -5,6 +5,8 @@ mod moodle_api;
 mod containers;
 mod cmd;
 mod containers_tauri_commands;
+mod projects;
+mod projects_tauri_commands;
 
 use dotenv::dotenv;
 use std::env;
@@ -48,7 +50,8 @@ fn main() {
             containers_tauri_commands::list_running_containers,
             containers_tauri_commands::get_container_logs,
             containers_tauri_commands::get_docker_compose_services,
-            containers_tauri_commands::run_docker_compose_up
+            containers_tauri_commands::run_docker_compose_up,
+            projects_tauri_commands::list_projects
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

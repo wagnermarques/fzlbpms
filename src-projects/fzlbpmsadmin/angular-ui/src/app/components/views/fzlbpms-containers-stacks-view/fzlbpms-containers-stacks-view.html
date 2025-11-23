@@ -1,0 +1,13 @@
+<h2>Docker Compose Services</h2>
+
+<form [formGroup]="form" (ngSubmit)="onSubmit()">
+  @for (service of services(); track service) {
+    <div>
+      <mat-checkbox [formControlName]="service">{{ service }}</mat-checkbox>
+    </div>
+  } @empty {
+    <p>No services found in docker-compose.yml.</p>
+  }
+
+  <button type="submit" [disabled]="form.pristine">Run Selected Services</button>
+</form>

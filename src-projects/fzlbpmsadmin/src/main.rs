@@ -4,6 +4,7 @@
 mod moodle_api;
 mod containers;
 mod cmd;
+mod containers_tauri_commands;
 
 use dotenv::dotenv;
 use std::env;
@@ -40,11 +41,14 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            cmd::fzlbpms_version,
             cmd::get_site_info,
             cmd::get_users,
             cmd::get_courses,
-            containers::list_running_containers,
-            containers::get_container_logs
+            containers_tauri_commands::list_running_containers,
+            containers_tauri_commands::get_container_logs,
+            containers_tauri_commands::get_docker_compose_services,
+            containers_tauri_commands::run_docker_compose_up
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

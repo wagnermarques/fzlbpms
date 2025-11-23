@@ -1,6 +1,11 @@
 use serde::Serialize;
 use crate::moodle_api::{MoodleClient, SiteInfo, User, Course};
 
+#[tauri::command]
+pub fn fzlbpms_version() -> String {
+    "v0.0.0!".into()
+}
+
 #[derive(Debug, Serialize)]
 pub enum CommandError {
     Moodle(String),

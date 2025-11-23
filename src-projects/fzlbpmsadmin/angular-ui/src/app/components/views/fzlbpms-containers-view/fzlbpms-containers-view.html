@@ -1,1 +1,13 @@
-<p>fzlbpms-containers-view works!</p>
+<h2>Running Containers</h2>
+
+@for (container of containers(); track container.id) {
+  <div>
+    <a href="#" (click)="getContainerLogs(container.id)">{{ container.name }}</a>
+  </div>
+} @empty {
+  <p>No containers running.</p>
+}
+
+
+  <h2>Containers Stacks</h2>
+  <a href="fzlbpms-containers-stacks-view">Container Stacks</a>

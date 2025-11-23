@@ -1,9 +1,11 @@
 use bollard::Docker;
 use futures::stream::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use bollard::query_parameters::{ListContainersOptionsBuilder, LogsOptionsBuilder};
+use std::fs;
+use serde_yaml;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Container {
     pub id: String,
     pub name: String,
@@ -12,12 +14,16 @@ pub struct Container {
     pub status: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct DockerCompose {
+    services: serde_yaml::Mapping,
+}
+
 /// Connect to the Docker daemon.
 pub async fn connect() -> Result<Docker, bollard::errors::Error> {
     Docker::connect_with_local_defaults()
 }
 
-#[tauri::command]
 /// List all running containers.
 pub async fn list_running_containers() -> Result<Vec<Container>, String> {
     let docker = connect().await.map_err(|e| e.to_string())?;
@@ -37,7 +43,6 @@ pub async fn list_running_containers() -> Result<Vec<Container>, String> {
     Ok(result)
 }
 
-#[tauri::command]
 /// Get logs for a specific container.
 pub async fn get_container_logs(
     container_id: &str,
@@ -56,4 +61,19 @@ pub async fn get_container_logs(
     }
 
     Ok(logs)
+}
+
+/// Get the services from the docker-compose.yml file.
+pub async fn get_docker_compose_services() -> Result<Vec<String>, String> {
+    let path = "/run/media/wgn/ext4/Projects-Srcs/fzlbpms/docker-compose.yml";
+    let file_content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let docker_compose: DockerCompose = serde_yaml::from_str(&file_content).map_err(|e| e.to_string())?;
+
+    let services = docker_compose
+        .services
+        .keys()
+        .map(|k| k.as_str().unwrap_or_default().to_string())
+        .collect();
+
+    Ok(services)
 }

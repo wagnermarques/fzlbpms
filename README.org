@@ -1,8 +1,10 @@
 #+Title: fzlbpms
+#+SEQ_TODO: todo(d) maybe(m) onwork(o)
 
 * Developers
 ** fzpbmsadmin app
 wgn@fedora:/run/media/wgn/ext4/Projects-Srcs/fzlbpms/src-projects/fzlbpmsadmin/angular-ui$ npm run tauri:dev
+
 
 * Dashboard
 ** containers
@@ -30,6 +32,22 @@ fzl-portainer                 portainer/portainer-ce:latest         "/portainer"
 fzl-postgresql                fzlbpms-fzl-postgresql                "docker-entrypoint.sâ¦"   fzl-postgresql                11 minutes ago   Up 11 minutes (healthy)     0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
 fzl-redis                     redis:7-alpine                        "docker-entrypoint.sâ¦"   fzl-redis                     11 minutes ago   Up 11 minutes (healthy)     6379/tcp
 #+end_example
+
+fzl-elasticsearch           
+fzl-fakemail                
+fzl-karaf-camel-integration 
+fzl-kibana                  
+fzl-mongodb                 
+fzl-mysql                   
+fzl-nexus                   
+fzl-nginx                   
+fzl-php8.1-fpm              
+fzl-php8.3-fpm              
+fzl-phpmyadmin              
+fzl-portainer               
+fzl-postgresql              
+fzl-redis                   
+
 
 *** fzl-portainer
 http://localhost:9000/
@@ -95,9 +113,32 @@ https://my.sonatype.com/
 * instalation
 
 
+
 * apps installations
 ** moodle
 ** yii2 apps
 
+
+* TASKS
+**  redefine moodle admin user
+
+#+name: ./bin/moodle/reset-password.sh
+#+begin_src shell
+  echo $(pwd)
+  ./bin/moodle/reset-password.sh
+#+end_src
+
+#+RESULTS: ./bin/moodle/reset-password.sh
+| /run/media/wgn/ext4/Projects-Srcs/fzlbpms |        |      |     |                |     |                                                   |                      |                   |
+| Running...                                | docker | exec | -it | fzl-php8.3-fpm | php | /var/www/html/moodle/admin/cli/reset_password.php | --username=useradmin | --password=s3cret |
+
+
+
+
+
+
+* emacs anots
+** tasks notes
+C-c C-d on #+SEQ_TODO: todo(d) maybe(m) onwork(o)
 
 

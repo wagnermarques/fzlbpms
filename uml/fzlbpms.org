@@ -1,0 +1,21 @@
+#+Title: FZLBPMS Specs
+
+
+#+name: use cases 
+#+begin_src plantuml  :file use-cases.png :exports results
+@startuml
+left to right direction
+actor "User" as user
+rectangle "Desktop Apps Confs" {
+  usecase "Config App data-dir" as UC_CONF_DATA_DIR_IN_EACH_APP
+  usecase "Opens Apps" as UC_OPEN_APPS
+}
+user -- UC_CONF_DATA_DIR_IN_EACH_APP
+user -- UC_OPEN_APPS
+@enduml
+#+end_src
+
+#+RESULTS: use cases
+[[file:use-cases.png]]
+
+

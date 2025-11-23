@@ -1,0 +1,120 @@
+### Moodle Api RestClient - Emacs Restclient
+#
+# This file contains example requests to interact with the moodle rest API.
+# You can execute these requests using the `restclient-mode` in Emacs.
+###
+
+
+# Variables
+@host = http://localhost:ava211/api/v1
+
+@api_key = your-secret-api-key
+
+###
+# ==============================================================================
+# == Category Endpoints
+# ==============================================================================
+
+# @name create_category
+# Creates a new category.
+# If `parentId` is omitted, it's created at the application's root level.
+POST {{host}}/categories
+Content-Type: application/json
+X-API-KEY: {{api_key}}
+
+{
+  "name": "My New Category From REST Client",
+  "description": "A category for testing purposes.",
+  "parentId": null
+}
+
+###
+
+# @name list_categories
+# Lists all available categories in a paginated way.
+GET {{host}}/categories?page=0&size=10&sort=name,asc
+X-API-KEY: {{api_key}}
+
+###
+
+# @name get_category_with_courses
+# Gets a specific category by its local ID and lists the courses within it.
+# Change the `1` in the URL to the ID of an existing category.
+GET {{host}}/categories/1
+X-API-KEY: {{api_key}}
+
+
+###
+# ==============================================================================
+# == Course Endpoints
+# ==============================================================================
+
+# @name list_courses
+# Lists all courses associated with the application.
+GET {{host}}/courses
+X-2-API-KEY: {{api_key}}
+
+###
+
+# @name create_course
+# Creates a new course and optionally enrolls teachers and students.
+# Users are identified by their username or Central de Acessos ID.
+# `categoryId` is the local ID from the categories table.
+POST {{host}}/courses
+Content-Type: application/json
+X-API-KEY: {{api_key}}
+
+{
+  "fullname": "New Course via REST Client",
+  "shortname": "REST-COURSE-01",
+  "categoryId": 1,
+  "startDate": "2025-09-01",
+  "endDate": "2025-12-20",
+  "teachers": ["teacher.username1", "123456"],
+  "students": ["student.username1", "student.username2", "789012"]
+}
+
+###
+
+# @name get_course
+# Gets details for a specific course by its local ID.
+# Change `1` to the ID of a course you want to inspect.
+GET {{host}}/courses/1
+X-API-KEY: {{api_key}}
+
+###
+
+# @name enroll_users
+# Enrolls a list of users into an existing course.
+# Role can be "student" or "teacher".
+# Change `1` in the URL to a valid course ID.
+POST {{host}}/courses/1/enroll
+Content-Type: application/json
+X-API-KEY: {{api_key}}
+
+{
+  "role": "student",
+  "users": ["new.student1", "987654"]
+}
+
+###
+
+# @name unenroll_users
+# Unenrolls a list of users from an existing course.
+# Change `1` in the URL to a valid course ID.
+POST {{host}}/courses/1/unenroll
+Content-Type: application/json
+X-API-KEY: {{api_key}}
+
+{
+  "role": "student",
+  "users": ["student.to.remove", "987654"]
+}
+
+###
+
+# @name get_grades
+# Retrieves the gradebook for a specific course.
+# Change `1` in the URL to a valid course ID.
+GET {{host}}/courses/1/grades
+X-API-KEY: {{api_key}}

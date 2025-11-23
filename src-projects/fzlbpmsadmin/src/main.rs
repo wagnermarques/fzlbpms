@@ -1,43 +1,13 @@
+//aplica windows_subsystem = "windows" to hide console window on Windows in release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod moodle_api;
 mod containers;
+mod cmd;
 
 use dotenv::dotenv;
 use std::env;
 use tauri::{Manager, Emitter};
-use moodle_api::{MoodleClient, SiteInfo, User, Course};
-use serde::Serialize;
-
-#[derive(Debug, Serialize)]
-pub enum CommandError {
-    Moodle(String),
-}
-
-impl From<reqwest::Error> for CommandError {
-    fn from(e: reqwest::Error) -> Self {
-        CommandError::Moodle(e.to_string())
-    }
-}
-
-#[tauri::command]
-async fn get_site_info(moodle_url: &str, token: &str) -> Result<SiteInfo, CommandError> {
-    let client = MoodleClient::new(moodle_url.to_string(), token.to_string());
-    Ok(client.get_site_info().await?)
-}
-
-#[tauri::command]
-async fn get_users(moodle_url: &str, token: &str) -> Result<Vec<User>, CommandError> {
-    let client = MoodleClient::new(moodle_url.to_string(), token.to_string());
-    // Example: get users by email
-    Ok(client.get_users_by_field("email", &[""]).await?)
-}
-
-#[tauri::command]
-async fn get_courses(moodle_url: &str, token: &str) -> Result<Vec<Course>, CommandError> {
-    let client = MoodleClient::new(moodle_url.to_string(), token.to_string());
-    Ok(client.get_courses().await?)
-}
 
 #[derive(Clone, serde::Serialize)]
 struct MoodleConfig {
@@ -60,6 +30,7 @@ fn main() {
                 token: moodle_token,
             })?;
 
+            //only debug this code in debug mode
             #[cfg(debug_assertions)]
             {
                 let window = app.get_webview_window("main").unwrap();
@@ -69,9 +40,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_site_info,
-            get_users,
-            get_courses,
+            cmd::get_site_info,
+            cmd::get_users,
+            cmd::get_courses,
             containers::list_running_containers,
             containers::get_container_logs
         ])

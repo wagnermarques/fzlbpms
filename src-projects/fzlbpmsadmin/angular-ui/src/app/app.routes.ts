@@ -3,6 +3,11 @@ import { ViewHome } from './components/views/view-home/view-home';
 import { ViewConfig } from './components/views/view-config/view-config';
 import { ViewBase }   from './components/views/view-base/view-base';
 
+import { FzlbpmsHomeView } from './components/views/fzlbpms-home-view/fzlbpms-home-view';
+import { FzlbpmsContainersView } from './components/views/fzlbpms-containers-view/fzlbpms-containers-view';
+import { DesktopHomeView } from './components/views/desktop-home-view/desktop-home-view'
+import { AppsHomeView } from './components/views/apps-home-view/apps-home-view';
+
 export const routes: Routes = [
 
     {
@@ -14,10 +19,27 @@ export const routes: Routes = [
         path:'baseview',
         component: ViewBase
     },
-
     {
         path:'configs',
         component: ViewConfig
+    },
+    {
+        path:'fzlbpmshomevew',
+        component: FzlbpmsHomeView
+    },
+    {
+        path:'appshomevew',
+        component: AppsHomeView
+    },
+    {
+        path:'desktophomeview',
+        component: DesktopHomeView
+
+    },
+    {
+        path:'fzlbpms-containers-vew',
+        component: FzlbpmsContainersView
     }
+
 
 ];

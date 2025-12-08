@@ -1,9 +1,89 @@
 #+Title: fzlbpms
 #+SEQ_TODO: todo(d) maybe(m) onwork(o)
 
-* Developers
-** fzpbmsadmin app
-wgn@fedora:/run/media/wgn/ext4/Projects-Srcs/fzlbpms/src-projects/fzlbpmsadmin/angular-ui$ npm run tauri:dev
+This is a project with BPMS in mind
+
+BPMS is a environment where you design some kind of diagram like BPMN
+or a some graph or other that represent a design of workflow that can
+be instantiated.
+
+The workflow represent, in general, a business process or just a
+sequence of steps of web services or code to be processed.
+
+With this mindset, this project is a set of containers and softwares
+tools to acomplish this task
+
+
+
+* Usage in develpment
+
+1) install: git, docker and docker compose tools nodejs npm 
+
+2) clone the fzlbmps repo
+
+I'm on a debian 13 virtual machine... so I've cloned the fzlbpms with
+this command below...
+
+mkdir -p  $HOME/mvn/kvm_share/
+
+cd $HOME/mvn/kvm_share/
+
+git clone https://github.com/wagnermarques/fzlbpms.git
+
+cd fzlbpms
+
+3) starts the containers nginx, php8.3-fpm and postgresql
+
+   docker compose up --build fzl-nginx fzl-php8.3-fpm fzl-postgresql
+
+4) acessing the php test page from nginx and php8.3
+   
+accessing in the browser:
+
+http://localhost
+
+
+
+
+http://localhost/teste/
+
+
+5) Starts the admin gui
+
+Admin Gui is a tauri (like Electron) desktop application, somethink
+like vscode arquitecture. It is a tauri that shows angular with a rust
+backend process.
+
+so install rust. Here we are using debian 13
+
+#+name: 
+#+begin_src shell
+sudo apt update
+sudo apt install curl build-essential
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+rustc --version
+cargo --version
+#+end_src
+
+Now, starts the admingui app
+
+#+name: 
+#+begin_src shell
+   wgn@debian:~/mvn/kvm_share/fzlbpms$ pwd
+  /home/wgn/mvn/kvm_share/fzlbpms
+  wgn@debian:~/mvn/kvm_share/fzlbpms$ cd src-projects/
+  fzlbpmsadmin/  karaf_bundles/ karaf_sources/ mvn-artifacts/ var_www/       
+  wgn@debian:~/mvn/kvm_share/fzlbpms$ cd src-projects/fzlbpmsadmin/
+  angular-ui/ gen/        icons/      src/        
+  wgn@debian:~/mvn/kvm_share/fzlbpms$ cd src-projects/fzlbpmsadmin/angular-ui/
+  .gemini/ public/  src/     
+  wgn@debian:~/mvn/kvm_share/fzlbpms$ cd src-projects/fzlbpmsadmin/angular-ui/
+  wgn@debian:~/mvn/kvm_share/fzlbpms/src-projects/fzlbpmsadmin/angular-ui$ npm install
+  wgn@debian:~/mvn/kvm_share/fzlbpms/src-projects/fzlbpmsadmin/angular-ui$ npm run tauri:dev
+
+#+end_src
+
 
 
 * Dashboard

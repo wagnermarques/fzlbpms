@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "@angular/language-server": "^20.3.0"
+    "@angular/language-server": "^20.3.0",
+    "@google/gemini-cli": "^0.22.2"
   }
 }

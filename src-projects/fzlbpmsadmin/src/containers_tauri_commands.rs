@@ -22,12 +22,15 @@ pub async fn get_docker_compose_services() -> Result<Vec<String>, String> {
     containers::get_docker_compose_services().await
 }
 
+use std::env;
+
 #[tauri::command]
 /// Run the docker-compose-up.sh script with the selected services.
 pub async fn run_docker_compose_up(app: AppHandle, services: Vec<String>) -> Result<String, String> {
-    let script_path = "/run/media/wgn/ext4/Projects-Srcs/fzlbpms/docker-compose-up.sh";
+    let fzlbpms_home = env::var("FZLBPMS_HOME").map_err(|e| e.to_string())?;
+    let script_path = format!("{}/docker-compose-up.sh", fzlbpms_home);
     let output = app.shell().command("sh")
-        .arg(script_path)
+        .arg(&script_path)
         .args(services)
         .output()
         .await

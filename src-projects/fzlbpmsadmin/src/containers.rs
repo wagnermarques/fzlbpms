@@ -63,10 +63,13 @@ pub async fn get_container_logs(
     Ok(logs)
 }
 
+use std::env;
+
 /// Get the services from the docker-compose.yml file.
 pub async fn get_docker_compose_services() -> Result<Vec<String>, String> {
-    let path = "/run/media/wgn/ext4/Projects-Srcs/fzlbpms/docker-compose.yml";
-    let file_content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let fzlbpms_home = env::var("FZLBPMS_HOME").map_err(|e| e.to_string())?;
+    let path = format!("{}/docker-compose.yml", fzlbpms_home);
+    let file_content = fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
     let docker_compose: DockerCompose = serde_yaml::from_str(&file_content).map_err(|e| e.to_string())?;
 
     let services = docker_compose

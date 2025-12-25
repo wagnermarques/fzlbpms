@@ -10,13 +10,55 @@ mod projects_tauri_commands;
 
 use dotenv::dotenv;
 use std::env;
-use tauri::{Manager, Emitter};
+use tauri::{Manager, Emitter, AppHandle};
+
 
 #[derive(Clone, serde::Serialize)]
 struct MoodleConfig {
     url: String,
     token: String,
 }
+
+#[derive(Clone, serde::Serialize)]
+struct LogPayload {
+    message: String,
+    level: String,
+    timestamp: String,
+}
+
+fn setup_logger(app_handle: AppHandle) -> Result<(), fern::InitError> {
+    let frontend_handle = app_handle.clone();
+
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "[{}][{}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Debug)
+        // Chain a dispatch that prints to the console
+        .chain(std::io::stdout())
+        // Chain a dispatch that sends logs to the frontend
+        .chain(fern::Dispatch::new()
+            .level(log::LevelFilter::Info) // Only send Info and above to frontend
+            .chain(fern::Output::call(move |record| {
+                let payload = LogPayload {
+                    message: record.args().to_string(),
+                    level: record.level().to_string(),
+                    timestamp: chrono::Local::now().to_string(),
+                };
+                // Emit the payload as a struct. Tauri will serialize it.
+                let _ = frontend_handle.emit("log-message", payload);
+            }))
+        )
+        .apply()?;
+
+    Ok(())
+}
+
 
 fn main() {
     dotenv().ok();
@@ -25,9 +67,17 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
+            // Setup the logger
+            if let Err(e) = setup_logger(app.handle().clone()) {
+                eprintln!("Error setting up logger: {}", e);
+            }
+
+            log::info!("Logger initialized.");
+
             let moodle_url = env::var("MOODLE_URL").unwrap_or_else(|_| "https://your-moodle-site.com".to_string());
             let moodle_token = env::var("MOODLE_TOKEN").unwrap_or_else(|_| "your-moodle-token".to_string());
 
+            log::info!("Emitting Moodle config to the frontend.");
             app.get_webview_window("main").unwrap().emit("moodle_config", MoodleConfig {
                 url: moodle_url,
                 token: moodle_token,
@@ -36,9 +86,10 @@ fn main() {
             //only debug this code in debug mode
             #[cfg(debug_assertions)]
             {
+                log::debug!("Opening devtools.");
                 let window = app.get_webview_window("main").unwrap();
                 window.open_devtools();
-                window.close_devtools();
+                // window.close_devtools(); // Closing it immediately might not be what you want for debugging
             }
             Ok(())
         })

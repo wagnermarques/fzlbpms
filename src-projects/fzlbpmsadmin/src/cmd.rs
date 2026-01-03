@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter};
 use std::env;
 use std::path::Path;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+
 use git2::Repository;
 use tauri_plugin_shell::ShellExt;
 use tempfile;
@@ -86,7 +86,7 @@ pub async fn get_courses(moodle_url: &str, token: &str) -> Result<Vec<Course>, C
     Ok(client.get_courses().await?)
 }
 
-async fn create_config_php(app: &AppHandle, moodle_path: &Path, moodledata_path: &Path, config: &MoodleConfig) -> Result<(), CommandError> {
+async fn create_config_php(app: &AppHandle, moodle_path: &Path, _moodledata_path: &Path, config: &MoodleConfig) -> Result<(), CommandError> {
     let config_php_path = moodle_path.join("config.php");
     let temp_dir = tempfile::tempdir()?;
     let temp_config_path = temp_dir.path().join("config.php");
@@ -125,7 +125,7 @@ require_once(__DIR__ . '/lib/setup.php');
         config.db_pass,
         config.db_prefix,
         config.wwwroot,
-        moodledata_path.to_str().unwrap()
+        "/var/www/moodledata"
     );
 
     fs::write(&temp_config_path, config_content)?;
@@ -275,13 +275,22 @@ pub async fn install_moodle(app: AppHandle, config: MoodleConfig) -> Result<Stri
     let msg = "Setting permissions for Moodle data directory...";
     log::info!("{}", msg);
     app.emit("moodle-installation-progress", msg).unwrap();
-    fs::set_permissions(&moodledata_path, fs::Permissions::from_mode(0o775)).map_err(|e| {
-        CommandError::Moodle(format!(
-            "Failed to set permissions on Moodle data directory at '{}': {}",
-            moodledata_path.display(),
-            e
-        ))
-    })?;
+    let moodledata_path_str = moodledata_path.to_str().ok_or_else(|| CommandError::Moodle("Moodle data path contains invalid UTF-8".to_string()))?;
+    let perm_command = format!("chmod 775 '{}'", moodledata_path_str);
+
+    let output = app.shell().command("pkexec")
+        .arg("sh")
+        .arg("-c")
+        .arg(perm_command)
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        let error_str = String::from_utf8_lossy(&output.stderr);
+        let err_msg = format!("Failed to set Moodle data directory permissions: {}", error_str);
+        app.emit("moodle-installation-progress", &err_msg).unwrap();
+        return Err(CommandError::Moodle(err_msg));
+    }
     let msg = "Moodle data directory permissions set to 775.";
     log::info!("{}", msg);
     app.emit("moodle-installation-progress", msg).unwrap();
@@ -290,17 +299,15 @@ pub async fn install_moodle(app: AppHandle, config: MoodleConfig) -> Result<Stri
     log::info!("{}", msg);
     app.emit("moodle-installation-progress", msg).unwrap();
 
-    let moodle_path_str = moodle_path.to_str().ok_or_else(|| CommandError::Moodle("Moodle path contains invalid UTF-8".to_string()))?;
-
+    // Run installation inside the container
+    // We assume the standard path /var/www/html/moodle based on docker-compose mount
     let install_command = format!(
-        "cd '{}' && php admin/cli/install.php --non-interactive --lang=en --adminuser={} --adminpass={} --adminemail={} --fullname='{}' --shortname='{}' --wwwroot={}",
-        moodle_path_str,
+        "docker exec -w /var/www/html/moodle fzl-php8.3-fpm php admin/cli/install_database.php --agree-license --lang=en --adminuser={} --adminpass={} --adminemail={} --fullname='{}' --shortname='{}'",
         config.admin_user,
         config.admin_pass,
         config.admin_email,
         config.fullname,
-        config.shortname,
-        config.wwwroot
+        config.shortname
     );
 
     let output = app.shell().command("pkexec")

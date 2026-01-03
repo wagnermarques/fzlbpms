@@ -1,0 +1,85 @@
+<div class="container">
+  <h1>Moodle Installation</h1>
+  <form [formGroup]="installForm" (ngSubmit)="onSubmit()">
+    <fieldset [disabled]="installing()">
+      <mat-form-field>
+        <mat-label>Database Type</mat-label>
+        <input matInput formControlName="dbType">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Database Host</mat-label>
+        <input matInput formControlName="dbHost">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Database Name</mat-label>
+        <input matInput formControlName="dbName">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Database User</mat-label>
+        <input matInput formControlName="dbUser">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Database Password</mat-label>
+        <input matInput formControlName="dbPass" type="password">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Database Prefix</mat-label>
+        <input matInput formControlName="dbPrefix">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>WWW Root</mat-label>
+        <input matInput formControlName="wwwroot">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Admin User</mat-label>
+        <input matInput formControlName="adminUser">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Admin Password</mat-label>
+        <input matInput formControlName="adminPass" type="password">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Admin Email</mat-label>
+        <input matInput formControlName="adminEmail">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Site Full Name</mat-label>
+        <input matInput formControlName="fullname">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Site Short Name</mat-label>
+        <input matInput formControlName="shortname">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Moodle Install Path</mat-label>
+        <input matInput formControlName="moodlePath">
+      </mat-form-field>
+
+      <mat-form-field>
+        <mat-label>Moodle Data Path</mat-label>
+        <input matInput formControlName="moodledataPath">
+      </mat-form-field>
+    </fieldset>
+
+    <button mat-raised-button color="primary" type="submit" [disabled]="!installForm.valid || installing()">Install Moodle</button>
+  </form>
+
+  @if (installationLog().length > 0) {
+    <div class="installation-log">
+      <h2>Installation Progress</h2>
+      <pre>{{ installationLog() }}</pre>
+    </div>
+  }
+</div>

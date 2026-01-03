@@ -2,6 +2,8 @@ import { Component, OnInit, ChangeDetectionStrategy, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { Router } from '@angular/router';
 
 export interface Project {
   name: string;
@@ -18,6 +20,9 @@ export interface Project {
 })
 export class AppsHomeView implements OnInit {
   projects = signal<Project[]>([]);
+  installationProgress = signal<string[]>([]);
+
+  constructor(private router: Router) {}
 
   async ngOnInit() {
     try {
@@ -26,6 +31,10 @@ export class AppsHomeView implements OnInit {
     } catch (error) {
       console.error("Error fetching projects:", error);
     }
+
+    await listen<string>('moodle-installation-progress', (event) => {
+      this.installationProgress.update(progress => [...progress, event.payload]);
+    });
   }
 
   async openUrl(url: string) {
@@ -36,8 +45,8 @@ export class AppsHomeView implements OnInit {
     }
   }
 
-  installMoodle() {
-    console.log("Install Moodle button clicked");
+  async installMoodle() {
+    this.router.navigate(['/moodle-install']);
   }
 
   installJoomla() {

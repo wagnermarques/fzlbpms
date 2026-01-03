@@ -16,10 +16,14 @@ chown -R www-data:www-data /var/www
 chown -R www-data:www-data /var/www/html
 
 fzlecho $PREFIX "Ajustando as permissoes de escrita em /var/www/html"
-chmod -R 775 /var/www/html
+chmod -R 777 /var/www/html
+
+fzlecho $PREFIX "Ajustando as permissoes de escrita em /var/www/moodledata"
+chown -R www-data:www-data /var/www/moodledata
+chmod -R 777 /var/www/moodledata
 
 fzlecho $PREFIX "Ajustando as permissoes de escrita em /var/www"
-chmod -R 775 /var/www
+chmod -R 777 /var/www
 
 fzlecho $PREFIX "Permissoes ajustadas com sucesso!"
 ls -la /var/www/html

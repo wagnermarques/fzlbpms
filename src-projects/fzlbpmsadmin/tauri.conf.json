@@ -8,7 +8,7 @@
   "app": {
     "windows": [
       {
-        "title": "Moodle Admin",
+        "title": "FZLBPMS Admin",
         "width": 1200,
         "height": 800
       }
@@ -19,7 +19,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["rpm", "deb"],
+    "targets": ["deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -29,7 +29,7 @@
   },
   "plugins": {
     "shell": {
-      "open": "^https?://.*"
+      "open": true
     }
   }
 }

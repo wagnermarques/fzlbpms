@@ -14,5 +14,13 @@
 <div>
   <button mat-raised-button color="primary" (click)="installMoodle()">Install Moodle</button>
   <button mat-raised-button color="accent" (click)="installJoomla()">Install Joomla</button>
-  <button mat-raised-button color="warn" (click)="createAngularApp()">Create Angular App</button>
+    <button mat-raised-button color="primary" (click)="createAngularApp()">Create Angular App</button>
+  </div>
+
+<div class="installation-progress">
+  <h3>Installation Progress</h3>
+  <div *ngFor="let message of installationProgress()">
+    {{ message }}
+  </div>
 </div>
+

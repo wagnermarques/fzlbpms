@@ -1,5 +1,6 @@
 use std::fs;
 use serde::{Serialize};
+use std::env;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Project {
@@ -10,9 +11,11 @@ pub struct Project {
 /// List all subdirectories in the given paths.
 pub async fn list_projects() -> Result<Vec<Project>, String> {
     let mut projects = Vec::new();
+    let fzlbpms_home = env::var("FZLBPMS_HOME").map_err(|e| e.to_string())?;
+
     let paths = [
-        "/run/media/wgn/ext4/Projects-Srcs/fzlbpms/src-projects",
-        "/run/media/wgn/ext4/Projects-Srcs/fzlbpms/src-projects/var_www/html",
+        format!("{}/src-projects", fzlbpms_home),
+        format!("{}/src-projects/var_www/html", fzlbpms_home),
     ];
 
     for path in paths.iter() {

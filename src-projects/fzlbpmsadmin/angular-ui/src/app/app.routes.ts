@@ -8,6 +8,7 @@ import { FzlbpmsContainersView } from './components/views/fzlbpms-containers-vie
 import { FzlbpmsContainersStacksView } from './components/views/fzlbpms-containers-stacks-view/fzlbpms-containers-stacks-view';
 import { DesktopHomeView } from './components/views/desktop-home-view/desktop-home-view'
 import { AppsHomeView } from './components/views/apps-home-view/apps-home-view';
+import { MoodleInstallView } from './components/views/moodle-install-view/moodle-install-view';
 
 
 export const routes: Routes = [
@@ -30,8 +31,12 @@ export const routes: Routes = [
         component: FzlbpmsHomeView
     },
     {
-        path:'appshomevew',
+        path:'appshomeview',
         component: AppsHomeView
+    },
+    {
+        path: 'moodle-install',
+        component: MoodleInstallView
     },
     {
         path:'desktophomeview',

@@ -1,1 +1,1 @@
-{}
+{"main-capabilities":{"identifier":"main-capabilities","description":"Core capabilities for the application","local":true,"windows":["main"],"permissions":["core:event:allow-listen","shell:allow-open",{"identifier":"shell:allow-execute","allow":[{"cmd":"php","name":"php","sidecar":false},{"cmd":"sh","name":"sh","sidecar":false},{"cmd":"pkexec","name":"pkexec","sidecar":false}]}]}}

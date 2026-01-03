@@ -95,6 +95,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             cmd::fzlbpms_version,
+            cmd::get_fzlbpms_home,
             cmd::get_site_info,
             cmd::get_users,
             cmd::get_courses,
@@ -102,7 +103,8 @@ fn main() {
             containers_tauri_commands::get_container_logs,
             containers_tauri_commands::get_docker_compose_services,
             containers_tauri_commands::run_docker_compose_up,
-            projects_tauri_commands::list_projects
+            projects_tauri_commands::list_projects,
+            cmd::install_moodle
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

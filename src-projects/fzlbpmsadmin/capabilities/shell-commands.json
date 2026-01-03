@@ -1,0 +1,30 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capabilities",
+  "description": "Core capabilities for the application",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "php",
+          "cmd": "php",
+          "sidecar": false
+        },
+        {
+          "name": "sh",
+          "cmd": "sh",
+          "sidecar": false
+        },
+        {
+          "name": "pkexec",
+          "cmd": "pkexec",
+          "sidecar": false
+        }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -18,6 +19,7 @@ import { UnlistenFn } from '@tauri-apps/api/event';
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
+    MatIconModule,
     MatSnackBarModule,
   ],
   templateUrl: './moodle-install-view.html',
@@ -28,6 +30,7 @@ export class MoodleInstallView implements OnInit, OnDestroy {
   installForm: FormGroup;
   installationLog: WritableSignal<string> = signal('');
   installing: WritableSignal<boolean> = signal(false);
+  adminPassVisible: WritableSignal<boolean> = signal(false);
   private unlisten?: UnlistenFn;
 
   constructor(private fb: FormBuilder, private snackBar: MatSnackBar) {
@@ -56,8 +59,8 @@ export class MoodleInstallView implements OnInit, OnDestroy {
         moodledataPath: `${homePath}/src-projects/moodledata`,
       });
     }).catch(err => {
-        console.error("Failed to get FZLBPMS_HOME", err);
-        this.snackBar.open(`Error: Failed to determine project home directory. ${err}`, 'Close', { duration: 5000 });
+      console.error("Failed to get FZLBPMS_HOME", err);
+      this.snackBar.open(`Error: Failed to determine project home directory. ${err}`, 'Close', { duration: 5000 });
     });
 
     this.unlisten = await listen<string>('moodle-installation-progress', (event) => {
@@ -69,6 +72,11 @@ export class MoodleInstallView implements OnInit, OnDestroy {
     if (this.unlisten) {
       this.unlisten();
     }
+  }
+
+  toggleAdminPassVisibility(event: MouseEvent) {
+    event.preventDefault();
+    this.adminPassVisible.update(visible => !visible);
   }
 
   async onSubmit() {

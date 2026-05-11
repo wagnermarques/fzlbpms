@@ -60,6 +60,7 @@ Based on the `README.org`, services include:
 *   `fzl-nginx`: Web server / Reverse proxy.
 *   `fzl-php8.3-fpm`: PHP runtime (for Moodle/Web apps).
 *   `fzl-postgresql`: Database.
+*   **`fzl-keycloak`**: Centralized Identity and Access Management (IAM).
 *   `fzl-portainer`: Container management UI.
 *   `fzl-nexus`: Artifact repository.
 

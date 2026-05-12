@@ -1,0 +1,32 @@
+.view-container {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.keycloak-card {
+  max-width: 600px;
+  width: 100%;
+}
+
+mat-card-header {
+  margin-bottom: 16px;
+}
+
+mat-list-item {
+  height: auto !important;
+  margin-bottom: 8px;
+}
+
+[matListItemTitle] {
+  font-weight: bold;
+}
+
+[matListItemLine] {
+  color: #666;
+}
+
+mat-card-actions {
+  justify-content: flex-end;
+  padding: 16px !important;
+}

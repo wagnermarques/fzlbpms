@@ -1,8 +1,12 @@
 #+Title: Documentation
 
-1. Centralized Login with Keycloak:
+* Centralized Login with Keycloak:
        * Infrastructure: Added fzl-keycloak and a dedicated fzl-keycloak-db (PostgreSQL) to docker-compose.yml.
        * Gateway Integration: Configured Nginx to proxy /auth/ requests on port 8899 to Keycloak.
        * Access: Keycloak is now reachable at http://localhost:8899/auth/admin (http://localhost:8899/auth/admin) (credentials: admin/admin).
 
 
+[[./getting-started.org]]
+
+* Links Uteis
+https://www.jwt.io/

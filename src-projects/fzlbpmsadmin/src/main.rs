@@ -102,7 +102,9 @@ fn main() {
             containers_tauri_commands::list_running_containers,
             containers_tauri_commands::get_container_logs,
             containers_tauri_commands::get_docker_compose_services,
+            containers_tauri_commands::get_docker_compose_services_with_status,
             containers_tauri_commands::run_docker_compose_up,
+            containers_tauri_commands::run_docker_compose_stop,
             projects_tauri_commands::list_projects,
             cmd::install_moodle
         ])

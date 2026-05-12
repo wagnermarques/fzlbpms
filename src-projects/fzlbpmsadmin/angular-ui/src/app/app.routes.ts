@@ -9,6 +9,7 @@ import { FzlbpmsContainersStacksView } from './components/views/fzlbpms-containe
 import { DesktopHomeView } from './components/views/desktop-home-view/desktop-home-view'
 import { AppsHomeView } from './components/views/apps-home-view/apps-home-view';
 import { MoodleInstallView } from './components/views/moodle-install-view/moodle-install-view';
+import { KeycloakView } from './components/views/keycloak-view/keycloak-view';
 
 
 export const routes: Routes = [
@@ -50,5 +51,9 @@ export const routes: Routes = [
     {
         path:'fzlbpms-containers-stacks-view',
         component: FzlbpmsContainersStacksView                   
+    },
+    {
+        path: 'keycloak-view',
+        component: KeycloakView
     }
 ];

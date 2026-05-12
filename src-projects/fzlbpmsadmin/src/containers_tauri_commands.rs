@@ -22,6 +22,12 @@ pub async fn get_docker_compose_services() -> Result<Vec<String>, String> {
     containers::get_docker_compose_services().await
 }
 
+#[tauri::command]
+/// Get the services from the docker-compose.yml file with their status.
+pub async fn get_docker_compose_services_with_status() -> Result<Vec<containers::DockerComposeService>, String> {
+    containers::get_docker_compose_services_with_status().await
+}
+
 use std::env;
 
 #[tauri::command]
@@ -31,6 +37,24 @@ pub async fn run_docker_compose_up(app: AppHandle, services: Vec<String>) -> Res
     let script_path = format!("{}/docker-compose-up.sh", fzlbpms_home);
     let output = app.shell().command("sh")
         .arg(&script_path)
+        .args(services)
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+
+#[tauri::command]
+/// Run the docker compose stop command for the selected services.
+pub async fn run_docker_compose_stop(app: AppHandle, services: Vec<String>) -> Result<String, String> {
+    let output = app.shell().command("docker")
+        .arg("compose")
+        .arg("stop")
         .args(services)
         .output()
         .await

@@ -14,6 +14,15 @@ pub struct Container {
     pub status: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct DockerComposeService {
+    pub name: String,
+    pub container_name: String,
+    pub container_id: Option<String>,
+    pub state: Option<String>,
+    pub status: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct DockerCompose {
     services: serde_yaml::Mapping,
@@ -34,9 +43,9 @@ pub async fn list_running_containers() -> Result<Vec<Container>, String> {
         .into_iter()
         .map(|c| Container {
             id: c.id.unwrap_or_default(),
-            name: c.names.unwrap_or_default().join(", "),
+            name: c.names.unwrap_or_default().join(", ").trim_start_matches('/').to_string(),
             image: c.image.unwrap_or_default(),
-            state: c.state.map(|s| format!("{:?}", s)).unwrap_or_default(),
+            state: c.state.map(|s| s.to_string()).unwrap_or_default(),
             status: c.status.unwrap_or_default(),
         })
         .collect();
@@ -79,4 +88,42 @@ pub async fn get_docker_compose_services() -> Result<Vec<String>, String> {
         .collect();
 
     Ok(services)
+}
+
+/// Get the services from the docker-compose.yml file with their status.
+pub async fn get_docker_compose_services_with_status() -> Result<Vec<DockerComposeService>, String> {
+    let fzlbpms_home = env::var("FZLBPMS_HOME").map_err(|e| e.to_string())?;
+    let path = format!("{}/docker-compose.yml", fzlbpms_home);
+    let file_content = fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
+    let docker_compose: DockerCompose = serde_yaml::from_str(&file_content).map_err(|e| e.to_string())?;
+
+    let running_containers = list_running_containers().await?;
+
+    let mut services_status = Vec::new();
+
+    for (key, value) in docker_compose.services {
+        let service_name = key.as_str().unwrap_or_default().to_string();
+        
+        // Try to get container_name from yaml, otherwise use service_name
+        let container_name = value.as_mapping()
+            .and_then(|m| m.get(&serde_yaml::Value::String("container_name".to_string())))
+            .and_then(|v| v.as_str())
+            .unwrap_or(&service_name)
+            .to_string();
+
+        let container = running_containers.iter().find(|c| {
+            // Match by exact name or if the container name contains the service name (docker compose often prefixes)
+            c.name == container_name || c.name.contains(&format!("_{}_", service_name))
+        });
+
+        services_status.push(DockerComposeService {
+            name: service_name,
+            container_name,
+            container_id: container.map(|c| c.id.clone()),
+            state: container.map(|c| c.state.clone()),
+            status: container.map(|c| c.status.clone()),
+        });
+    }
+
+    Ok(services_status)
 }

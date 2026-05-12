@@ -1,0 +1,21 @@
+#+Title: Getting Started
+
+#+name: 
+#+begin_src shell :session s1 :exports both :results output
+git clone https://github.com/wagnermarques/fzlbpms.git
+#+end_src
+
+
+
+#+name: 
+#+begin_src shell :session s1 :exports both :results output
+  cd fzlbpms
+  wgn@fedora:~/WORKING/Projects-Srcs/Projects-Srcs-FzlSoft/fzlbpms/src-projects/fzlbpmsadmin/angular-ui$ npm install
+
+#+end_src
+
+
+
+#+name: 
+#+begin_src shell :session s1 :exports both :results output
+#+end_src

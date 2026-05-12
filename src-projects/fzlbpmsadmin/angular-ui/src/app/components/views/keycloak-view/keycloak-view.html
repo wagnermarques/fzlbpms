@@ -1,0 +1,58 @@
+<div class="view-container">
+  <mat-card class="keycloak-card">
+    <mat-card-header>
+      <mat-card-title>Keycloak Service Details</mat-card-title>
+      <mat-card-subtitle>Centralized Login Flow Configuration</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-list>
+        <mat-list-item>
+          <mat-icon matListItemIcon>person</mat-icon>
+          <div matListItemTitle>Default Admin User</div>
+          <div matListItemLine>{{ keycloakInfo.defaultUser }}</div>
+        </mat-list-item>
+        <mat-list-item>
+          <mat-icon matListItemIcon>lock</mat-icon>
+          <div matListItemTitle>Default Admin Password</div>
+          <div matListItemLine>{{ keycloakInfo.defaultPassword }}</div>
+        </mat-list-item>
+        <mat-divider></mat-divider>
+        <mat-list-item>
+          <mat-icon matListItemIcon>link</mat-icon>
+          <div matListItemTitle>Gateway Access URL</div>
+          <div matListItemLine>
+            <a href="javascript:void(0)" (click)="openLink(keycloakInfo.gatewayUrl)">{{ keycloakInfo.gatewayUrl }}</a>
+          </div>
+        </mat-list-item>
+        <mat-list-item>
+          <mat-icon matListItemIcon>link</mat-icon>
+          <div matListItemTitle>Direct Access URL</div>
+          <div matListItemLine>
+            <a href="javascript:void(0)" (click)="openLink(keycloakInfo.directUrl)">{{ keycloakInfo.directUrl }}</a>
+          </div>
+        </mat-list-item>
+        <mat-divider></mat-divider>
+        <mat-list-item>
+          <mat-icon matListItemIcon>settings</mat-icon>
+          <div matListItemTitle>Relative Context Path</div>
+          <div matListItemLine>{{ keycloakInfo.relativeContext }}</div>
+        </mat-list-item>
+        <mat-list-item>
+          <mat-icon matListItemIcon>storage</mat-icon>
+          <div matListItemTitle>Database</div>
+          <div matListItemLine>{{ keycloakInfo.database }}</div>
+        </mat-list-item>
+        <mat-list-item>
+          <mat-icon matListItemIcon>info</mat-icon>
+          <div matListItemTitle>Version</div>
+          <div matListItemLine>{{ keycloakInfo.version }}</div>
+        </mat-list-item>
+      </mat-list>
+    </mat-card-content>
+    <mat-card-actions>
+      <button mat-raised-button color="primary" (click)="openLink(keycloakInfo.gatewayUrl)">
+        OPEN ADMIN CONSOLE
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</div>

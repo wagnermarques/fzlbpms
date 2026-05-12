@@ -2,7 +2,7 @@
 
 @for (container of containers(); track container.id) {
   <div>
-    <a href="#" (click)="getContainerLogs(container.id)">{{ container.name }}</a>
+    <a href="javascript:void(0)" (click)="onContainerClick(container)">{{ container.name }}</a>
   </div>
 } @empty {
   <p>No containers running.</p>

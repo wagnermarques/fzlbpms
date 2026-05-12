@@ -1,0 +1,44 @@
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+table {
+  width: 100%;
+}
+
+.mat-column-select {
+  width: 50px;
+}
+
+.mat-column-actions {
+  width: 120px;
+  text-align: center;
+}
+
+.loading-container, .no-services {
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
+mat-chip {
+  font-size: 12px;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.rotating {
+  animation: rotate 1s linear infinite;
+}

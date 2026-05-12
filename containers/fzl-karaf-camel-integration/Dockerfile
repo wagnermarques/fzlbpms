@@ -39,9 +39,9 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /
 RUN if ! getent group docker >/dev/null; then groupadd -r docker; fi \
     && usermod -aG docker appuser
 
-# 4. Usa o Karaf baixado localmente e extrai
-COPY downloads/apache-karaf-${KARAF_VERSION}.tar.gz /tmp/karaf.tar.gz
-RUN tar xzf /tmp/karaf.tar.gz -C /opt \
+# 4. Baixa e extrai o Apache Karaf automaticamente
+RUN wget -q https://archive.apache.org/dist/karaf/${KARAF_VERSION}/apache-karaf-${KARAF_VERSION}.tar.gz -O /tmp/karaf.tar.gz \
+    && tar xzf /tmp/karaf.tar.gz -C /opt \
     && mv "/opt/apache-karaf-${KARAF_VERSION}" "${KARAF_HOME}" \
     && rm /tmp/karaf.tar.gz
 

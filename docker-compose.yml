@@ -1,4 +1,3 @@
----
 services:
 
   fzl-nginx:
@@ -9,7 +8,7 @@ services:
     ports:
       - "80:80"
       - "8899:8899" #01_fzlbpms.conf -> fzlbpms internal apps
-      - "8900:8900" # 
+      - "8900:8900" 
     volumes:
       - ./src-projects/var_www/html:/var/www/html:rw #na conf do nginx: root /var/www/html;
       - ./src-projects/moodledata:/var/www/moodledata:rw
@@ -53,9 +52,6 @@ services:
     volumes:
       - ./src-projects:/sql-scripts
       - ./containers/fzl-mysql/mysql-data:/var/lib/mysql
-      #- edutec2rodrr:/var/lib/mysql
-      #- /home/wgn/fzlbpms/containers/fzl-mysql/mysql-data:/var/lib/mysql
-      #- fzl-mysql-data:/var/lib/mysql
       
     networks:
       - fzl-network
@@ -113,10 +109,7 @@ services:
       - ./containers/fzl-angular-dev/src-projects/:/app
     networks:
       - fzl-network
-          
 
-  # a porta 8081 do nexus ta conflitando com a 8081 do fakermail
-  # corrir qdo for usar o nexus
   fzl-nexus:
     build:
       context: ./containers/fzl-nexus
@@ -128,23 +121,18 @@ services:
     volumes:
       - ./containers/fzl-nexus/nexus-data:/nexus-data
     environment:
-      # Aumenta a memoria RAM disponivel para o Nexus (ajuste conforme necessario)
-      # Nexus exige bastante RAM, o padrao pode ser insuficiente.
-      # Exemplo: 2GB de heap
       MAX_HEAP_SIZE: "2048m"
       MIN_HEAP_SIZE: "2048m"
-      # Ou usar JAVA_OPTS para mais controle:
-      # JAVA_OPTS: "-Xms2g -Xmx2g -Djava.net.preferIPv4Stack=true"
     networks:
       - fzl-network
-    healthcheck:  # Adiciona um healthcheck basico para verificar se o Nexus esta UP
+    healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8088/nexus/repository/maven-public/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s # Da mais tempo para o Nexus iniciar
+      start_period: 60s
       
-  fzl-phpmgyadmin:
+  fzl-phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: fzl-phpmyadmin
     ports:
@@ -164,7 +152,7 @@ services:
     container_name: fzl-elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=true  # Ative seguranÃ§a para produÃ§Ã£o
+      - xpack.security.enabled=true
     ports:
       - "9200:9200"
     volumes:
@@ -192,28 +180,11 @@ services:
     networks:
       - fzl-network      
       
-  # aguardando pra qdo for utilizar
-  #fzl-overleaf:
-  #  build:
-  #    context: ./containers/fzl-overleaf
-  #    dockerfile: Dockerfile
-  #  container_name: fzl-overleaf
-  #  restart: unless-stopped
-  #  ports:
-  #    - "8090:80" # Access Overleaf at http://localhost:8090
-  #  volumes:
-  #    # This volume is CRITICAL to persist your LaTeX projects
-  #    - ./containers/fzl-overleaf/overleaf-data:/var/lib/sharelatex
-  #  networks:
-  #    - fzl-network      
-
-
-  fzl-mongodb: #used by overleaf container
+  fzl-mongodb:
     image: mongo:4.4
     container_name: fzl-mongodb
     restart: unless-stopped
     volumes:
-      # Critical to persist MongoDB data
       - ./containers/fzl-mongodb/mongodb-data:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: overleaf
@@ -228,13 +199,13 @@ services:
       retries: 5
       start_period: 30s
 
-  fzl-redis: #used by overleaf container
+  fzl-redis:
     image: redis:7-alpine
     container_name: fzl-redis
     restart: unless-stopped
     volumes:
       - ./containers/fzl-redis/redis-data:/data
-    command: redis-server --appendonly yes  # Enable persistence
+    command: redis-server --appendonly yes
     networks:
       - fzl-network
     healthcheck:
@@ -250,41 +221,18 @@ services:
     restart: always
     environment:
       - MH_UI_AUTH_FILE=/maildata/auth.txt
-    #ports:
-    #  - "5010:8080"
-    #  - "8035:8025"
-    network_mode: host #(entender melhor depois isso)
-    #networks:
-    #  - fzl-network
+    network_mode: host
 
-    
-    # portainer to manage docker containers
   fzl-portainer:
     image: portainer/portainer-ce:latest
     container_name: fzl-portainer
     restart: always
     ports:
-      - "9000:9000" # Porta web para acesso ao Portainer
+      - "9000:9000"
       - "9043:9043"
     volumes:
-      # Monta o socket Docker do Host para que o Portainer possa gerenciar o Docker
       - /var/run/docker.sock:/var/run/docker.sock
-      # Volume nomeado para persistir as configurações do Portainer
       - ./containers/fzl-portainer/portainer-data:/data
-    #networks:
-    #  # Conecta à rede fzl-network para ter visibilidade dos outros contêineres
-    #  - fzl-network
-    
-
-  #fzl-rust-restservices:
-  #  build:
-  #    context: ./containers/fzl-rust-restservices
-  #    dockerfile: Dockerfile
-  #  container_name: fzl-rust-restservices
-  #  ports:
-  #    - "8089:8080"
-  #  networks:
-  #    - fzl-network
 
   fzl-keycloak-db:
     image: postgres:16-alpine
@@ -319,12 +267,13 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /auth
     ports:
-      - "8083:8080" # Map to 8083 to avoid conflict with other services
+      - "8083:8080"
     depends_on:
       fzl-keycloak-db:
         condition: service_healthy
     networks:
       - fzl-network
+
 
 networks:
   fzl-network:

@@ -274,6 +274,40 @@ services:
     networks:
       - fzl-network
 
+  fzl-camunda-server:
+    build:
+      context: ./containers/fzl-camunda-server
+      dockerfile: Dockerfile
+    container_name: fzl-camunda-server
+    ports:
+      - "8084:8080"
+    environment:
+      - CAMUNDA_BPM_ADMIN_USER_ID=admin
+      - CAMUNDA_BPM_ADMIN_PASSWORD=admin
+      - CAMUNDA_BPM_ADMIN_USER_FIRST_NAME=Admin
+      - CAMUNDA_BPM_ADMIN_USER_LAST_NAME=FZL
+    volumes:
+      - ./containers/fzl-camunda-server/data:/camunda/internal
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/camunda/api/engine/engine/default/process-definition/count || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      - fzl-postgresql
+
+  fzl-bpmn-drawer:
+    build:
+      context: ./containers/fzl-bpmn-drawer
+      dockerfile: Dockerfile
+    container_name: fzl-bpmn-drawer
+    ports:
+      - "8085:80"
+    networks:
+      - fzl-network
 
 networks:
   fzl-network:

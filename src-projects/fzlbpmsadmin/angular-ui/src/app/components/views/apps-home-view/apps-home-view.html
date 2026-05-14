@@ -1,23 +1,57 @@
-<h2>Projects</h2>
+<h2>Applications & Projects</h2>
 
-@for (project of projects(); track project.name) {
-  <div>
-    <h3>{{ project.name }}</h3>
-    <span class="link" (click)="openUrl(project.url)">{{ project.url }}</span>
+<mat-tab-group animationDuration="0ms">
+  @for (app of applications(); track app.name) {
+    <mat-tab [label]="app.name">
+      <div class="tab-content">
+        <mat-card class="app-card">
+          <mat-card-header>
+            <mat-card-title>{{ app.name }}</mat-card-title>
+            <mat-card-subtitle>{{ app.isProject ? 'Project Directory' : 'System Application' }}</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <p *ngIf="app.description">{{ app.description }}</p>
+            <div class="url-section">
+              <strong>URL:</strong> 
+              <span class="link" (click)="openUrl(app.url)">{{ app.url }}</span>
+            </div>
+            
+            <div *ngIf="app.credentials" class="credentials-section">
+              <mat-icon inline>lock</mat-icon>
+              <strong>Default Credentials:</strong>
+              <ul>
+                <li>User: <code>{{ app.credentials.user }}</code></li>
+                <li>Password: <code>{{ app.credentials.pass }}</code></li>
+              </ul>
+            </div>
+          </mat-card-content>
+          <mat-card-actions>
+            <button mat-flat-button color="primary" (click)="openUrl(app.url)">
+              <mat-icon>open_in_new</mat-icon> Open in Browser
+            </button>
+          </mat-card-actions>
+        </mat-card>
+      </div>
+    </mat-tab>
+  }
+</mat-tab-group>
+
+<div class="management-section">
+  <h2>Install New Application</h2>
+  <div class="actions">
+    <button mat-raised-button color="primary" (click)="installMoodle()">
+      <mat-icon>add</mat-icon> Install Moodle
+    </button>
+    <button mat-raised-button color="accent" (click)="installJoomla()">
+      <mat-icon>add</mat-icon> Install Joomla
+    </button>
+    <button mat-raised-button color="primary" (click)="createAngularApp()">
+      <mat-icon>code</mat-icon> Create Angular App
+    </button>
   </div>
-} @empty {
-  <p>No projects found.</p>
-}
+</div>
 
-<h2>Install New Application</h2>
-
-<div>
-  <button mat-raised-button color="primary" (click)="installMoodle()">Install Moodle</button>
-  <button mat-raised-button color="accent" (click)="installJoomla()">Install Joomla</button>
-    <button mat-raised-button color="primary" (click)="createAngularApp()">Create Angular App</button>
-  </div>
-
-<div class="installation-progress">
+<div class="installation-progress" *ngIf="installationProgress().length > 0">
   <h3>Installation Progress</h3>
   <div *ngFor="let message of installationProgress()">
     {{ message }}

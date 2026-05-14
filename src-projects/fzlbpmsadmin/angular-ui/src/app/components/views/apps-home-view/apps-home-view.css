@@ -1,5 +1,62 @@
+.tab-content {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.app-card {
+  max-width: 600px;
+  width: 100%;
+}
+
+.url-section {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+.credentials-section {
+  background-color: #f5f5f5;
+  padding: 12px;
+  border-radius: 4px;
+  border-left: 4px solid #3f51b5;
+}
+
+.credentials-section ul {
+  margin-top: 8px;
+  padding-left: 20px;
+}
+
 .link {
-  color: blue;
+  color: #3f51b5;
   text-decoration: underline;
   cursor: pointer;
+  word-break: break-all;
+}
+
+.link:hover {
+  color: #303f9f;
+}
+
+.management-section {
+  margin-top: 40px;
+  padding: 20px;
+}
+
+.actions {
+  display: flex;
+  gap: 16px;
+}
+
+.installation-progress {
+  margin-top: 20px;
+  padding: 20px;
+  background-color: #eee;
+  border-radius: 4px;
+}
+
+code {
+  background-color: #e0e0e0;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: monospace;
 }

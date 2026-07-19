@@ -10,6 +10,7 @@ import { DesktopHomeView } from './components/views/desktop-home-view/desktop-ho
 import { AppsHomeView } from './components/views/apps-home-view/apps-home-view';
 import { MoodleInstallView } from './components/views/moodle-install-view/moodle-install-view';
 import { KeycloakView } from './components/views/keycloak-view/keycloak-view';
+import { ContainerDetailsView } from './components/views/container-details-view/container-details-view';
 
 
 export const routes: Routes = [
@@ -55,5 +56,9 @@ export const routes: Routes = [
     {
         path: 'keycloak-view',
         component: KeycloakView
+    },
+    {
+        path: 'container-details/:id',
+        component: ContainerDetailsView
     }
 ];

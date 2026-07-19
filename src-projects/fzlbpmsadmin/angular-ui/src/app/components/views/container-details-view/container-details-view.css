@@ -1,0 +1,26 @@
+.view-container {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.container-card {
+  width: 100%;
+  max-width: 900px;
+}
+
+.error {
+  color: #c62828;
+}
+
+.logs {
+  max-height: 400px;
+  overflow: auto;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

@@ -1,0 +1,54 @@
+<div class="view-container">
+  <mat-card class="container-card">
+    <mat-card-header>
+      <mat-card-title>{{ container()?.name ?? 'Container' }} Service Details</mat-card-title>
+      <mat-card-subtitle>Running Container Information</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      @if (error()) {
+        <p class="error">{{ error() }}</p>
+      }
+      @if (container(); as c) {
+        <mat-list>
+          <mat-list-item>
+            <mat-icon matListItemIcon>tag</mat-icon>
+            <div matListItemTitle>Container Id</div>
+            <div matListItemLine>{{ c.id }}</div>
+          </mat-list-item>
+          <mat-list-item>
+            <mat-icon matListItemIcon>inventory_2</mat-icon>
+            <div matListItemTitle>Image</div>
+            <div matListItemLine>{{ c.image }}</div>
+          </mat-list-item>
+          <mat-divider></mat-divider>
+          <mat-list-item>
+            <mat-icon matListItemIcon>play_circle</mat-icon>
+            <div matListItemTitle>State</div>
+            <div matListItemLine>{{ c.state }}</div>
+          </mat-list-item>
+          <mat-list-item>
+            <mat-icon matListItemIcon>schedule</mat-icon>
+            <div matListItemTitle>Status</div>
+            <div matListItemLine>{{ c.status }}</div>
+          </mat-list-item>
+        </mat-list>
+      } @else if (!error()) {
+        <p>Container not found among the running containers.</p>
+      }
+
+      <mat-divider></mat-divider>
+
+      <h3>Logs</h3>
+      @if (logs().length > 0) {
+        <pre class="logs">{{ logs().join('\n') }}</pre>
+      } @else {
+        <p>No logs available.</p>
+      }
+    </mat-card-content>
+    <mat-card-actions>
+      <button mat-raised-button color="primary" (click)="refreshLogs()">
+        REFRESH LOGS
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</div>

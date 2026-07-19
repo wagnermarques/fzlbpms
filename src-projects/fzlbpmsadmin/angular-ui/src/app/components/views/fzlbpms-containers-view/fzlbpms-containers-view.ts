@@ -1,6 +1,6 @@
 import { Component, OnInit, ChangeDetectionStrategy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface Container {
@@ -37,16 +37,7 @@ export class FzlbpmsContainersView implements OnInit {
     if (container.name.includes('fzl-keycloak')) {
       this.router.navigate(['/keycloak-view']);
     } else {
-      this.getContainerLogs(container.id);
-    }
-  }
-
-  async getContainerLogs(id: string) {
-    try {
-      const logs = await invoke<string[]>("get_container_logs", { containerId: id });
-      console.log(`Logs for container ${id}:`, logs);
-    } catch (error) {
-      console.error(`Error fetching logs for container ${id}:`, error);
+      this.router.navigate(['/container-details', container.id]);
     }
   }
 }

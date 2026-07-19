@@ -27,7 +27,8 @@
 
 #echo " ==> Permissions set."
 
-stack1_containers=( "fzl-portainer" "fzl-mysql"  "fzl-postgresql" "fzl-nginx" "fzl-php8.3-fpm")
+stack1_containers=( "fzl-portainer" "fzl-nginx" "fzl-mysql"  "fzl-postgresql" "fzl-nginx" "fzl-php8.3-fpm")
+stack_all_containers=( "fzl-portainer" "fzl-nginx" "fzl-mysql"  "fzl-postgresql" "fzl-nginx" "fzl-php8.3-fpm" "fzl-redis" "fzl-memcached" )
 
 # --- Help / Available Services ---
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then

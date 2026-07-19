@@ -1,0 +1,62 @@
+# =============================================================================
+# run-stack.toml — choose which containers to run with ./bin/run-stack.sh
+#
+#   ./bin/run-stack.sh                 # runs the [default] stack
+#   ./bin/run-stack.sh bpm             # runs a named stack
+#   ./bin/run-stack.sh bpm search      # union of several stacks
+#   ./bin/run-stack.sh --list          # show stacks and their services
+#   ./bin/run-stack.sh --dry-run bpm   # print the docker compose command only
+#   ./bin/run-stack.sh --down bpm      # stop the services of a stack
+#
+# A stack has:
+#   description : shown by --list
+#   services    : docker-compose.yml service names
+#   includes    : other stacks to merge in (resolved recursively)
+#
+# Service names are validated against `docker compose config --services`,
+# so a typo here fails loudly before anything starts.
+# =============================================================================
+
+default = "web"
+
+[stacks.web]
+description = "Web entrypoint: nginx + php + databases (moodle, yii2 apps)"
+services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-postgresql", "fzl-mysql"]
+
+[stacks.integration]
+description = "OSGi/Karaf/Camel backbone + Nexus artifact repository"
+services = ["fzl-karaf-camel-integration", "fzl-nexus"]
+
+[stacks.bpm]
+description = "Flowable BPM engine + BPMN drawer"
+services = ["flowable-db", "flowable-ui", "fzl-bpmn-drawer"]
+
+[stacks.sso]
+description = "Keycloak identity provider"
+services = ["fzl-keycloak-db", "fzl-keycloak"]
+
+[stacks.search]
+description = "Elasticsearch + Kibana"
+services = ["fzl-elasticsearch", "fzl-kibana"]
+
+[stacks.devtools]
+description = "Developer conveniences: portainer, phpmyadmin, fakemail, angular dev"
+services = ["fzl-portainer", "fzl-phpmyadmin", "fzl-fakemail", "fzl-angular-dev"]
+
+[stacks.gitlab]
+description = "GitLab CE (heavy: ~4GB RAM, slow start)"
+services = ["gitlab"]
+
+[stacks.data-extra]
+description = "MongoDB (overleaf) + Redis"
+services = ["fzl-mongodb", "fzl-redis"]
+
+[stacks.fzlbpms]
+description = "Everything the fzlbpms platform needs day-to-day"
+includes = ["web", "integration", "bpm", "sso"]
+services = ["fzl-fakemail"]
+
+[stacks.all]
+description = "The whole stack"
+includes = ["fzlbpms", "search", "devtools", "gitlab", "data-extra"]
+services = []

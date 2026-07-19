@@ -178,7 +178,8 @@ services:
       dockerfile: Dockerfile-Kibana
     container_name: fzl-kibana
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=http://fzl-elasticsearch:9200
+      - SERVER_HOST=0.0.0.0
     ports:
       - "${FZL_KIBANA_PORT:?}:5601"
     depends_on:
@@ -227,6 +228,10 @@ services:
     restart: always
     environment:
       - MH_UI_AUTH_FILE=/maildata/auth.txt
+      # host network: web UI must not use its 8080 default (flowable-ui owns it)
+      - SERVER_PORT=${FZL_FAKEMAIL_WEB_PORT:?}
+      - MANAGEMENT_SERVER_PORT=${FZL_FAKEMAIL_MGMT_PORT:?}
+      - FAKESMTP_PORT=${FZL_FAKEMAIL_SMTP_PORT:?}
     network_mode: host
 
   fzl-portainer:

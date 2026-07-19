@@ -12,59 +12,34 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!--
+        Nexus 3 (fzl-nexus service). These values mirror FZL_NEXUS_PORT_HTTP
+        in the project root .env file (single source of truth) - keep in sync,
+        or override at build time:  mvn deploy -Dfzl.nexus.port=NNNN
+
+        fzl.nexus.host: use "localhost" when building on the host,
+        "fzl-nexus" (port 8081) when building inside the fzl-network.
+    -->
+    <fzl.nexus.host>localhost</fzl.nexus.host>
+    <fzl.nexus.port>8088</fzl.nexus.port>
+    <fzl.nexus.url>http://${fzl.nexus.host}:${fzl.nexus.port}</fzl.nexus.url>
   </properties>
 
   <!--
-      http://ggl-consulting.blogspot.com.br/2014/12/nexus-kick-start.html
+      Nexus 3 repository layout (the old /nexus/content/repositories/... paths
+      were for Nexus 2). Credentials go in ~/.m2/settings.xml under
+      <server><id>nexus-releases</id> / <id>nexus-snapshots</id>.
   -->
-  <!--
-      https://books.sonatype.com/nexus-book/reference/staging-deployment.html
-  
- <distributionmanagement>
-   <repository>
-     <id>deployment</id>
-     <url>http://localhost:8081/nexus/content/repositories/releases</url>
-   </repository>
-   <snapshotrepository>
-     <id>deployment</id>
-     <url>http://localhost:8081/nexus/content/repositories/snapshots</url>
-   </snapshotrepository>
- </distributionmanagement>
-  -->
-  
   <distributionManagement>
+    <repository>
+      <id>nexus-releases</id>
+      <url>${fzl.nexus.url}/repository/maven-releases/</url>
+    </repository>
     <snapshotRepository>
       <id>nexus-snapshots</id>
-      <url>http://localhost:8081/nexus/content/repositories/snapshots</url>
+      <url>${fzl.nexus.url}/repository/maven-snapshots/</url>
     </snapshotRepository>
   </distributionManagement>
-  
- <build>
-   <plugins>
-     <plugin>
-       <groupId>org.sonatype.plugins</groupId>
-       <artifactId>nexus-staging-maven-plugin</artifactId>
-       <version>1.6.3</version>
-       <executions>
-         <execution>
-           <id>default-deploy</id>
-           <phase>deploy</phase>
-           <goals>
-             <goal>deploy</goal>
-           </goals>
-         </execution>
-       </executions> 
-       <configuration>
-         <serverid>deployment</serverid>
-         <nexusurl>http://localhost:8081/nexus/</nexusurl>
-  
-         <!-- <stagingProfileId>1296f79efe04a4d0</stagingProfileId> -->
-  
-         <skipstaging>true</skipstaging>
-       </configuration>
-     </plugin>
-   </plugins>
-   </build>
-  
-</project>
 
+</project>

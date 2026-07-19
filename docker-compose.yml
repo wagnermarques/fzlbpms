@@ -1,3 +1,9 @@
+# Host ports and credentials come from the .env file (single source of truth).
+# Copy .env.template to .env before running docker compose.
+# ${VAR:?} makes compose fail with a clear error if a variable is missing.
+# Container-internal ports (right side of mappings, healthchecks, jdbc urls)
+# stay hard-coded: they only exist inside the fzl-network.
+
 services:
 
   fzl-nginx:
@@ -6,9 +12,9 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-nginx
     ports:
-      - "80:80"
-      - "8899:8899" #01_fzlbpms.conf -> fzlbpms internal apps
-      - "8900:8900" 
+      - "${FZL_NGINX_PORT_HTTP:?}:80"
+      - "${FZL_NGINX_PORT_FZLBPMS_APPS:?}:8899" #01_fzlbpms.conf -> fzlbpms internal apps
+      - "${FZL_NGINX_PORT_SITES:?}:8900"
     volumes:
       - ./src-projects/var_www/html:/var/www/html:rw #na conf do nginx: root /var/www/html;
       - ./src-projects/moodledata:/var/www/moodledata:rw
@@ -38,21 +44,21 @@ services:
     environment:
        - MOODLE_XMLRPC_ENABLED=0
        - MOODLE_MNET_DISPATCHER_MODE=off
-      
+
   fzl-mysql:
     image: mysql:8.4.6
     container_name: fzl-mysql
     ports:
-      - "3316:3306"
+      - "${FZL_MYSQL_PORT:?}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: 1234
-      MYSQL_DATABASE: fzl_db
-      MYSQL_USER: fzl_user
-      MYSQL_PASSWORD: 1234
+      MYSQL_ROOT_PASSWORD: ${FZL_MYSQL_ROOT_PASSWORD:?}
+      MYSQL_DATABASE: ${FZL_MYSQL_DATABASE:?}
+      MYSQL_USER: ${FZL_MYSQL_USER:?}
+      MYSQL_PASSWORD: ${FZL_MYSQL_PASSWORD:?}
     volumes:
       - ./src-projects:/sql-scripts
       - ./containers/fzl-mysql/mysql-data:/var/lib/mysql
-      
+
     networks:
       - fzl-network
 
@@ -62,11 +68,11 @@ services:
     container_name: fzl-postgresql
     restart: always
     ports:
-      - "5432:5432"
+      - "${FZL_POSTGRES_PORT:?}:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: fzldb
+      POSTGRES_USER: ${FZL_POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${FZL_POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${FZL_POSTGRES_DB:?}
       POSTGRES_INITDB_ARGS: "--locale=pt_BR.UTF-8" # Para garantir o locale na criacao do DB
     volumes:
       - ./src-projects:/sql-scripts
@@ -79,7 +85,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      
+
   fzl-karaf-camel-integration:
     build:
       context: ./containers/fzl-karaf-camel-integration
@@ -104,7 +110,7 @@ services:
       target: development
     container_name: fzl-angular-dev
     ports:
-      - "4200:4200"
+      - "${FZL_ANGULAR_DEV_PORT:?}:4200"
     volumes:
       - ./containers/fzl-angular-dev/src-projects/:/app
     networks:
@@ -116,8 +122,8 @@ services:
     container_name: fzl-nexus
     restart: always
     ports:
-      - "8088:8081"
-      - "8082:8082"
+      - "${FZL_NEXUS_PORT_HTTP:?}:8081"
+      - "${FZL_NEXUS_PORT_DOCKER:?}:8082"
     volumes:
       - ./containers/fzl-nexus/nexus-data:/nexus-data
     environment:
@@ -126,17 +132,17 @@ services:
     networks:
       - fzl-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8088/nexus/repository/maven-public/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/service/rest/v1/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-      
+
   fzl-phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: fzl-phpmyadmin
     ports:
-      - '8889:80'
+      - '${FZL_PHPMYADMIN_PORT:?}:80'
     environment:
       - PMA_ARBITRARY=1
       - PMA_HOST=fzl-mysql
@@ -154,7 +160,7 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=true
     ports:
-      - "9200:9200"
+      - "${FZL_ELASTICSEARCH_PORT:?}:9200"
     volumes:
       - ./containers/fzl-elasticsearch/es-data:/usr/share/elasticsearch/data
     networks:
@@ -164,7 +170,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s      
+      start_period: 30s
 
   fzl-kibana:
     build:
@@ -174,12 +180,12 @@ services:
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
     ports:
-      - "5601:5601"
+      - "${FZL_KIBANA_PORT:?}:5601"
     depends_on:
       - fzl-elasticsearch
     networks:
-      - fzl-network      
-      
+      - fzl-network
+
   fzl-mongodb:
     image: mongo:4.4
     container_name: fzl-mongodb
@@ -187,9 +193,9 @@ services:
     volumes:
       - ./containers/fzl-mongodb/mongodb-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: overleaf
-      MONGO_INITDB_ROOT_PASSWORD: overleaf_pass
-      MONGO_INITDB_DATABASE: overleaf
+      MONGO_INITDB_ROOT_USERNAME: ${FZL_MONGO_USER:?}
+      MONGO_INITDB_ROOT_PASSWORD: ${FZL_MONGO_PASSWORD:?}
+      MONGO_INITDB_DATABASE: ${FZL_MONGO_DATABASE:?}
     networks:
       - fzl-network
     healthcheck:
@@ -228,8 +234,8 @@ services:
     container_name: fzl-portainer
     restart: always
     ports:
-      - "9000:9000"
-      - "9043:9043"
+      - "${FZL_PORTAINER_PORT_HTTP:?}:9000"
+      - "${FZL_PORTAINER_PORT_TLS:?}:9043"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./containers/fzl-portainer/portainer-data:/data
@@ -239,15 +245,15 @@ services:
     container_name: fzl-keycloak-db
     restart: always
     environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${FZL_KEYCLOAK_DB_NAME:?}
+      POSTGRES_USER: ${FZL_KEYCLOAK_DB_USER:?}
+      POSTGRES_PASSWORD: ${FZL_KEYCLOAK_DB_PASSWORD:?}
     volumes:
       - ./containers/fzl-keycloak/postgres-data:/var/lib/postgresql/data
     networks:
       - fzl-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -258,46 +264,21 @@ services:
     command: start-dev
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://fzl-keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: password
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB_URL: jdbc:postgresql://fzl-keycloak-db:5432/${FZL_KEYCLOAK_DB_NAME:?}
+      KC_DB_USERNAME: ${FZL_KEYCLOAK_DB_USER:?}
+      KC_DB_PASSWORD: ${FZL_KEYCLOAK_DB_PASSWORD:?}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${FZL_KEYCLOAK_ADMIN_USER:?}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${FZL_KEYCLOAK_ADMIN_PASSWORD:?}
       KC_HOSTNAME: localhost
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /auth
     ports:
-      - "8083:8080"
+      - "${FZL_KEYCLOAK_PORT:?}:8080"
     depends_on:
       fzl-keycloak-db:
         condition: service_healthy
     networks:
       - fzl-network
-
-  fzl-camunda-server:
-    build:
-      context: ./containers/fzl-camunda-server
-      dockerfile: Dockerfile
-    container_name: fzl-camunda-server
-    ports:
-      - "8084:8080"
-    environment:
-      - CAMUNDA_BPM_ADMIN_USER_ID=admin
-      - CAMUNDA_BPM_ADMIN_PASSWORD=admin
-      - CAMUNDA_BPM_ADMIN_USER_FIRST_NAME=Admin
-      - CAMUNDA_BPM_ADMIN_USER_LAST_NAME=FZL
-    volumes:
-      - ./containers/fzl-camunda-server/data:/camunda/internal
-    networks:
-      - fzl-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/camunda/api/engine/engine/default/process-definition/count || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      - fzl-postgresql
 
   fzl-bpmn-drawer:
     build:
@@ -305,10 +286,86 @@ services:
       dockerfile: Dockerfile
     container_name: fzl-bpmn-drawer
     ports:
-      - "8085:80"
+      - "${FZL_BPMN_DRAWER_PORT:?}:80"
+    networks:
+      - fzl-network
+
+  # PostgreSQL database for Flowable UI persistence
+  flowable-db:
+    image: postgres:15-alpine
+    container_name: flowable-postgres
+    environment:
+      POSTGRES_DB: ${FZL_FLOWABLE_DB_NAME:?}
+      POSTGRES_USER: ${FZL_FLOWABLE_DB_USER:?}
+      POSTGRES_PASSWORD: ${FZL_FLOWABLE_DB_PASSWORD:?}
+    ports:
+      - "${FZL_FLOWABLE_DB_PORT:?}:5432" # Mapped to 5435 to avoid conflict with fzl-postgresql on 5432
+    volumes:
+      - flowable_db_data:/var/lib/postgresql/data
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Flowable UI: Includes Modeler, Task, Admin, IDM apps in a single container
+  # Fixada na versao to 6.7.2, nao usar a versao 6.8.0
+  # A DefaultAsyncTaskExecutor não estarta corretamente e lanca uma NullPointerException ao chegar em qualquer task
+  flowable-ui:
+    image: flowable/flowable-ui:6.7.2
+    container_name: flowable-ui
+    depends_on:
+      flowable-db:
+        condition: service_healthy
+    ports:
+      - "${FZL_FLOWABLE_UI_PORT:?}:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://flowable-db:5432/${FZL_FLOWABLE_DB_NAME:?}
+      - SPRING_DATASOURCE_USERNAME=${FZL_FLOWABLE_DB_USER:?}
+      - SPRING_DATASOURCE_PASSWORD=${FZL_FLOWABLE_DB_PASSWORD:?}
+      - SPRING_DATASOURCE_DRIVER-CLASS-NAME=org.postgresql.Driver
+      # Configure flowable UI memory limit if needed
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - fzl-network
+
+  # GitLab Community Edition for local issue tracking, git repos, tags, merge requests
+  gitlab:
+    image: gitlab/gitlab-ce:16.11.2-ce.0
+    container_name: gitlab-ce
+    ports:
+      - "${FZL_GITLAB_PORT_HTTP:?}:80" # (avoiding internal port 8082 conflict with Puma, and host port 8082 conflict with fzl-nexus)
+      - "${FZL_GITLAB_PORT_SSH:?}:22"   # SSH port
+    environment:
+      GITLAB_ROOT_PASSWORD: "${FZL_GITLAB_ROOT_PASSWORD:?}"
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:${FZL_GITLAB_PORT_HTTP}'
+        nginx['listen_port'] = 80
+        gitlab_rails['gitlab_shell_ssh_port'] = ${FZL_GITLAB_PORT_SSH}
+        # Reduce memory consumption for local environment
+        postgresql['shared_buffers'] = "256MB"
+        sidekiq['concurrency'] = 8
+        prometheus_monitoring['enable'] = false
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - fzl-network
 
 networks:
   fzl-network:
     driver: bridge
+
+volumes:
+  flowable_db_data:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
+

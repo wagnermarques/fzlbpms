@@ -1,0 +1,146 @@
+---
+# Installs the Rust toolchain and every system library needed to build and run
+# the fzlbpmsadmin Tauri v2 application (webkit2gtk 4.1 based).
+#
+# Portable across: Debian 12+, Ubuntu 22.04+, Fedora, Alpine (edge/3.19+).
+#
+#   ansible-playbook tauri-rust-setup.yml            # uses ./inventory.ini
+#   ansible-playbook tauri-rust-setup.yml -K         # ask for sudo password
+#
+- name: Install Rust + Tauri v2 build requirements
+  hosts: tauri_dev
+  become: false # only package installation escalates; rustup runs as the login user
+  vars:
+    rust_toolchain: stable
+    cargo_home: "{{ ansible_env.HOME }}/.cargo"
+
+    # Tauri v2 needs webkit2gtk 4.1 (libsoup3). The appindicator packages are
+    # required by the "tray-icon" feature; libxdo by tauri's global shortcut /
+    # automation support; openssl headers by the git2 and reqwest crates.
+    tauri_packages:
+      Debian: # covers Debian and Ubuntu (same ansible_os_family)
+        - build-essential
+        - curl
+        - wget
+        - file
+        - git
+        - pkg-config
+        - libssl-dev
+        - libwebkit2gtk-4.1-dev
+        - libgtk-3-dev
+        - libayatana-appindicator3-dev
+        - librsvg2-dev
+        - libxdo-dev
+      RedHat: # Fedora
+        - gcc
+        - gcc-c++
+        - make
+        - curl
+        - wget
+        - file
+        - git
+        - pkgconf-pkg-config
+        - openssl-devel
+        - webkit2gtk4.1-devel
+        - gtk3-devel
+        - libappindicator-gtk3-devel
+        - librsvg2-devel
+        - libxdo-devel
+      Alpine:
+        - build-base
+        - curl
+        - wget
+        - file
+        - git
+        - pkgconf
+        - openssl-dev
+        - webkit2gtk-4.1-dev
+        - gtk+3.0-dev
+        - libayatana-appindicator-dev
+        - librsvg-dev
+        - xdotool-dev
+
+  pre_tasks:
+    - name: Ensure the distribution is one we support
+      ansible.builtin.assert:
+        that: ansible_facts.os_family in tauri_packages
+        fail_msg: >-
+          Unsupported OS family '{{ ansible_facts.os_family }}'.
+          This playbook supports Debian, Ubuntu, Fedora and Alpine.
+
+  tasks:
+    # ------------------------------------------------------------------
+    # System packages (one task per package manager so we can refresh the
+    # cache; ansible_os_family folds Ubuntu into Debian for us)
+    # ------------------------------------------------------------------
+    - name: Install Tauri system dependencies (apt)
+      become: true
+      ansible.builtin.apt:
+        name: "{{ tauri_packages.Debian }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Install Tauri system dependencies (dnf)
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ tauri_packages.RedHat }}"
+        state: present
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Install Tauri system dependencies (apk)
+      become: true
+      community.general.apk:
+        name: "{{ tauri_packages.Alpine }}"
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Alpine"
+
+    # ------------------------------------------------------------------
+    # Rust toolchain via rustup (per-user, identical on every distro)
+    # ------------------------------------------------------------------
+    - name: Check whether cargo is already installed
+      ansible.builtin.stat:
+        path: "{{ cargo_home }}/bin/cargo"
+      register: cargo_bin
+
+    - name: Install rustup + {{ rust_toolchain }} toolchain
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
+        | sh -s -- -y --default-toolchain {{ rust_toolchain }} --profile default
+      args:
+        creates: "{{ cargo_home }}/bin/cargo"
+      when: not cargo_bin.stat.exists
+
+    - name: Ensure the {{ rust_toolchain }} toolchain is present and current
+      ansible.builtin.command: "{{ cargo_home }}/bin/rustup update {{ rust_toolchain }}"
+      register: rustup_update
+      changed_when: "'installed' in rustup_update.stdout or 'updated' in rustup_update.stdout"
+
+    - name: Make cargo available in login shells (bash and POSIX sh)
+      ansible.builtin.lineinfile:
+        path: "{{ ansible_env.HOME }}/{{ item }}"
+        line: '. "$HOME/.cargo/env"'
+        create: true
+        mode: "0644"
+      loop:
+        - .profile
+        - .bashrc
+
+    # ------------------------------------------------------------------
+    # Verification
+    # ------------------------------------------------------------------
+    - name: Collect tool versions
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - "{{ cargo_home }}/bin/rustc --version"
+        - "{{ cargo_home }}/bin/cargo --version"
+        - pkg-config --modversion webkit2gtk-4.1
+      register: versions
+      changed_when: false
+
+    - name: Show installed versions
+      ansible.builtin.debug:
+        msg: "{{ versions.results | map(attribute='stdout') | list }}"

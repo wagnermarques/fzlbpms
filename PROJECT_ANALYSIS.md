@@ -111,19 +111,18 @@ Other container definitions exist but are not (yet) in compose: `fzl-rust-restse
 
 | Artifact | Purpose |
 |---|---|
-| `fzlparent` | Parent POM (`br.com.fzlbpms:fzlparent:1.0-SNAPSHOT`), configures deployment to the local **Nexus** (nexus-staging-maven-plugin, snapshots repo at `http://localhost:8081/nexus/...`) |
+| `fzlparent` | Top parent POM (`br.com.fzlbpms:fzlparent:1.0-SNAPSHOT`) — Nexus 3 `distributionManagement` (`/repository/maven-releases|snapshots/`), host/port via `fzl.nexus.*` properties mirroring `FZL_NEXUS_PORT_HTTP` in `.env` |
+| `fzlflowable-parent` | Child of `fzlparent` — BAR packaging (assembly) + `deploy-flowable` profile (curl POST to the Flowable REST API); pins `flowable.version` 6.7.2 and the `flowable.rest.*` defaults |
+| `fzlprocess-archetype` | Maven archetype users invoke to create a process project (sample BPMN, BAR assembly, README); generated projects inherit `fzlflowable-parent` |
 | `fzlparent_m2t` | Parent variant — model-to-text / template generation |
 | `fzlparent_oo` | Parent variant — OO projects |
 | `fzloo_extension` | Maven extension |
 
-These are the seeds of the "maven templates to create a business process project" goal.
-`fzlparent` now targets the **Nexus 3** repository layout (`/repository/maven-releases/`
-and `/repository/maven-snapshots/`) at `localhost:8088` via the `fzl.nexus.host` /
-`fzl.nexus.port` properties, which mirror `FZL_NEXUS_PORT_HTTP` in `.env` and can be
-overridden with `-Dfzl.nexus.port=...` (use host `fzl-nexus`, port 8081 when building
-inside the compose network).
-**Gap:** none of them yet generates a Flowable-ready project (process definitions,
-`flowable.*` config, deployable BAR/JAR).
+The "maven templates to create a business process project" goal is implemented by the
+`fzlparent` → `fzlflowable-parent` → `fzlprocess-archetype` chain. The generated
+projects are engine-less: `mvn package` builds the BAR, `mvn deploy` archives it in
+Nexus, `mvn verify -Pdeploy-flowable` deploys it to the `flowable-ui` container.
+Full command-line tutorial: `documentation/bpmns/index.org`.
 
 ## 5. Admin GUI (`src-projects/fzlbpmsadmin`)
 

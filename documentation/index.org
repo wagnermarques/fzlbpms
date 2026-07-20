@@ -1,12 +1,16 @@
 #+Title: Documentation
 
+* Guides
+
+- [[file:bpmns/index.org][Business processes (BPMN)]] — command-line tutorial: create a process
+  project from the Maven archetype, edit the BPMN, archive it in Nexus and
+  deploy it to the Flowable runtime.
+- [[./getting-started.org][Getting started]]
+
 * Centralized Login with Keycloak:
        * Infrastructure: Added fzl-keycloak and a dedicated fzl-keycloak-db (PostgreSQL) to docker-compose.yml.
-       * Gateway Integration: Configured Nginx to proxy /auth/ requests on port 8899 to Keycloak.
-       * Access: Keycloak is now reachable at http://localhost:8899/auth/admin (http://localhost:8899/auth/admin) (credentials: admin/admin).
-
-
-[[./getting-started.org]]
+       * Gateway Integration: Configured Nginx to proxy /auth/ requests (single port-80 catchall) to Keycloak.
+       * Access: Keycloak is now reachable at http://localhost/auth/admin (credentials: admin/admin).
 
 * Links Uteis
 https://www.jwt.io/

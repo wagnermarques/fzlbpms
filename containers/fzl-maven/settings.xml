@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Standardized Maven settings for the fzlbpms stack.
+
+    This file is NOT copied into an image: the `mvn` shell alias installed by
+    ansible/commands-aliases.yml bind-mounts it read-only into an ephemeral
+    maven container (removed after every run). Users never edit their own
+    ~/.m2/settings.xml.
+
+    Credentials are not stored here. The alias injects the repo .env file
+    (gitignored) into the container with `docker run - -env-file`, and the
+    ${env.*} references below pick them up:
+
+        FZL_NEXUS_ADMIN_USER / FZL_NEXUS_ADMIN_PASSWORD
+
+    The server ids must stay `nexus-releases` / `nexus-snapshots` — they are
+    referenced by <distributionManagement> in
+    src-projects/mvn-artifacts/fzlparent/pom.xml.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0
+                              https://maven.apache.org/xsd/settings-1.2.0.xsd">
+
+  <servers>
+    <server>
+      <id>nexus-releases</id>
+      <username>${env.FZL_NEXUS_ADMIN_USER}</username>
+      <password>${env.FZL_NEXUS_ADMIN_PASSWORD}</password>
+    </server>
+    <server>
+      <id>nexus-snapshots</id>
+      <username>${env.FZL_NEXUS_ADMIN_USER}</username>
+      <password>${env.FZL_NEXUS_ADMIN_PASSWORD}</password>
+    </server>
+  </servers>
+
+  <!--
+      Optional: route ALL dependency downloads through the local Nexus
+      (maven-public groups central + the fzl repos). Uncomment once you want
+      full standardization — note that builds then require the fzl-nexus
+      container to be up.
+
+  <mirrors>
+    <mirror>
+      <id>fzl-nexus</id>
+      <mirrorOf>*</mirrorOf>
+      <url>http://localhost:8088/repository/maven-public/</url>
+    </mirror>
+  </mirrors>
+  -->
+
+</settings>

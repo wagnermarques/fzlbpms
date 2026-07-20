@@ -1,0 +1,34 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Nexus deploy config and the BAR/Flowable machinery come from the
+       parents (fzlparent -> fzlflowable-parent), resolved from the local
+       repository or Nexus. -->
+  <parent>
+    <groupId>br.com.fzlbpms</groupId>
+    <artifactId>fzlflowable-parent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+  </parent>
+
+  <groupId>${groupId}</groupId>
+  <artifactId>${artifactId}</artifactId>
+  <version>${version}</version>
+  <packaging>pom</packaging>
+
+  <name>${artifactId}</name>
+  <description>FzlBPMS process project. The Flowable engine runs in the
+    flowable-ui container; this project only carries the process resources.
+    Build the BAR with `mvn package`, archive it in Nexus with `mvn deploy`,
+    deploy it to the engine with `mvn verify -Pdeploy-flowable`.</description>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

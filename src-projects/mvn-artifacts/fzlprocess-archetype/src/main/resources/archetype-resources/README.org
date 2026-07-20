@@ -1,0 +1,41 @@
+#+TITLE: FzlBPMS process project
+
+Process resources live in =src/main/resources/processes/= — BPMN
+(=*.bpmn20.xml=), and optionally DMN and forms. The Flowable engine runs in
+the =flowable-ui= container of the fzlbpms stack; this project only carries
+the process definitions.
+
+* Everyday commands
+
+| Command                        | Effect                                            |
+|--------------------------------+---------------------------------------------------|
+| =mvn package=                  | Builds =target/<name>-<version>-bar.zip= (the BAR) |
+| =mvn deploy=                   | Archives POM + BAR in the Nexus repository        |
+| =mvn verify -Pdeploy-flowable= | Deploys the BAR to the Flowable runtime           |
+
+Each =-Pdeploy-flowable= run creates a *new deployment version* in Flowable;
+running instances keep the version they started with.
+
+Overridable settings (defaults come from =fzlflowable-parent=):
+
+#+begin_src bash
+mvn verify -Pdeploy-flowable \
+    -Dflowable.rest.url=http://localhost:8080/flowable-ui \
+    -Dflowable.rest.user=admin \
+    -Dflowable.rest.password=test
+#+end_src
+
+* Editing the process
+
+- Text editor :: edit the =.bpmn20.xml= directly.
+- BPMN drawer :: http://localhost:8085 (fzl-bpmn-drawer container) — open,
+  edit, export back over the file.
+- Flowable Modeler :: http://localhost:8080/flowable-ui → Modeler app →
+  import the file, edit, export.
+
+Because the engine is external, avoid =flowable:class= Java delegates (the
+container cannot load your classes). Prefer expressions, HTTP tasks, script
+tasks, or hand integration work to the Karaf/Camel container.
+
+See =documentation/bpmns/index.org= in the fzlbpms repository for the full
+tutorial.

@@ -1,0 +1,110 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>br.com.fzlbpms</groupId>
+    <artifactId>fzlparent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <relativePath>../fzlparent/pom.xml</relativePath>
+  </parent>
+
+  <artifactId>fzlflowable-parent</artifactId>
+  <packaging>pom</packaging>
+
+  <name>fzlflowable-parent</name>
+  <description>
+    Parent for FzlBPMS process projects. The generated projects carry only the
+    process resources (BPMN/DMN/forms); the Flowable engine itself runs in the
+    flowable-ui container. `mvn package` produces a deployable BAR (zip of
+    src/main/resources/processes), `mvn deploy` stores it in Nexus (inherited
+    from fzlparent) and `mvn verify -Pdeploy-flowable` POSTs it to the Flowable
+    REST API.
+  </description>
+
+  <properties>
+    <!-- Engine version is pinned by the flowable-ui container tag in
+         docker-compose.yml (6.7.2 — do not use 6.8.0). Kept here for
+         reference / future engine-side dependencies. -->
+    <flowable.version>6.7.2</flowable.version>
+
+    <!-- Flowable REST endpoint. Mirrors FZL_FLOWABLE_UI_PORT in the repo root
+         .env file. Override at the command line when needed, e.g.
+         mvn verify -Pdeploy-flowable -Dflowable.rest.url=http://otherhost:8080/flowable-ui -->
+    <flowable.rest.url>http://localhost:8080/flowable-ui</flowable.rest.url>
+    <flowable.rest.user>admin</flowable.rest.user>
+    <flowable.rest.password>test</flowable.rest.password>
+  </properties>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- Children only need to declare the plugin (no config) to get the
+             BAR built on `mvn package` from src/main/assembly/bar.xml. -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-assembly-plugin</artifactId>
+          <version>3.7.1</version>
+          <executions>
+            <execution>
+              <id>make-bar</id>
+              <phase>package</phase>
+              <goals>
+                <goal>single</goal>
+              </goals>
+              <configuration>
+                <descriptors>
+                  <descriptor>src/main/assembly/bar.xml</descriptor>
+                </descriptors>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>3.1.0</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
+  <profiles>
+    <!-- Deploys the BAR to the Flowable runtime container:
+         mvn verify -Pdeploy-flowable
+         Flowable accepts any upload whose filename ends in .zip or .bar and
+         creates a new deployment version each time. -->
+    <profile>
+      <id>deploy-flowable</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>deploy-bar-to-flowable</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>curl</executable>
+                  <arguments>
+                    <argument>-fsS</argument>
+                    <argument>-u</argument>
+                    <argument>${flowable.rest.user}:${flowable.rest.password}</argument>
+                    <argument>-F</argument>
+                    <argument>file=@${project.build.directory}/${project.build.finalName}-bar.zip</argument>
+                    <argument>${flowable.rest.url}/process-api/repository/deployments</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+</project>

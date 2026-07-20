@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://fzlbpms.com.br/processes"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath">
+
+  <process id="${artifactId}" name="${artifactId}" isExecutable="true">
+
+    <startEvent id="startEvent" name="Start"/>
+
+    <sequenceFlow id="flowToReview" sourceRef="startEvent" targetRef="reviewTask"/>
+
+    <!-- Sample human step. flowable:candidateGroups matches Flowable IDM
+         groups; adjust or replace with flowable:assignee as needed. -->
+    <userTask id="reviewTask" name="Review request"
+              flowable:candidateGroups="users"/>
+
+    <sequenceFlow id="flowToEnd" sourceRef="reviewTask" targetRef="endEvent"/>
+
+    <endEvent id="endEvent" name="End"/>
+
+  </process>
+
+  <!-- Minimal diagram so the process renders in the Flowable Modeler and in
+       bpmn-js editors. Re-exported layouts will replace this section. -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_${artifactId}">
+    <bpmndi:BPMNPlane bpmnElement="${artifactId}" id="BPMNPlane_${artifactId}">
+      <bpmndi:BPMNShape bpmnElement="startEvent" id="BPMNShape_startEvent">
+        <omgdc:Bounds height="30.0" width="30.0" x="100.0" y="163.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="reviewTask" id="BPMNShape_reviewTask">
+        <omgdc:Bounds height="80.0" width="100.0" x="210.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="endEvent" id="BPMNShape_endEvent">
+        <omgdc:Bounds height="28.0" width="28.0" x="390.0" y="164.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="flowToReview" id="BPMNEdge_flowToReview">
+        <omgdi:waypoint x="130.0" y="178.0"/>
+        <omgdi:waypoint x="210.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="flowToEnd" id="BPMNEdge_flowToEnd">
+        <omgdi:waypoint x="310.0" y="178.0"/>
+        <omgdi:waypoint x="390.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

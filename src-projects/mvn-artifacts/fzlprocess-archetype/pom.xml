@@ -1,0 +1,38 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>br.com.fzlbpms</groupId>
+    <artifactId>fzlparent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <relativePath>../fzlparent/pom.xml</relativePath>
+  </parent>
+
+  <artifactId>fzlprocess-archetype</artifactId>
+  <packaging>maven-archetype</packaging>
+
+  <name>fzlprocess-archetype</name>
+  <description>
+    Archetype for FzlBPMS process projects. Usage:
+    mvn archetype:generate -B
+        -DarchetypeGroupId=br.com.fzlbpms
+        -DarchetypeArtifactId=fzlprocess-archetype
+        -DarchetypeVersion=1.0-SNAPSHOT
+        -DgroupId=br.com.fzlbpms.processes
+        -DartifactId=my-process
+        -Dversion=1.0-SNAPSHOT
+    See documentation/bpmns/index.org for the full tutorial.
+  </description>
+
+  <build>
+    <extensions>
+      <extension>
+        <groupId>org.apache.maven.archetype</groupId>
+        <artifactId>archetype-packaging</artifactId>
+        <version>3.2.1</version>
+      </extension>
+    </extensions>
+  </build>
+
+</project>

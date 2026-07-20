@@ -1,0 +1,35 @@
+<archetype-descriptor
+    xmlns="https://maven.apache.org/plugins/maven-archetype-plugin/archetype-descriptor/1.1.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://maven.apache.org/plugins/maven-archetype-plugin/archetype-descriptor/1.1.0
+                        https://maven.apache.org/xsd/archetype-descriptor-1.1.0.xsd"
+    name="fzlprocess">
+
+  <fileSets>
+    <!-- Sample BPMN — filtered so the process id/name pick up the artifactId.
+         The __artifactId__ token in the file name is replaced as well. -->
+    <fileSet filtered="true" packaged="false" encoding="UTF-8">
+      <directory>src/main/resources/processes</directory>
+      <includes>
+        <include>**/*.xml</include>
+      </includes>
+    </fileSet>
+
+    <!-- BAR assembly descriptor — no placeholders, copied as is. -->
+    <fileSet filtered="false" packaged="false" encoding="UTF-8">
+      <directory>src/main/assembly</directory>
+      <includes>
+        <include>**/*.xml</include>
+      </includes>
+    </fileSet>
+
+    <!-- README is unfiltered: org-mode #+KEYWORD lines must not reach Velocity. -->
+    <fileSet filtered="false" packaged="false" encoding="UTF-8">
+      <directory></directory>
+      <includes>
+        <include>README.org</include>
+      </includes>
+    </fileSet>
+  </fileSets>
+
+</archetype-descriptor>

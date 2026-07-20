@@ -1,0 +1,78 @@
+---
+# Installs shell aliases that run developer commands inside ephemeral Docker
+# containers, so the toolchain and its configuration are standardized by the
+# stack instead of each user's machine.
+#
+# First alias: mvn
+#   - runs in the official maven image and the container is removed when the
+#     command finishes (--rm);
+#   - uses the standardized containers/fzl-maven/settings.xml (mounted
+#     read-only) — users never edit ~/.m2/settings.xml;
+#   - Nexus credentials are injected from the repo .env file (gitignored),
+#     keeping .env the single source of truth;
+#   - the dependency cache persists in ~/.fzl-maven/repository, so downloads
+#     are not repeated on every run;
+#   - --network host makes localhost:8088 (Nexus) and localhost:8080
+#     (Flowable) behave exactly as for a host-installed mvn.
+#
+#   cd ansible && ansible-playbook commands-aliases.yml
+#
+# Re-run after changing anything here; open a new shell (or
+# `source ~/.bashrc.d/fzl-commands-aliases.sh`) to pick the aliases up.
+#
+- name: Shell aliases for containerized commands
+  hosts: command_aliases
+  become: false
+  vars:
+    fzlbpms_repo_root: "{{ playbook_dir | dirname }}"
+    maven_image: maven:3.9-eclipse-temurin-21
+    maven_cache_dir: "{{ ansible_facts.env.HOME }}/.fzl-maven/repository"
+    aliases_file: "{{ ansible_facts.env.HOME }}/.bashrc.d/fzl-commands-aliases.sh"
+
+  tasks:
+    - name: Ensure the Maven dependency cache directory exists
+      ansible.builtin.file:
+        path: "{{ maven_cache_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure ~/.bashrc.d exists
+      ansible.builtin.file:
+        path: "{{ ansible_facts.env.HOME }}/.bashrc.d"
+        state: directory
+        mode: "0755"
+
+    - name: Install the fzlbpms command aliases
+      ansible.builtin.copy:
+        dest: "{{ aliases_file }}"
+        mode: "0644"
+        content: |
+          # Managed by {{ fzlbpms_repo_root }}/ansible/commands-aliases.yml
+          # — edit the playbook and re-run it instead of changing this file.
+
+          # mvn inside an ephemeral container ({{ maven_image }}):
+          #   --rm            container removed after every execution
+          #   --network host  localhost:8088 (Nexus) / :8080 (Flowable) work as on the host
+          #   -u $(id -u)     files under target/ belong to you, not root
+          #   --env-file      FZL_NEXUS_ADMIN_* credentials for settings.xml
+          #   $([ -t 0 ]...)  allocate a TTY only when running interactively
+          alias mvn='docker run --rm $([ -t 0 ] && echo -it || echo -i) --network host -u $(id -u):$(id -g) --env-file "{{ fzlbpms_repo_root }}/.env" -e MAVEN_CONFIG=/var/maven/.m2 -v "$HOME/.fzl-maven/repository:/var/maven/.m2/repository" -v "{{ fzlbpms_repo_root }}/containers/fzl-maven/settings.xml:/var/maven/.m2/settings.xml:ro" -v "$PWD:$PWD" -w "$PWD" {{ maven_image }} mvn -Duser.home=/var/maven'
+
+    - name: Check whether ~/.bashrc already sources ~/.bashrc.d
+      ansible.builtin.command: grep -q '\.bashrc\.d' "{{ ansible_facts.env.HOME }}/.bashrc"
+      register: bashrcd_sourced
+      changed_when: false
+      failed_when: false
+
+    - name: Make ~/.bashrc source ~/.bashrc.d/*.sh (Fedora does this by default)
+      ansible.builtin.blockinfile:
+        path: "{{ ansible_facts.env.HOME }}/.bashrc"
+        create: true
+        mode: "0644"
+        marker: "# {mark} fzlbpms command aliases"
+        block: |
+          for rc in ~/.bashrc.d/*.sh; do
+              [ -r "$rc" ] && . "$rc"
+          done
+          unset rc
+      when: bashrcd_sourced.rc != 0

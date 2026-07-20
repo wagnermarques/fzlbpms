@@ -1,0 +1,309 @@
+#+TITLE: Business Processes — create, edit and deploy from the command line
+#+AUTHOR: FzlSoft
+#+OPTIONS: toc:3
+
+This tutorial walks through the full life cycle of a business process in the
+FzlBPMS stack: generating a process project with the Maven archetype, editing
+the BPMN, archiving the artifact in Nexus and deploying it to the Flowable
+runtime — all from the command line.
+
+* 1. How the pieces fit together
+
+#+begin_example
+  mvn archetype:generate                mvn deploy
+  (fzlprocess-archetype) ----+     +-------------------> fzl-nexus:8088
+                             |     |                     (artifact history)
+                             v     |
+                     my-process/ --+
+                     (BPMN only,   |
+                      no engine)   +-------------------> flowable-ui:8080
+                                        mvn verify        (running engine)
+                                        -Pdeploy-flowable
+#+end_example
+
+Three Maven artifacts in =src-projects/mvn-artifacts/= support this flow:
+
+| Artifact              | Role                                                              |
+|-----------------------+-------------------------------------------------------------------|
+| =fzlparent=           | Top parent: Nexus 3 =distributionManagement= (mirrors =.env= port) |
+| =fzlflowable-parent=  | Child of fzlparent: BAR packaging + =deploy-flowable= profile      |
+| =fzlprocess-archetype= | The template users invoke to create a new process project         |
+
+Design decision: *the process project does not embed the Flowable engine*.
+The engine runs in the =flowable-ui= container (pinned to 6.7.2) with its own
+PostgreSQL. A process project carries only the process resources and is
+deployed over Flowable's REST API. Consequence: do not use =flowable:class=
+Java delegates in your BPMN — the container cannot load your classes. Use
+expressions, script tasks, HTTP tasks, or delegate integration work to the
+Karaf/Camel container.
+
+* 2. Prerequisites
+
+- Maven 3.6+ and a JDK on your machine (=mvn -v= to check).
+- The stack services up:
+
+  #+begin_src bash
+  cd <fzlbpms-repo>
+  docker compose up -d flowable-db flowable-ui fzl-nexus
+  #+end_src
+
+  | Service     | URL                               | Default credentials |
+  |-------------+-----------------------------------+---------------------|
+  | Flowable UI | http://localhost:8080/flowable-ui | =admin= / =test=    |
+  | Nexus       | http://localhost:8088             | =admin= / (your Nexus password) |
+
+* 3. One-time setup
+
+** 3.1 Recommended: containerized mvn (no settings.xml editing)
+
+The Ansible playbook =ansible/commands-aliases.yml= installs a shell alias
+that runs =mvn= inside an ephemeral Maven container (removed after every
+execution):
+
+#+begin_src bash
+cd <fzlbpms-repo>/ansible
+ansible-playbook commands-aliases.yml
+# open a new shell (or: source ~/.bashrc.d/fzl-commands-aliases.sh)
+mvn -v    # now runs in a container
+#+end_src
+
+What the alias standardizes:
+
+- =settings.xml= is the shared =containers/fzl-maven/settings.xml=, mounted
+  read-only — nobody edits =~/.m2/settings.xml=;
+- Nexus credentials come from the repo =.env= file
+  (=FZL_NEXUS_ADMIN_USER= / =FZL_NEXUS_ADMIN_PASSWORD=), the single source
+  of truth;
+- the dependency cache persists in =~/.fzl-maven/repository=;
+- =--network host=, so =localhost:8088= (Nexus) and =localhost:8080=
+  (Flowable) behave exactly as for a host-installed mvn;
+- runs with your UID, so =target/= files belong to you.
+
+If you use the alias, *skip section 3.2* and continue at 3.3. Every =mvn=
+command in the rest of this tutorial works identically with either setup.
+
+Note: on a fresh Nexus, artifact uploads are refused until the Community
+Edition EULA is accepted (onboarding wizard at http://localhost:8088 or REST
+=/service/rest/v1/system/eula=).
+
+** 3.2 Manual alternative: Nexus credentials in ~/.m2/settings.xml
+
+If you prefer a host-installed Maven: =mvn deploy= (archiving artifacts in
+Nexus) needs credentials for the server ids =nexus-releases= and
+=nexus-snapshots= (referenced by =fzlparent='s =distributionManagement=).
+Create or extend =~/.m2/settings.xml=:
+
+#+begin_src xml
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <servers>
+    <server>
+      <id>nexus-releases</id>
+      <username>admin</username>
+      <password>YOUR-NEXUS-PASSWORD</password>
+    </server>
+    <server>
+      <id>nexus-snapshots</id>
+      <username>admin</username>
+      <password>YOUR-NEXUS-PASSWORD</password>
+    </server>
+  </servers>
+</settings>
+#+end_src
+
+Optional but recommended once the templates are published in Nexus — let all
+dependency resolution go through Nexus (so users do not need this repository
+checked out):
+
+#+begin_src xml
+  <mirrors>
+    <mirror>
+      <id>fzl-nexus</id>
+      <mirrorOf>*</mirrorOf>
+      <url>http://localhost:8088/repository/maven-public/</url>
+    </mirror>
+  </mirrors>
+#+end_src
+
+** 3.3 Publish the templates (administrator task)
+
+From the repository, install the three artifacts to your local Maven
+repository (enough for working on this machine):
+
+#+begin_src bash
+cd <fzlbpms-repo>/src-projects/mvn-artifacts
+mvn -N install -f fzlparent/pom.xml
+mvn -N install -f fzlflowable-parent/pom.xml
+mvn    install -f fzlprocess-archetype/pom.xml
+#+end_src
+
+To make them available to *other* machines, publish them to Nexus instead
+(requires 3.1 or 3.2):
+
+#+begin_src bash
+mvn -N deploy -f fzlparent/pom.xml
+mvn -N deploy -f fzlflowable-parent/pom.xml
+mvn    deploy -f fzlprocess-archetype/pom.xml
+#+end_src
+
+Note: when building *inside* the compose network, override the Nexus host:
+=-Dfzl.nexus.host=fzl-nexus -Dfzl.nexus.port=8081=.
+
+* 4. Create a process project
+
+#+begin_src bash
+mvn -B archetype:generate \
+    -DarchetypeGroupId=br.com.fzlbpms \
+    -DarchetypeArtifactId=fzlprocess-archetype \
+    -DarchetypeVersion=1.0-SNAPSHOT \
+    -DgroupId=br.com.fzlbpms.processes \
+    -DartifactId=ferias-approval \
+    -Dversion=1.0-SNAPSHOT
+#+end_src
+
+Parameters you choose:
+
+- =artifactId= :: the project (and process) name — lowercase words separated
+  by hyphens, e.g. =ferias-approval=, =purchase-request=. It becomes the
+  BPMN process id/key.
+- =groupId= :: keep =br.com.fzlbpms.processes= unless your team has its own.
+- =version= :: start with =1.0-SNAPSHOT=; move to =1.0=, =1.1=, ... when
+  releasing (release versions can only be deployed to Nexus once).
+
+Generated layout:
+
+#+begin_example
+ferias-approval/
+├── pom.xml                    # parent: fzlflowable-parent (thin, no plugins config)
+├── README.org                 # the everyday commands, summarized
+└── src/main/
+    ├── assembly/bar.xml       # BAR = zip of the processes directory
+    └── resources/processes/
+        └── ferias-approval.bpmn20.xml   # sample: start → user task → end
+#+end_example
+
+The sample process is immediately deployable: a start event, a =Review
+request= user task assigned to candidate group =users=, and an end event,
+with diagram coordinates so every visual editor can render it.
+
+* 5. Edit the process
+
+Any of the three, whatever you prefer:
+
+- Text editor :: open
+  =src/main/resources/processes/ferias-approval.bpmn20.xml= directly. The
+  BPMN 2.0 XML is the source of truth; Flowable-specific attributes use the
+  =flowable:= namespace (e.g. =flowable:assignee=,
+  =flowable:candidateGroups=).
+- BPMN drawer (fzl-bpmn-drawer) :: http://localhost:8085 — a standalone
+  bpmn-js editor. Open the file, edit visually, export/download and overwrite
+  the file in =src/main/resources/processes/=.
+- Flowable Modeler :: http://localhost:8080/flowable-ui (login
+  =admin=/=test=) → *Modeler* app → *Import Process* → edit → *Export
+  model* and overwrite the project file. The Modeler validates
+  Flowable-specific constructs, which the generic drawer does not.
+
+Whichever editor you use, *the file in the project is what gets deployed* —
+keep it authoritative and under version control.
+
+* 6. Build the BAR
+
+#+begin_src bash
+cd ferias-approval
+mvn package
+# → target/ferias-approval-1.0-SNAPSHOT-bar.zip
+#+end_src
+
+The BAR (business archive) is a plain zip with the process resources at its
+root. Everything Flowable recognizes inside it is deployed: =*.bpmn20.xml=,
+=*.dmn=, =*.form=, ...
+
+* 7. Archive in Nexus
+
+#+begin_src bash
+mvn deploy
+#+end_src
+
+This uploads the POM and the BAR to Nexus (snapshots go to
+=maven-snapshots=, releases to =maven-releases=). Browse them at
+http://localhost:8088. This is your artifact history — every deployed
+process version stays retrievable.
+
+* 8. Deploy to the Flowable runtime
+
+#+begin_src bash
+mvn verify -Pdeploy-flowable
+#+end_src
+
+Under the hood this POSTs the BAR to
+=http://localhost:8080/flowable-ui/process-api/repository/deployments= with
+the credentials from =fzlflowable-parent=. Successful output is a JSON
+deployment descriptor:
+
+#+begin_example
+{"id":"49f406dd-...","name":"ferias-approval-1","deploymentTime":"..."}
+#+end_example
+
+Every run creates a *new deployment version*; instances already running
+continue on the version they started with. Overrides when the defaults do
+not apply:
+
+#+begin_src bash
+mvn verify -Pdeploy-flowable \
+    -Dflowable.rest.url=http://other-host:8080/flowable-ui \
+    -Dflowable.rest.user=admin \
+    -Dflowable.rest.password=test
+#+end_src
+
+* 9. Verify and run the process
+
+List the deployed definition:
+
+#+begin_src bash
+curl -s -u admin:test \
+  "http://localhost:8080/flowable-ui/process-api/repository/process-definitions?key=ferias-approval" \
+  | python3 -m json.tool
+#+end_src
+
+Start an instance from the command line:
+
+#+begin_src bash
+curl -s -u admin:test -H "Content-Type: application/json" \
+  -d '{"processDefinitionKey": "ferias-approval"}' \
+  "http://localhost:8080/flowable-ui/process-api/runtime/process-instances" \
+  | python3 -m json.tool
+#+end_src
+
+Or use the *Task* app at http://localhost:8080/flowable-ui to start it and
+work the user tasks graphically.
+
+* 10. The everyday cycle
+
+#+begin_src bash
+$EDITOR src/main/resources/processes/ferias-approval.bpmn20.xml   # edit
+mvn package                     # build the BAR
+mvn deploy                      # archive in Nexus        (optional per iteration)
+mvn verify -Pdeploy-flowable    # new version in the engine
+#+end_src
+
+* 11. Troubleshooting
+
+- =401 Unauthorized= on deploy-flowable :: wrong engine credentials —
+  override =-Dflowable.rest.user/-Dflowable.rest.password=.
+- =curl: (7) Failed to connect= :: the =flowable-ui= container is not up
+  (=docker compose up -d flowable-db flowable-ui=) or a non-default port —
+  check =FZL_FLOWABLE_UI_PORT= in =.env= and override
+  =-Dflowable.rest.url=.
+- =401= on =mvn deploy= to Nexus :: wrong credentials — with the
+  containerized alias check =FZL_NEXUS_ADMIN_*= in =.env= (3.1); with a host
+  mvn check the =<server>= entries in =~/.m2/settings.xml= (3.2, ids must be
+  exactly =nexus-releases= and =nexus-snapshots=).
+- =403 Forbidden= on =mvn deploy= to Nexus :: the Community Edition EULA has
+  not been accepted yet (see 3.1) — or the password expired/changed.
+- =Could not find artifact br.com.fzlbpms:fzlflowable-parent= :: the parents
+  are not in your local repository nor in Nexus — run section 3.3.
+- Process not visible in the Task app :: the sample user task is for
+  candidate group =users=; log in as a member of that group or edit the
+  =flowable:candidateGroups= attribute.
+- Engine version :: the stack pins =flowable/flowable-ui:6.7.2= — 6.8.0 has
+  a =DefaultAsyncTaskExecutor= NullPointerException (see
+  =docker-compose.yml= comment). Keep BPMN features within 6.7.x.

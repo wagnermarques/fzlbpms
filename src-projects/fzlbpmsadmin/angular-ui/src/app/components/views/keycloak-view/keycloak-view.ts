@@ -26,7 +26,7 @@ export class KeycloakView {
   keycloakInfo = {
     defaultUser: 'admin',
     defaultPassword: 'admin',
-    gatewayUrl: 'http://localhost:8899/auth/admin',
+    gatewayUrl: 'http://localhost/auth/admin',
     directUrl: 'http://localhost:8083/auth/admin',
     relativeContext: '/auth',
     database: 'fzl-keycloak-db (PostgreSQL 16)',

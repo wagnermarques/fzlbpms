@@ -86,7 +86,7 @@ Moodle (OIDC plugin), Flowable/Camunda, GitLab and the admin GUI is still to be 
 ### Web / PHP layer (Moodle & Yii2 apps)
 | Service | Ports | Notes |
 |---|---|---|
-| `fzl-nginx` | 80, 8899 (fzlbpms internal apps), 8900 (sites) | Serves `var_www/html`; per-port conf files; Moodle reachable at `http://localhost:8900/moodle` |
+| `fzl-nginx` | 80 | Single catchall conf serves any folder in `var_www/html`; proxies `/auth` (Keycloak) and `/karafconsole` (Karaf); Moodle at `http://localhost/moodle` |
 | `fzl-php8.3-fpm` | — | Runs Moodle (XMLRPC disabled via env vars) |
 | `fzl-php8.1-fpm` | — | Legacy PHP apps (Yii2 / ava211) |
 | `fzl-mysql` (8.4.6) | 3316→3306 | + `fzl-phpmyadmin` on 8889 |
@@ -157,7 +157,7 @@ its database in `fzl-postgresql`. Operational tooling is already substantial
   XMLRPC hardening (`plugin_xmlrpc_disable_in_db.sh`, compose env vars)
 - Dev config: `moodle-config-php-dev.php`
 
-Access: `http://localhost:8900/moodle` (admin user reset via
+Access: `http://localhost/moodle` (admin user reset via
 `./bin/moodle/reset-password.sh`).
 
 **For mathematical courses specifically**, the missing pieces are typical Moodle math
@@ -240,6 +240,6 @@ docker compose up flowable-db flowable-ui fzl-keycloak-db fzl-keycloak
 cd src-projects/fzlbpmsadmin/angular-ui && npm install && npm run tauri:dev
 ```
 
-Key URLs (default ports from `.env`): Moodle `:8900/moodle` · Flowable `:8080` ·
+Key URLs (default ports from `.env`): Moodle `:80/moodle` · Flowable `:8080` ·
 Keycloak `:8083/auth` · BPMN drawer `:8085` · GitLab `:8086` · Nexus `:8088` · Karaf
 console `:8181/system/console` · Kibana `:5601` · Portainer `:9000` · phpMyAdmin `:8889`.

@@ -25,13 +25,18 @@ export interface ServiceAccess {
 // Host ports/credentials mirror the repo's .env file (the single source of
 // truth for the compose stack). If a FZL_*_PORT changes there, update here.
 const SERVICE_ACCESS: Record<string, ServiceAccess> = {
+  // Contexts mirror containers/fzl-nginx/nginx-conf.d/00-catchall.conf — keep in sync.
   'fzl-nginx': {
     links: [
-      { label: 'Sites (port 80)', url: 'http://localhost' },
-      { label: 'FzlBPMS apps gateway (8899)', url: 'http://localhost:8899' },
-      { label: 'Sites (8900)', url: 'http://localhost:8900' },
+      { label: 'Root PHP apps — /', url: 'http://localhost' },
+      { label: 'Moodle — /moodle', url: 'http://localhost/moodle' },
+      { label: 'AVA 211 — /ava211', url: 'http://localhost/ava211/' },
+      { label: 'Keycloak — /auth', url: 'http://localhost/auth/' },
+      { label: 'Karaf console — /karafconsole', url: 'http://localhost/karafconsole/' },
     ],
-    info: [],
+    info: [
+      'Single server on port 80 (00-catchall.conf): any folder under src-projects/var_www/html is served as a PHP app via fzl-php8.3-fpm; /auth and /karafconsole are reverse-proxied to Keycloak and Karaf.',
+    ],
   },
   'fzl-php8.1-fpm': {
     links: [],
@@ -62,7 +67,7 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
     links: [],
     info: [
       'Karaf console: docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/client',
-      'Web console (port 8181) is not published on the host yet.',
+      'Web console gateway: http://localhost/karafconsole/ (503/500 until the Karaf webconsole feature is installed).',
     ],
   },
   'fzl-angular-dev': {
@@ -122,7 +127,7 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
   },
   'fzl-keycloak': {
     links: [
-      { label: 'Admin console (gateway)', url: 'http://localhost:8899/auth/admin' },
+      { label: 'Admin console (gateway)', url: 'http://localhost/auth/admin' },
       { label: 'Admin console (direct)', url: 'http://localhost:8083/auth/admin' },
     ],
     info: [],

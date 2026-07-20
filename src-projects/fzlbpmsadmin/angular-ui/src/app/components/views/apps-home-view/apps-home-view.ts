@@ -62,13 +62,13 @@ export class AppsHomeView implements OnInit {
       },
       {
         name: 'Keycloak',
-        url: 'http://localhost:8899/auth/',
+        url: 'http://localhost/auth/',
         description: 'Identity and Access Management (IAM) for centralized authentication.',
         credentials: { user: 'admin', pass: 'admin' }
       },
       {
         name: 'Karaf Console',
-        url: 'http://localhost:8899/karafconsole/',
+        url: 'http://localhost/karafconsole/',
         description: 'Web console for Apache Karaf (OSGi container), managing bundles and services.',
         credentials: { user: 'karaf', pass: 'karaf' }
       }

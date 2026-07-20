@@ -13,6 +13,35 @@
   color: #c62828;
 }
 
+.access-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.access-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid #90caf9;
+  border-radius: 16px;
+  background: #e3f2fd;
+  text-decoration: none;
+}
+
+.access-link:hover {
+  background: #bbdefb;
+}
+
+.access-info {
+  font-family: monospace;
+  font-size: 13px;
+  color: #424242;
+  margin: 4px 0;
+}
+
 .logs {
   max-height: 400px;
   overflow: auto;

@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy, signal } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
@@ -8,6 +8,7 @@ import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { Container } from '../fzlbpms-containers-view/fzlbpms-containers-view';
+import { getServiceAccess, openExternal } from '../fzlbpms-containers-view/service-access';
 
 @Component({
   selector: 'app-container-details-view',
@@ -28,6 +29,10 @@ export class ContainerDetailsView implements OnInit {
   container = signal<Container | null>(null);
   logs = signal<string[]>([]);
   error = signal<string | null>(null);
+  access = computed(() => {
+    const c = this.container();
+    return c ? getServiceAccess(c.name) : undefined;
+  });
 
   private containerId: string | null = null;
 
@@ -46,6 +51,10 @@ export class ContainerDetailsView implements OnInit {
       this.error.set(`Error fetching container info: ${error}`);
     }
     await this.refreshLogs();
+  }
+
+  openLink(url: string) {
+    openExternal(url);
   }
 
   async refreshLogs() {

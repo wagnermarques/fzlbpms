@@ -1,8 +1,23 @@
 <h2>Running Containers</h2>
 
 @for (container of containers(); track container.id) {
-  <div>
-    <a href="javascript:void(0)" (click)="onContainerClick(container)">{{ container.name }}</a>
+  <div class="container-row">
+    <a href="javascript:void(0)" class="container-name" (click)="onContainerClick(container)">{{ container.name }}</a>
+    @if (accessFor(container); as access) {
+      @if (access.links.length > 0) {
+        <span class="access-links">
+          @for (link of access.links; track link.url) {
+            <a href="javascript:void(0)" class="access-link" (click)="openLink(link.url)">{{ link.label }}</a>
+          }
+        </span>
+      } @else {
+        <div class="access-info">
+          @for (line of access.info; track line) {
+            <div>{{ line }}</div>
+          }
+        </div>
+      }
+    }
   </div>
 } @empty {
   <p>No containers running.</p>

@@ -2,6 +2,7 @@ import { Component, OnInit, ChangeDetectionStrategy, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { invoke } from '@tauri-apps/api/core';
+import { getServiceAccess, openExternal, ServiceAccess } from './service-access';
 
 export interface Container {
   id: string;
@@ -39,5 +40,13 @@ export class FzlbpmsContainersView implements OnInit {
     } else {
       this.router.navigate(['/container-details', container.id]);
     }
+  }
+
+  accessFor(container: Container): ServiceAccess | undefined {
+    return getServiceAccess(container.name);
+  }
+
+  openLink(url: string) {
+    openExternal(url);
   }
 }

@@ -36,6 +36,25 @@
         <p>Container not found among the running containers.</p>
       }
 
+      @if (access(); as a) {
+        <mat-divider></mat-divider>
+        <h3>Access</h3>
+        @if (a.links.length > 0) {
+          <div class="access-links">
+            @for (link of a.links; track link.url) {
+              <a href="javascript:void(0)" class="access-link" (click)="openLink(link.url)">
+                <mat-icon inline>open_in_browser</mat-icon> {{ link.label }}
+              </a>
+            }
+          </div>
+        } @else {
+          <p>This service has no browser interface.</p>
+        }
+        @for (line of a.info; track line) {
+          <p class="access-info">{{ line }}</p>
+        }
+      }
+
       <mat-divider></mat-divider>
 
       <h3>Logs</h3>

@@ -5,6 +5,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { openExternal } from '../fzlbpms-containers-view/service-access';
 
 @Component({
   selector: 'app-keycloak-view',
@@ -33,6 +34,6 @@ export class KeycloakView {
   };
 
   openLink(url: string) {
-    window.open(url, '_blank');
+    openExternal(url);
   }
 }

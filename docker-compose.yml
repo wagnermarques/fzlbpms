@@ -96,6 +96,7 @@ services:
       KC_HTTP_RELATIVE_PATH: /auth
       KC_ADMIN_USER: ${FZL_KEYCLOAK_ADMIN_USER:?}
       KC_ADMIN_PASSWORD: ${FZL_KEYCLOAK_ADMIN_PASSWORD:?}
+      KC_CAMEL_CLIENT_SECRET: ${FZL_CAMEL_CLIENT_SECRET:?}
       FZL_REALM: fzlbpms
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles

@@ -68,10 +68,11 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
       { label: 'Users API — list all', url: 'http://localhost:9090/fzlbpms/admin/users' },
     ],
     info: [
-      'REST API base: http://localhost:9090/fzlbpms/admin/users',
-      'GET /users · GET /users/{id} · POST /users · PUT /users/{id} · DELETE /users/{id}',
+      'Auth (BFF):  POST /fzlbpms/auth/login  {username, password}  →  {access_token, refresh_token, expires_in}',
+      '             POST /fzlbpms/auth/refresh {refresh_token}       →  {access_token, refresh_token, expires_in}',
+      '             POST /fzlbpms/auth/logout  {refresh_token}       →  204',
+      'Users CRUD:  GET /fzlbpms/admin/users · GET /users/{id} · POST /users · PUT /users/{id} · DELETE /users/{id}',
       'Karaf console: docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/client',
-      'Web console gateway: http://localhost/karafconsole/ (503/500 until the Karaf webconsole feature is installed).',
     ],
   },
   'fzl-angular-dev': {

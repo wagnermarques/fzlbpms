@@ -64,8 +64,12 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
     ],
   },
   'fzl-karaf-camel-integration': {
-    links: [],
+    links: [
+      { label: 'Users API — list all', url: 'http://localhost:9090/fzlbpms/admin/users' },
+    ],
     info: [
+      'REST API base: http://localhost:9090/fzlbpms/admin/users',
+      'GET /users · GET /users/{id} · POST /users · PUT /users/{id} · DELETE /users/{id}',
       'Karaf console: docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/client',
       'Web console gateway: http://localhost/karafconsole/ (503/500 until the Karaf webconsole feature is installed).',
     ],
@@ -129,8 +133,12 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
     links: [
       { label: 'Admin console (gateway)', url: 'http://localhost/auth/admin' },
       { label: 'Admin console (direct)', url: 'http://localhost:8083/auth/admin' },
+      { label: 'REST Admin API docs (Swagger UI)', url: 'https://www.keycloak.org/docs-api/latest/rest-api/index.html' },
     ],
-    info: [],
+    info: [
+      'REST Admin API base: http://localhost:8083/auth/admin/realms (requires Bearer token — use the OpenAPI spec at https://www.keycloak.org/docs-api/latest/rest-api/openapi.json to import into Postman/Insomnia).',
+      'Get a token: curl -s -d "client_id=admin-cli&grant_type=password&username=<user>&password=<pass>" http://localhost:8083/auth/realms/master/protocol/openid-connect/token | jq .access_token',
+    ],
   },
   'fzl-bpmn-drawer': {
     links: [{ label: 'BPMN Drawer', url: 'http://localhost:8085' }],

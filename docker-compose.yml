@@ -89,6 +89,14 @@ services:
       context: ./containers/fzl-karaf-camel-integration
       dockerfile: Dockerfile
     container_name: fzl-karaf-camel-integration
+    ports:
+      - "${FZL_KARAF_REST_PORT:?}:9090"
+    environment:
+      KC_HOST: fzl-keycloak
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_ADMIN_USER: ${FZL_KEYCLOAK_ADMIN_USER:?}
+      KC_ADMIN_PASSWORD: ${FZL_KEYCLOAK_ADMIN_PASSWORD:?}
+      FZL_REALM: fzlbpms
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy
@@ -99,6 +107,8 @@ services:
     networks:
       - fzl-network
     restart: unless-stopped
+    depends_on:
+      - fzl-keycloak
 
   fzl-angular-dev:
     image: fzl-angular-dev:0.0.1
@@ -275,6 +285,7 @@ services:
       KC_HOSTNAME: localhost
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
     ports:
       - "${FZL_KEYCLOAK_PORT:?}:8080"
     depends_on:

@@ -7,7 +7,15 @@
     <button mat-icon-button>
       <mat-icon>notifications</mat-icon>
     </button>
-    <button mat-icon-button>
-      <mat-icon>account_circle</mat-icon>
-    </button>
+
+    @if (auth.isLoggedIn()) {
+      <div class="user-widget" [matTooltip]="'Logado como ' + auth.username()">
+        <mat-icon>account_circle</mat-icon>
+        <span class="username">{{ auth.username() }}</span>
+      </div>
+    } @else {
+      <button mat-icon-button>
+        <mat-icon>account_circle</mat-icon>
+      </button>
+    }
   </mat-toolbar>

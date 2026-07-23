@@ -5,7 +5,22 @@
     right: 0;
     z-index: 1000;
   }
-  
+
   .spacer {
     flex: 1 1 auto;
+  }
+
+  .user-widget {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    opacity: 0.92;
+  }
+
+  .username {
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
   }

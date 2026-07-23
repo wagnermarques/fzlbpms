@@ -1,0 +1,10 @@
+# This directory is Karaf's hot-deploy folder, mounted at /opt/karaf/deploy
+# inside the fzl-karaf-camel-integration container.
+# Karaf writes runtime state files here (.deployed tracking files, etc.).
+# Nothing in this directory should be committed to git.
+#
+# Blueprint XML bundles live in:
+#   src-projects/karaf_bundles/blueprint-xmls-bundles/
+# They are copied here by entrypoint.sh before Karaf starts.
+*
+!.gitignore

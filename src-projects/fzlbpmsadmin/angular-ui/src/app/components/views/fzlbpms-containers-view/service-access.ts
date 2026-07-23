@@ -153,7 +153,7 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
     ],
   },
   'flowable-ui': {
-    links: [{ label: 'Flowable UI', url: 'http://localhost:8080/flowable-ui' }],
+    links: [{ label: 'Flowable UI', url: 'http://localhost/flowable-ui' }],
     info: [],
   },
   'gitlab-ce': {

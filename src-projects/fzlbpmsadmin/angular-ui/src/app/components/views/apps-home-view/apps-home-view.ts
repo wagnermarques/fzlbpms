@@ -45,7 +45,7 @@ export class AppsHomeView implements OnInit {
     const mainApps: Application[] = [
       {
         name: 'Flowable BPM',
-        url: 'http://localhost:8080/flowable-ui',
+        url: 'http://localhost/flowable-ui',
         description: 'BPMN 2.0 Process engine — Modeler, Task, Admin and IDM apps bundled in a single UI (v6.7.2).',
         credentials: { user: 'admin', pass: 'test' }
       },

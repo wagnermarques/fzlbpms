@@ -1,0 +1,334 @@
+#+TITLE: Moodle — automatic installation with the =basic= stack
+#+AUTHOR: FzlSoft
+#+OPTIONS: toc:3
+
+This document explains, in detail, how Moodle is installed and made available
+when you start the =basic= stack:
+
+#+begin_src bash
+  ./bin/run-stack.sh basic
+#+end_src
+
+After that command finishes, the latest stable Moodle (pinned in =.env=) is
+running and reachable at:
+
+#+begin_example
+  http://localhost/moodle
+#+end_example
+
+No desktop app, no manual steps, no web-based installer wizard. Everything is
+done by an idempotent, one-shot container that runs as part of the stack.
+
+* 1. The big picture
+
+#+begin_example
+  ./bin/run-stack.sh basic
+        |
+        | reads run-stack.toml -> [stacks.basic] service list
+        v
+  docker compose up -d  fzl-nginx  fzl-php8.3-fpm  fzl-postgresql \
+                        moodle-installer  fzl-karaf-...  fzl-keycloak-...  flowable-...
+        |
+        |  (compose resolves depends_on / healthchecks)
+        v
+  +------------------+     +-------------------+     +----------------------+
+  |  fzl-postgresql  |<----|  moodle-installer |     |     fzl-php8.3-fpm    |
+  |  (Postgres 16)   | 1   |   (one-shot job)  |     |   (serves Moodle)    |
+  +------------------+     +---------+---------+     +----------+-----------+
+        ^                            | 2,3,4,5                  ^
+        | Moodle DB                  v                          | FastCGI :9000
+        |                  src-projects/var_www/html/moodle <---+
+        |                  src-projects/moodledata               |
+        |                            ^                           |
+        +----------------------------+          +----------------+-----------+
+                                                |          fzl-nginx         |
+                                                |  /moodle -> moodle/public  |
+                                                +----------------------------+
+                                                              ^
+                                                              | :80
+                                                        http://localhost/moodle
+#+end_example
+
+The numbers (1–5) are the installer steps, described in §4.
+
+Only *four* of the =basic= services matter for Moodle:
+
+| Service            | Role for Moodle                                              |
+|--------------------+--------------------------------------------------------------|
+| =fzl-postgresql=   | Hosts the Moodle database (Postgres 16.x)                    |
+| =moodle-installer= | One-shot job that provisions Moodle, then exits              |
+| =fzl-php8.3-fpm=   | Runs Moodle's PHP code (PHP 8.3 + all required extensions)   |
+| =fzl-nginx=        | Reverse-proxies =/moodle= to the PHP-FPM backend             |
+
+* 2. Where installation is triggered
+
+=run-stack.toml= lists =fzl-postgresql= and =moodle-installer= in the =basic=
+stack:
+
+#+begin_src toml
+  [stacks.basic]
+  description = "the basics"
+  services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-postgresql", "moodle-installer",
+              "fzl-karaf-camel-integration", "fzl-keycloak-db", "fzl-keycloak",
+              "flowable-db", "flowable-ui"]
+#+end_src
+
+=bin/run-stack.sh= expands that list and runs a single
+=docker compose up -d ...=, so the installer is just another service brought up
+by the same command.
+
+* 3. The one-shot installer service
+
+Defined in =docker-compose.yml=:
+
+#+begin_src yaml
+  moodle-installer:
+    build:
+      context: ./containers/fzl-php8.3-fpm/   # reuse the PHP image (php + curl + tar + pdo_pgsql)
+      dockerfile: Dockerfile
+    container_name: fzl-moodle-installer
+    depends_on:
+      fzl-postgresql:
+        condition: service_healthy            # wait until the DB is ready
+    volumes:
+      - ./src-projects/var_www/html:/var/www/html      # Moodle code (shared with nginx & php-fpm)
+      - ./src-projects/moodledata:/var/www/moodledata  # Moodle data dir
+      - ./bin/moodle:/opt/moodle-scripts:ro            # the install script
+    environment:
+      MOODLE_VERSION: ${MOODLE_VERSION:?}
+      MOODLE_DB_HOST: fzl-postgresql
+      FZL_POSTGRES_USER: ${FZL_POSTGRES_USER:?}        # DB superuser (creates the role/db)
+      FZL_POSTGRES_PASSWORD: ${FZL_POSTGRES_PASSWORD:?}
+      MOODLE_DB_NAME: ${MOODLE_DB_NAME:?}
+      MOODLE_DB_USER: ${MOODLE_DB_USER:?}
+      MOODLE_DB_PASS: ${MOODLE_DB_PASS:?}
+      MOODLE_WWWROOT: ${MOODLE_WWWROOT:?}
+      MOODLE_ADMIN_USER: ${MOODLE_ADMIN_USER:?}
+      MOODLE_ADMIN_PASS: ${MOODLE_ADMIN_PASS:?}
+      MOODLE_ADMIN_EMAIL: ${MOODLE_ADMIN_EMAIL:?}
+      MOODLE_FULLNAME: ${MOODLE_FULLNAME:-fzlbpms Moodle}
+      MOODLE_SHORTNAME: ${MOODLE_SHORTNAME:-fzlbpms}
+    networks:
+      - fzl-network
+    restart: "no"                              # run once; do NOT restart on exit
+    entrypoint: ["bash", "/opt/moodle-scripts/install-moodle-in-container.sh"]
+#+end_src
+
+Key design decisions:
+
+- *Reuses the PHP image.* No extra image to maintain — the =fzl-php8.3-fpm=
+  image already has =php=, =curl=, =tar= and the =pdo_pgsql= extension, which
+  is everything the installer needs.
+- *Runs inside the network*, so it reaches the database by service name
+  (=fzl-postgresql=) — no host =docker exec= and no =pkexec= password prompts.
+- *Shares the bind mounts* with =fzl-nginx= and =fzl-php8.3-fpm=, so the code it
+  writes into =src-projects/var_www/html/moodle= is immediately visible to the
+  web server.
+- *=restart: "no"=*: it does its job and exits =0=. On the next
+  =docker compose up= it runs again but, being idempotent (§5), it is a no-op.
+
+* 4. What the installer does, step by step
+
+The logic lives in =bin/moodle/install-moodle-in-container.sh=. Every step is
+guarded so a re-run is safe.
+
+** Step 1 — Create the Postgres role and database
+
+The =psql= client is not in the PHP image, so the script uses PHP's =pdo_pgsql=
+to connect to =fzl-postgresql= as the *superuser* (=FZL_POSTGRES_USER=) and:
+
+- creates the login role =MOODLE_DB_USER= (or resets its password if it exists);
+- creates the database =MOODLE_DB_NAME= owned by that role (if absent);
+- grants all privileges on the database to the role.
+
+=CREATE ROLE= / =CREATE DATABASE= cannot run inside a transaction, so each
+statement is issued on its own. An existing role/database is detected via
+=pg_roles= / =pg_database= and skipped.
+
+** Step 2 — Download and extract the stable tarball
+
+If =src-projects/var_www/html/moodle/version.php= is *absent*, the script
+downloads the official stable tarball and extracts it. The download URL is
+derived from =MOODLE_VERSION=:
+
+#+begin_example
+  MOODLE_VERSION=5.2.1
+      -> stable dir = "stable" + <major> + <zero-padded minor> = stable502
+      -> https://download.moodle.org/download.php/direct/stable502/moodle-5.2.1.tgz
+#+end_example
+
+The tarball's top-level directory is =moodle/=, so it extracts straight to
+=/var/www/html/moodle=. If the source is already present, the download is
+skipped.
+
+** Step 3 — Fix ownership
+
+The installer runs as =root= inside the container, so it can =chown= the code
+and data directories to =www-data= (the user PHP-FPM runs as):
+
+#+begin_example
+  chown -R www-data:www-data  /var/www/html/moodle  /var/www/moodledata
+  chmod -R 755 /var/www/html/moodle
+  chmod 775 /var/www/moodledata
+#+end_example
+
+This replaces the old desktop-app approach, which needed an interactive
+=pkexec= root prompt on the host.
+
+** Step 4 — Run Moodle's CLI installer
+
+Guarded on the real =config.php= at the code root. If it does not yet exist,
+the script runs Moodle's non-interactive CLI installer *as =www-data=*:
+
+#+begin_src bash
+  php admin/cli/install.php \
+      --non-interactive --agree-license --lang=en \
+      --wwwroot="$MOODLE_WWWROOT" \
+      --dataroot=/var/www/moodledata \
+      --dbtype=pgsql --dbhost=fzl-postgresql --dbport=5432 \
+      --dbname="$MOODLE_DB_NAME" --dbuser="$MOODLE_DB_USER" --dbpass="$MOODLE_DB_PASS" \
+      --prefix="$MOODLE_DB_PREFIX" \
+      --fullname="$MOODLE_FULLNAME" --shortname="$MOODLE_SHORTNAME" \
+      --adminuser="$MOODLE_ADMIN_USER" --adminpass="$MOODLE_ADMIN_PASS" \
+      --adminemail="$MOODLE_ADMIN_EMAIL"
+#+end_src
+
+=install.php= does three things in one shot: writes =config.php=, creates the
+whole database schema, and creates the site administrator account.
+
+*Note on Moodle 5.x layout.* Since Moodle 5.0 the web root moved into a
+=public/= subdirectory, and the tarball ships =public/config.php= as a *shim*
+that merely =require='s the real =../config.php=. The installer therefore
+detects the CLI location automatically (=admin/cli= vs =public/admin/cli=) and
+treats *only* the code-root =config.php= as proof of a completed install — the
+shipped shim is ignored.
+
+** Step 5 — Purge caches
+
+Finally it runs =php admin/cli/purge_caches.php= (best-effort) so the fresh
+install starts with clean caches.
+
+* 5. Idempotency — safe to run every time
+
+Each step checks state before acting, so running =./bin/run-stack.sh basic=
+repeatedly never breaks an existing install:
+
+| Step | Guard                              | On a second run          |
+|------+------------------------------------+--------------------------|
+|    1 | =pg_roles= / =pg_database= lookups | "role/database exists"   |
+|    2 | =moodle/version.php= present       | download skipped         |
+|    4 | code-root =config.php= present     | install skipped          |
+
+A typical *second* run logs:
+
+#+begin_example
+  [moodle-installer] role already exists
+  [moodle-installer] database already exists
+  [moodle-installer] config.php already exists — Moodle is already installed (skipping).
+  [moodle-installer] === Moodle provisioning complete. Access it at http://localhost/moodle ===
+#+end_example
+
+* 6. Configuration (=.env=)
+
+All values come from =.env= (single source of truth; =.env.template= is the
+versioned example). Change them there *before* the first run.
+
+| Variable             | Default (=.env=)          | Meaning                                  |
+|----------------------+---------------------------+------------------------------------------|
+| =MOODLE_VERSION=     | =5.2.1=                   | Stable release to download/pin           |
+| =MOODLE_DB_NAME=     | =moodle=                  | Moodle database name                     |
+| =MOODLE_DB_USER=     | =moodle=                  | Moodle database role                     |
+| =MOODLE_DB_PASS=     | =moodlepassword=          | Moodle database password                 |
+| =MOODLE_WWWROOT=     | =http://localhost/moodle= | Public URL (must match the nginx route)  |
+| =MOODLE_ADMIN_USER=  | =admin=                   | Site administrator login                 |
+| =MOODLE_ADMIN_PASS=  | =Admin@moodle1=           | Site administrator password (change it!) |
+| =MOODLE_ADMIN_EMAIL= | =wagnerdocri@gmail.com=   | Administrator email                      |
+| =MOODLE_FULLNAME=    | =fzlbpms Moodle=          | Site full name                           |
+| =MOODLE_SHORTNAME=   | =fzlbpms=                 | Site short name                          |
+
+The database *superuser* used to create the role/db comes from the existing
+PostgreSQL block (=FZL_POSTGRES_USER= / =FZL_POSTGRES_PASSWORD=).
+
+* 7. Why the environment is already Moodle-ready
+
+- *PHP 8.3* (=fzl-php8.3-fpm=) with every extension Moodle needs already
+  compiled in: =pgsql=, =gd=, =intl=, =mbstring=, =zip=, =curl=, =soap=,
+  =opcache=, =sodium=, =bcmath=, =exif=, =imagick=.
+- *PHP ini* already tuned in =containers/fzl-php8.3-fpm/custom-php.ini=:
+  =max_input_vars = 5000=, =memory_limit = 512M=, =post_max_size = 128M=.
+- *Postgres 16.x* (=fzl-postgresql=) — satisfies Moodle 5.2's minimum of
+  Postgres 16.
+- *nginx* already has the =/moodle= location, pointed at =moodle/public= (the
+  Moodle 5.x web root) with the FastCGI/path-info rules Moodle requires
+  (=containers/fzl-nginx/nginx-conf.d/00-catchall.conf=).
+
+* 8. Verifying and accessing Moodle
+
+#+begin_src bash
+  # HTTP check (expect a 301 -> /moodle/ then the login page)
+  curl -s -o /dev/null -w "%{http_code}\n" http://localhost/moodle
+
+  # config.php was written at the code root
+  ls -l src-projects/var_www/html/moodle/config.php
+
+  # installer logs
+  docker logs fzl-moodle-installer
+#+end_src
+
+Then open =http://localhost/moodle= and log in with =MOODLE_ADMIN_USER= /
+=MOODLE_ADMIN_PASS=.
+
+* 9. Re-installing, upgrading, resetting
+
+- *Upgrade Moodle*: bump =MOODLE_VERSION= in =.env=, delete the code dir, and
+  re-run the stack. The new version is downloaded; Moodle then runs its own
+  upgrade against the existing database on first web access:
+  #+begin_src bash
+    rm -rf src-projects/var_www/html/moodle
+    ./bin/run-stack.sh basic
+  #+end_src
+
+- *Full reset (wipe everything)*: remove the code, the data dir, and drop the
+  database, then re-run:
+  #+begin_src bash
+    rm -rf src-projects/var_www/html/moodle
+    rm -rf src-projects/moodledata/*
+    docker exec fzl-postgresql psql -U postgres -c "DROP DATABASE IF EXISTS moodle;"
+    ./bin/run-stack.sh basic
+  #+end_src
+
+- *Run only the installer* (stack already up):
+  #+begin_src bash
+    docker compose up --build moodle-installer
+  #+end_src
+
+* 10. The desktop app uses the same path
+
+The Tauri admin app (=src-projects/fzlbpmsadmin=) does *not* reimplement any of
+this. Its =install_moodle= command simply runs
+=docker compose up --build moodle-installer= from =FZLBPMS_HOME=, passing the
+form values as environment overrides (docker compose gives the process
+environment precedence over =.env=). So the GUI and =./bin/run-stack.sh basic=
+share *exactly one* installation code path — the script in §4.
+
+* 11. Troubleshooting
+
+| Symptom                                | Likely cause / fix                                                       |
+|----------------------------------------+--------------------------------------------------------------------------|
+| =/moodle= returns 404                  | Code not present yet — check =docker logs fzl-moodle-installer=          |
+| Installer runs before the DB is ready  | It waits on =fzl-postgresql= healthcheck; confirm that service is healthy |
+| "database connection failed"           | =FZL_POSTGRES_USER/PASSWORD= wrong, or =fzl-postgresql= not in the stack  |
+| Want a clean install                   | See §9 "Full reset"                                                       |
+| Download fails                         | Check =MOODLE_VERSION= is a real stable release on download.moodle.org    |
+
+* 12. File map
+
+| File                                                 | Responsibility                              |
+|------------------------------------------------------+---------------------------------------------|
+| =run-stack.toml=                                     | Adds the services to the =basic= stack      |
+| =docker-compose.yml= (=moodle-installer=)            | Declares the one-shot installer service     |
+| =bin/moodle/install-moodle-in-container.sh=          | The actual install logic (§4)               |
+| =.env= / =.env.template=                             | All Moodle configuration values (§6)        |
+| =containers/fzl-php8.3-fpm/=                          | PHP runtime + ini tuning (§7)               |
+| =containers/fzl-nginx/nginx-conf.d/00-catchall.conf= | The =/moodle= web route (§7)                |
+| =src-projects/fzlbpmsadmin/src/cmd.rs=               | Desktop app command that reuses service (§10) |

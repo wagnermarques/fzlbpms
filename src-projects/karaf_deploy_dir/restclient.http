@@ -1,0 +1,144 @@
+## fzlbpms — Camel BFF REST endpoints
+## Camel / Jetty: http://localhost:9090
+##
+## Typical test flow:
+##   1. Login  → copy access_token  → set :access-token
+##              copy refresh_token → set :refresh-token
+##   2. Exercise the User CRUD endpoints (they use the admin token internally)
+##   3. Refresh to get a new token pair
+##   4. Logout  to revoke the session
+##
+## Emacs: restclient-mode  (M-x restclient-mode, C-c C-c to execute)
+
+# ---------------------------------------------------------------------------
+# Variables
+# ---------------------------------------------------------------------------
+# NOTE: restclient-mode does not read .env files natively.
+# :username and :password mirror FZLBPMS_ADMIN_USERNAME / FZLBPMS_ADMIN_PASSWORD
+# from .env — update them here if you change those values.
+# With emacs-direnv installed, direnv exports .env vars to the Emacs process
+# and you can reference them via (getenv "FZLBPMS_ADMIN_USERNAME") in elisp,
+# but plain restclient variables must still be set manually below.
+
+:base-url      = http://localhost:9090
+:username      = fzlbpmsadmin
+:password      = Admin@fzlbpms1
+:access-token  = PASTE_ACCESS_TOKEN_HERE
+:refresh-token = PASTE_REFRESH_TOKEN_HERE
+:user-id       = PASTE_USER_ID_HERE
+
+# ---------------------------------------------------------------------------
+# AUTH
+# ---------------------------------------------------------------------------
+
+# -- Login -------------------------------------------------------------------
+# POST /fzlbpms/auth/login
+# Returns: {access_token, refresh_token, expires_in, token_type, ...}
+
+POST :base-url/fzlbpms/auth/login
+Content-Type: application/json
+
+{
+  "username": ":username",
+  "password": ":password"
+}
+
+# -- Refresh -----------------------------------------------------------------
+# POST /fzlbpms/auth/refresh
+# Exchange a refresh_token for a new token pair.
+
+POST :base-url/fzlbpms/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": ":refresh-token"
+}
+
+# -- Logout ------------------------------------------------------------------
+# POST /fzlbpms/auth/logout
+# Revokes the session on Keycloak. Returns 204 on success.
+
+POST :base-url/fzlbpms/auth/logout
+Content-Type: application/json
+
+{
+  "refresh_token": ":refresh-token"
+}
+
+# ---------------------------------------------------------------------------
+# USER CRUD  (Camel fetches the admin token internally — no Bearer needed)
+# ---------------------------------------------------------------------------
+
+# -- List users --------------------------------------------------------------
+# GET /fzlbpms/admin/users
+# Returns: JSON array of Keycloak UserRepresentation objects.
+
+GET :base-url/fzlbpms/admin/users
+Accept: application/json
+
+# -- Get user by ID ----------------------------------------------------------
+# GET /fzlbpms/admin/users/{id}
+# Replace :user-id above with the UUID returned by the list endpoint.
+
+#GET :base-url/fzlbpms/admin/users/:user-id
+GET :base-url/fzlbpms/admin/users/99fb329c-696e-4781-950b-1e36dd53946d
+Accept: application/json
+
+# -- Create user -------------------------------------------------------------
+# POST /fzlbpms/admin/users
+# Keycloak UserRepresentation — only required fields shown.
+# Keycloak returns 201 + Location header, empty body.
+
+POST :base-url/fzlbpms/admin/users
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "email": "newuser@fzlbpms.local",
+  "firstName": "New",
+  "lastName": "User",
+  "enabled": true,
+  "emailVerified": true,
+  "credentials": [
+    {
+      "type": "password",
+      "value": "Change@me1",
+      "temporary": true
+    }
+  ]
+}
+
+# -- Update user -------------------------------------------------------------
+# PUT /fzlbpms/admin/users/{id}
+# Keycloak returns 204, empty body.
+
+PUT :base-url/fzlbpms/admin/users/:user-id
+Content-Type: application/json
+
+{
+  "firstName": "Updated",
+  "lastName": "User",
+  "email": "updated@fzlbpms.local",
+  "enabled": true
+}
+
+# -- Delete user -------------------------------------------------------------
+# DELETE /fzlbpms/admin/users/{id}
+# Keycloak returns 204, empty body.
+
+DELETE :base-url/fzlbpms/admin/users/:user-id
+
+# -- Change user password ----------------------------------------------------
+# PUT /fzlbpms/admin/users/{id}/password
+# Body: {password, temporary}
+#   temporary: true  → user must change it at next login
+#   temporary: false → password set permanently
+# Keycloak returns 204, empty body.
+
+PUT :base-url/fzlbpms/admin/users/:user-id/password
+Content-Type: application/json
+
+{
+  "password": "NewPass@fzlbpms1",
+  "temporary": false
+}

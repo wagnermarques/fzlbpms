@@ -98,6 +98,8 @@ services:
       KC_ADMIN_PASSWORD: ${FZL_KEYCLOAK_ADMIN_PASSWORD:?}
       KC_CAMEL_CLIENT_SECRET: ${FZL_CAMEL_CLIENT_SECRET:?}
       FZL_REALM: fzlbpms
+      FZLBPMS_ADMIN_USERNAME: ${FZLBPMS_ADMIN_USERNAME:?}
+      FZLBPMS_ADMIN_PASSWORD: ${FZLBPMS_ADMIN_PASSWORD:?}
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy

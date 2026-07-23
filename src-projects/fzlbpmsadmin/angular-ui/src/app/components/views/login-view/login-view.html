@@ -1,0 +1,71 @@
+<div class="login-container">
+  <mat-card class="login-card">
+
+    <mat-card-header>
+      <div class="login-brand">
+        <mat-icon class="brand-icon">hub</mat-icon>
+        <div>
+          <mat-card-title>FzlBPMS</mat-card-title>
+          <mat-card-subtitle>Administração</mat-card-subtitle>
+        </div>
+      </div>
+    </mat-card-header>
+
+    <mat-card-content>
+
+      @if (error()) {
+        <div class="error-banner">
+          <mat-icon>error_outline</mat-icon>
+          <span>{{ error() }}</span>
+        </div>
+      }
+
+      <form (ngSubmit)="onLogin()" #loginForm="ngForm">
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Usuário</mat-label>
+          <mat-icon matPrefix>person</mat-icon>
+          <input
+            matInput
+            name="username"
+            [(ngModel)]="username"
+            autocomplete="username"
+            required
+            [disabled]="loading()" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Senha</mat-label>
+          <mat-icon matPrefix>lock</mat-icon>
+          <input
+            matInput
+            name="password"
+            [type]="showPassword() ? 'text' : 'password'"
+            [(ngModel)]="password"
+            autocomplete="current-password"
+            required
+            [disabled]="loading()" />
+          <button mat-icon-button matSuffix type="button"
+                  (click)="togglePassword()"
+                  [attr.aria-label]="showPassword() ? 'Ocultar senha' : 'Mostrar senha'">
+            <mat-icon>{{ showPassword() ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+        </mat-form-field>
+
+        <button
+          mat-flat-button
+          class="login-button"
+          type="submit"
+          [disabled]="loading() || !loginForm.valid">
+          @if (loading()) {
+            <mat-spinner diameter="22" />
+          } @else {
+            Entrar
+          }
+        </button>
+
+      </form>
+    </mat-card-content>
+
+  </mat-card>
+</div>

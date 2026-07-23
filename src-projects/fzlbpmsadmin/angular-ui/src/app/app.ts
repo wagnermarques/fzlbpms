@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { FixedHead } from './components/layout/fixed-head/fixed-head';
 import { FixedStatusbar } from "./components/layout/fixed-statusbar/fixed-statusbar";
+import { AuthService } from './services/auth.service';
 
 import { MatSidenavModule, MatDrawer } from '@angular/material/sidenav';
 import { MatListModule } from '@angular/material/list';
@@ -38,7 +39,7 @@ export class App implements OnInit {
   @ViewChild('drawer') drawer!: MatDrawer;
   isSmallScreen = false;
 
-  constructor() {
+  constructor(public authService: AuthService) {
     this.checkScreenSize();
   }
 
@@ -85,7 +86,7 @@ export class App implements OnInit {
   }
   
   toggleDrawer() {
-    this.drawer.toggle();
+    this.drawer?.toggle();
   }
 
   checkScreenSize() {

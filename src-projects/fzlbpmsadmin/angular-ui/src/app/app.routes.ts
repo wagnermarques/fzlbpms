@@ -11,54 +11,22 @@ import { AppsHomeView } from './components/views/apps-home-view/apps-home-view';
 import { MoodleInstallView } from './components/views/moodle-install-view/moodle-install-view';
 import { KeycloakView } from './components/views/keycloak-view/keycloak-view';
 import { ContainerDetailsView } from './components/views/container-details-view/container-details-view';
-
+import { LoginView } from './components/views/login-view/login-view';
+import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
 
-    {
-        path:'',
-        component: ViewHome
-    },
+    { path: 'login', component: LoginView },
 
-    {
-        path:'baseview',
-        component: ViewBase
-    },
-    {
-        path:'configs',
-        component: ViewConfig
-    },
-    {
-        path:'fzlbpmshomevew',
-        component: FzlbpmsHomeView
-    },
-    {
-        path:'appshomeview',
-        component: AppsHomeView
-    },
-    {
-        path: 'moodle-install',
-        component: MoodleInstallView
-    },
-    {
-        path:'desktophomeview',
-        component: DesktopHomeView
-
-    },
-    {
-        path:'fzlbpms-containers-vew',
-        component: FzlbpmsContainersView
-    },
-    {
-        path:'fzlbpms-containers-stacks-view',
-        component: FzlbpmsContainersStacksView                   
-    },
-    {
-        path: 'keycloak-view',
-        component: KeycloakView
-    },
-    {
-        path: 'container-details/:id',
-        component: ContainerDetailsView
-    }
+    { path: '',                            component: ViewHome,                    canActivate: [authGuard] },
+    { path: 'baseview',                    component: ViewBase,                    canActivate: [authGuard] },
+    { path: 'configs',                     component: ViewConfig,                  canActivate: [authGuard] },
+    { path: 'fzlbpmshomevew',             component: FzlbpmsHomeView,             canActivate: [authGuard] },
+    { path: 'appshomeview',               component: AppsHomeView,                canActivate: [authGuard] },
+    { path: 'moodle-install',             component: MoodleInstallView,           canActivate: [authGuard] },
+    { path: 'desktophomeview',            component: DesktopHomeView,             canActivate: [authGuard] },
+    { path: 'fzlbpms-containers-vew',    component: FzlbpmsContainersView,       canActivate: [authGuard] },
+    { path: 'fzlbpms-containers-stacks-view', component: FzlbpmsContainersStacksView, canActivate: [authGuard] },
+    { path: 'keycloak-view',              component: KeycloakView,                canActivate: [authGuard] },
+    { path: 'container-details/:id',      component: ContainerDetailsView,        canActivate: [authGuard] },
 ];

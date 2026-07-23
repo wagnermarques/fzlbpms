@@ -20,14 +20,17 @@
     POST   /fzlbpms/admin/users
     PUT    /fzlbpms/admin/users/{id}
     DELETE /fzlbpms/admin/users/{id}
+    PUT    /fzlbpms/admin/users/{id}/password  {password, temporary}  → 204
 
   Required environment variables (set by docker-compose):
-    KC_HOST               — Keycloak container hostname  (fzl-keycloak)
-    KC_HTTP_RELATIVE_PATH — Keycloak context path        (/auth)
-    KC_ADMIN_USER         — master-realm admin username
-    KC_ADMIN_PASSWORD     — master-realm admin password
+    KC_HOST                — Keycloak container hostname  (fzl-keycloak)
+    KC_HTTP_RELATIVE_PATH  — Keycloak context path        (/auth)
+    KC_ADMIN_USER          — master-realm admin username
+    KC_ADMIN_PASSWORD      — master-realm admin password
     KC_CAMEL_CLIENT_SECRET — secret for the fzlbpms-camel confidential client
-    FZL_REALM             — realm to manage              (fzlbpms)
+    FZL_REALM              — realm to manage              (fzlbpms)
+    FZLBPMS_ADMIN_USERNAME — bootstrap admin username for the fzlbpms realm
+    FZLBPMS_ADMIN_PASSWORD — bootstrap admin password (temporary; change after first login)
 -->
 <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -50,8 +53,7 @@
     <restConfiguration component="jetty"
                         port="9090"
                         bindingMode="off"
-                        enableCORS="true"
-                        corsHeaderProperty="Access-Control-Allow-Origin=*"/>
+                        enableCORS="true"/>
 
     <!-- ═══════════════════════════════════════════════════════════════════
          AUTH REST API
@@ -87,6 +89,9 @@
       <delete path="/{id}">
         <to uri="direct:kc-delete-user"/>
       </delete>
+      <put path="/{id}/password" consumes="application/json">
+        <to uri="direct:kc-change-user-password"/>
+      </put>
     </rest>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -146,7 +151,7 @@
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
-      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}?throwExceptionOnFailure=false"/>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
       <choice>
         <when>
           <simple>${header.CamelHttpResponseCode} == 404</simple>
@@ -160,8 +165,16 @@
           <setHeader name="Content-Type">
             <constant>application/json</constant>
           </setHeader>
-          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms?httpMethod=POST&amp;throwExceptionOnFailure=true"/>
-          <log message="[KC-SETUP] Realm '{{FZL_REALM}}' created."/>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Realm '{{FZL_REALM}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Realm '{{FZL_REALM}}' create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
         </when>
         <otherwise>
           <log message="[KC-SETUP] Realm '{{FZL_REALM}}' already exists."/>
@@ -182,7 +195,7 @@
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
-      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId=fzlbpms-camel&amp;throwExceptionOnFailure=false"/>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId=fzlbpms-camel&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
       <choice>
         <when>
           <simple>${body} == '[]'</simple>
@@ -196,8 +209,16 @@
           <setHeader name="Content-Type">
             <constant>application/json</constant>
           </setHeader>
-          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=true"/>
-          <log message="[KC-SETUP] Confidential client 'fzlbpms-camel' created."/>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Confidential client 'fzlbpms-camel' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
         </when>
         <otherwise>
           <log message="[KC-SETUP] Client 'fzlbpms-camel' already exists."/>
@@ -216,12 +237,12 @@
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
-      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username=fzlbpmsadmin&amp;exact=true&amp;throwExceptionOnFailure=false"/>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZLBPMS_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
       <choice>
         <when>
           <simple>${body} == '[]'</simple>
           <setBody>
-            <constant>{"username":"fzlbpmsadmin","email":"fzlbpmsadmin@fzlbpms.local","firstName":"BPMS","lastName":"Admin","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"Admin@fzlbpms1","temporary":true}]}</constant>
+            <simple>{"username":"{{FZLBPMS_ADMIN_USERNAME}}","email":"{{FZLBPMS_ADMIN_USERNAME}}@fzlbpms.local","firstName":"BPMS","lastName":"Admin","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"{{FZLBPMS_ADMIN_PASSWORD}}","temporary":false}]}</simple>
           </setBody>
           <removeHeaders pattern="*"/>
           <setHeader name="Authorization">
@@ -230,11 +251,19 @@
           <setHeader name="Content-Type">
             <constant>application/json</constant>
           </setHeader>
-          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?httpMethod=POST&amp;throwExceptionOnFailure=true"/>
-          <log message="[KC-SETUP] User 'fzlbpmsadmin' created (temporary password — must change on first login)."/>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] User '{{FZLBPMS_ADMIN_USERNAME}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] User create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
         </when>
         <otherwise>
-          <log message="[KC-SETUP] User 'fzlbpmsadmin' already exists."/>
+          <log message="[KC-SETUP] User '{{FZLBPMS_ADMIN_USERNAME}}' already exists."/>
         </otherwise>
       </choice>
     </route>
@@ -315,7 +344,7 @@
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
-      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?throwExceptionOnFailure=false"/>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -332,7 +361,7 @@
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
-      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}?throwExceptionOnFailure=false"/>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -390,6 +419,38 @@
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
       <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}?httpMethod=DELETE&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CRUD — CHANGE USER PASSWORD
+         PUT /fzlbpms/admin/users/{id}/password
+         Body: {"password":"<new>","temporary":false}
+         Calls Keycloak PUT /admin/realms/{realm}/users/{id}/reset-password.
+         Keycloak returns 204 + empty body.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-change-user-password">
+      <from uri="direct:kc-change-user-password"/>
+      <setProperty name="kc.userId">
+        <simple>${header.id}</simple>
+      </setProperty>
+      <setProperty name="kc.newPassword">
+        <jsonpath>$.password</jsonpath>
+      </setProperty>
+      <setProperty name="kc.temporary">
+        <jsonpath>$.temporary</jsonpath>
+      </setProperty>
+      <to uri="direct:kc-get-admin-token"/>
+      <setBody>
+        <simple>{"type":"password","value":"${exchangeProperty.kc.newPassword}","temporary":${exchangeProperty.kc.temporary}}</simple>
+      </setBody>
+      <removeHeaders pattern="CamelHttp*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <setHeader name="Content-Type">
+        <constant>application/json</constant>
+      </setHeader>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}/reset-password?httpMethod=PUT&amp;throwExceptionOnFailure=false"/>
     </route>
 
   </camelContext>

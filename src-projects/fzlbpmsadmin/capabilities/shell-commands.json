@@ -12,16 +12,25 @@
         {
           "name": "php",
           "cmd": "php",
+          "args": true,
           "sidecar": false
         },
         {
           "name": "sh",
           "cmd": "sh",
+          "args": true,
           "sidecar": false
         },
         {
           "name": "pkexec",
           "cmd": "pkexec",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "docker",
+          "cmd": "docker",
+          "args": true,
           "sidecar": false
         }
       ]

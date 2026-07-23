@@ -22,7 +22,7 @@ default = "web"
 
 [stacks.basic]
 description = "the basics"
-services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-karaf-camel-integration", "fzl-keycloak-db", "fzl-keycloak", "flowable-db", "flowable-ui"]
+services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-postgresql", "moodle-installer", "fzl-karaf-camel-integration", "fzl-keycloak-db", "fzl-keycloak", "flowable-db", "flowable-ui"]
 
 [stacks.web]
 description = "Web entrypoint: nginx + php + databases (moodle, yii2 apps)"

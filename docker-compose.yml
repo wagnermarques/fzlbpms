@@ -43,6 +43,41 @@ services:
        - MOODLE_XMLRPC_ENABLED=0
        - MOODLE_MNET_DISPATCHER_MODE=off
 
+  # One-shot, idempotent Moodle provisioner. Reuses the php-8.3 image (php +
+  # curl + tar + pdo_pgsql), shares the web/data bind mounts and the network,
+  # runs bin/moodle/install-moodle-in-container.sh, then exits. Safe to re-run:
+  # it skips download/install when Moodle is already present.
+  moodle-installer:
+    build:
+      context: ./containers/fzl-php8.3-fpm/
+      dockerfile: Dockerfile
+    container_name: fzl-moodle-installer
+    depends_on:
+      fzl-postgresql:
+        condition: service_healthy
+    volumes:
+      - ./src-projects/var_www/html:/var/www/html
+      - ./src-projects/moodledata:/var/www/moodledata
+      - ./bin/moodle:/opt/moodle-scripts:ro
+    environment:
+      MOODLE_VERSION: ${MOODLE_VERSION:?}
+      MOODLE_DB_HOST: fzl-postgresql
+      FZL_POSTGRES_USER: ${FZL_POSTGRES_USER:?}
+      FZL_POSTGRES_PASSWORD: ${FZL_POSTGRES_PASSWORD:?}
+      MOODLE_DB_NAME: ${MOODLE_DB_NAME:?}
+      MOODLE_DB_USER: ${MOODLE_DB_USER:?}
+      MOODLE_DB_PASS: ${MOODLE_DB_PASS:?}
+      MOODLE_WWWROOT: ${MOODLE_WWWROOT:?}
+      MOODLE_ADMIN_USER: ${MOODLE_ADMIN_USER:?}
+      MOODLE_ADMIN_PASS: ${MOODLE_ADMIN_PASS:?}
+      MOODLE_ADMIN_EMAIL: ${MOODLE_ADMIN_EMAIL:?}
+      MOODLE_FULLNAME: ${MOODLE_FULLNAME:-fzlbpms Moodle}
+      MOODLE_SHORTNAME: ${MOODLE_SHORTNAME:-fzlbpms}
+    networks:
+      - fzl-network
+    restart: "no"
+    entrypoint: ["bash", "/opt/moodle-scripts/install-moodle-in-container.sh"]
+
   fzl-mysql:
     image: mysql:8.4.6
     container_name: fzl-mysql

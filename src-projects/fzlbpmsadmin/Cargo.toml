@@ -33,3 +33,13 @@ version = "0.19.0"
 [dependencies.tempfile]
 version = "3.10.1"
 
+# Workaround for a rustc/LLVM SIGSEGV on the current toolchain (rustc 1.97.1 /
+# LLVM 22): the crash is in DWARF variable-location debug-info generation while
+# compiling this crate's large tauri::generate_handler! expansion. Bumping
+# RUST_MIN_STACK only delays it (rustc keeps asking for 2x), so we cut the debug
+# level to line-tables-only, which avoids the pathological codegen path while
+# still giving file:line info in backtraces. Restore `debug = 2` (or delete this
+# section) once the upstream toolchain bug is fixed.
+[profile.dev]
+debug = 1
+

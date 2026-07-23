@@ -44,10 +44,10 @@ export class AppsHomeView implements OnInit {
   async loadApplications() {
     const mainApps: Application[] = [
       {
-        name: 'Camunda BPMS',
-        url: 'http://localhost:8084/camunda',
-        description: 'BPMN 2.0 Process engine and administration console (Cockpit, Tasklist, Admin).',
-        credentials: { user: 'admin', pass: 'admin' }
+        name: 'Flowable BPM',
+        url: 'http://localhost:8080/flowable-ui',
+        description: 'BPMN 2.0 Process engine — Modeler, Task, Admin and IDM apps bundled in a single UI (v6.7.2).',
+        credentials: { user: 'admin', pass: 'test' }
       },
       {
         name: 'BPMN Drawer',

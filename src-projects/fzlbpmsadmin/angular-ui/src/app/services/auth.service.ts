@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, tap, map } from 'rxjs';
+import { Observable, from } from 'rxjs';
 import { Router } from '@angular/router';
+import { invoke } from '@tauri-apps/api/core';
 
 interface TokenResponse {
   access_token: string;
@@ -19,33 +19,37 @@ const KEYS = {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly CAMEL_BASE = 'http://localhost:9090';
-
   private readonly _isLoggedIn = signal(false);
   private readonly _username   = signal<string | null>(null);
 
   readonly isLoggedIn = this._isLoggedIn.asReadonly();
   readonly username   = this._username.asReadonly();
 
-  constructor(private http: HttpClient, private router: Router) {
+  constructor(private router: Router) {
     this.restoreSession();
   }
 
   login(username: string, password: string): Observable<void> {
-    return this.http
-      .post<TokenResponse>(`${this.CAMEL_BASE}/fzlbpms/auth/login`, { username, password })
-      .pipe(
-        tap(tokens => this.persistTokens(tokens, username)),
-        map(() => void 0),
-      );
+    const p = invoke<TokenResponse>('camel_login', { username, password })
+      .then(tokens => {
+        this.persistTokens(tokens, username);
+      })
+      .catch(err => {
+        // Rust returns the HTTP status code as a string ("401", "500")
+        // or "0" for a connection-level failure.
+        const status = parseInt(String(err), 10);
+        const e: any = new Error(String(err));
+        e.status = isNaN(status) ? 0 : status;
+        throw e;
+      });
+
+    return from(p);
   }
 
   logout(): void {
     const refreshToken = localStorage.getItem(KEYS.refreshToken);
     if (refreshToken) {
-      this.http
-        .post(`${this.CAMEL_BASE}/fzlbpms/auth/logout`, { refresh_token: refreshToken })
-        .subscribe({ error: () => {} });
+      invoke('camel_logout', { refreshToken }).catch(() => {});
     }
     this.clearSession();
     this.router.navigate(['/login']);

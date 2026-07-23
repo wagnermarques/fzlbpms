@@ -1,6 +1,7 @@
 //aplica windows_subsystem = "windows" to hide console window on Windows in release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auth_commands;
 mod moodle_api;
 mod containers;
 mod cmd;
@@ -94,6 +95,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            auth_commands::camel_login,
+            auth_commands::camel_logout,
             cmd::fzlbpms_version,
             cmd::get_fzlbpms_home,
             cmd::get_site_info,

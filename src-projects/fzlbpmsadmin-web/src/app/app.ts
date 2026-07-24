@@ -1,12 +1,42 @@
-import { Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { Component, ViewChild, HostListener } from '@angular/core';
+import { RouterOutlet, RouterLink } from '@angular/router';
+import { FixedHead } from './components/layout/fixed-head/fixed-head';
+import { FixedStatusbar } from './components/layout/fixed-statusbar/fixed-statusbar';
+
+import { MatSidenavModule, MatDrawer } from '@angular/material/sidenav';
+import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDividerModule } from '@angular/material/divider';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
   templateUrl: './app.html',
-  styleUrl: './app.css'
+  styleUrl: './app.css',
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    MatSidenavModule,
+    MatListModule,
+    MatIconModule,
+    MatDividerModule,
+    FixedHead,
+    FixedStatusbar,
+  ],
 })
 export class App {
-  protected readonly title = signal('fzlbpmsadmin-web');
+  @ViewChild('drawer') drawer!: MatDrawer;
+  isSmallScreen = false;
+
+  constructor() {
+    this.checkScreenSize();
+  }
+
+  @HostListener('window:resize')
+  onResize() {
+    this.checkScreenSize();
+  }
+
+  checkScreenSize() {
+    this.isSmallScreen = window.innerWidth < 768;
+  }
 }

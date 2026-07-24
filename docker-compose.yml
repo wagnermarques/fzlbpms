@@ -8,8 +8,10 @@ services:
 
   fzl-nginx:
     build:
-      context: ./containers/fzl-nginx
-      dockerfile: Dockerfile
+      # Root context so the Dockerfile can also pull in the
+      # fzlbpmsadmin-web Angular sources for its static-SPA build stage.
+      context: .
+      dockerfile: containers/fzl-nginx/Dockerfile
     container_name: fzl-nginx
     ports:
       - "${FZL_NGINX_PORT_HTTP:?}:80"

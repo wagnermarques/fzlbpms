@@ -1,0 +1,14 @@
+# Global build-context filter. Only fzl-nginx currently builds from the repo
+# root (it needs both its own Dockerfile/conf and the fzlbpmsadmin-web
+# Angular sources to bundle as a static SPA); every other service still
+# builds from its own subdirectory context and never sees this file.
+*
+
+!containers/fzl-nginx
+!containers/fzl-nginx/**
+
+!src-projects/fzlbpmsadmin-web
+!src-projects/fzlbpmsadmin-web/**
+src-projects/fzlbpmsadmin-web/node_modules
+src-projects/fzlbpmsadmin-web/dist
+src-projects/fzlbpmsadmin-web/.angular

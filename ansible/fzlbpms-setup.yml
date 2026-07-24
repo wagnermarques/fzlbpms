@@ -7,6 +7,11 @@
 # Debian/Ubuntu/Fedora get Docker's official upstream repo (distro repos ship
 # no docker-ce package); Alpine already carries Docker in its own repos.
 #
+# Also switches the storage driver to Docker's native "btrfs" one whenever
+# /var/lib/docker sits on a btrfs filesystem (Fedora Workstation's default
+# root layout) — the containerd-snapshotter Docker defaults to otherwise
+# fails mid-build on btrfs with "failed to add snapshot ... to lease: EOF".
+#
 #   ansible-playbook fzlbpms-setup.yml            # uses ./inventory.ini
 #   ansible-playbook fzlbpms-setup.yml -K          # ask for sudo password
 #
@@ -171,6 +176,56 @@
         append: true
 
     # ------------------------------------------------------------------
+    # btrfs data-root: Docker's default containerd-snapshotter (overlayfs,
+    # default since Docker 27+) is unreliable over a btrfs backing
+    # filesystem — Fedora Workstation's default root layout — and fails
+    # mid `docker compose build` with "failed to add snapshot ... to lease:
+    # error reading from server: EOF" under concurrent builds. Docker's own
+    # "btrfs" graph driver is purpose-built for this and bypasses the
+    # containerd snapshotter entirely, so switch to it whenever
+    # /var/lib/docker sits on btrfs.
+    # ------------------------------------------------------------------
+    - name: Detect the filesystem backing the docker data-root
+      ansible.builtin.command: stat -f -c %T /var/lib/docker
+      register: docker_root_fstype
+      changed_when: false
+      when: ansible_facts.os_family in ["Debian", "RedHat"]
+
+    - name: Ensure /etc/docker exists
+      become: true
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+      when:
+        - ansible_facts.os_family in ["Debian", "RedHat"]
+        - docker_root_fstype.stdout | default('') == "btrfs"
+
+    - name: Use Docker's native btrfs storage driver on a btrfs data-root
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+        content: |
+          {
+            "storage-driver": "btrfs",
+            "features": {
+              "containerd-snapshotter": false
+            }
+          }
+      register: docker_daemon_json
+      when:
+        - ansible_facts.os_family in ["Debian", "RedHat"]
+        - docker_root_fstype.stdout | default('') == "btrfs"
+
+    - name: Restart docker to pick up the storage-driver change
+      become: true
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+      when: docker_daemon_json is changed
+
+    # ------------------------------------------------------------------
     # Verification
     # ------------------------------------------------------------------
     - name: Collect tool versions
@@ -180,15 +235,42 @@
         - docker compose version
       register: versions
       changed_when: false
-      become: true # group membership hasn't taken effect in this SSH session yet
+      become: true # proves the packages/daemon work, independent of group membership
 
     - name: Show installed versions
       ansible.builtin.debug:
         msg: "{{ versions.results | map(attribute='stdout') | list }}"
 
+    # `docker` module tasks above and this ansible-playbook process itself are
+    # children of the terminal that was already open before the user was
+    # added to the docker group, so they carry the SAME stale group list a
+    # plain `docker ps` in that terminal would hit. `sg <group> -c ...`
+    # re-reads /etc/group and spawns a process with the new group live,
+    # without needing a fresh login — so it actually proves the grant works
+    # instead of masking the question behind sudo.
+    - name: Verify {{ docker_login_user }} can already run docker via the docker group
+      ansible.builtin.command: sg docker -c "docker info"
+      become: false
+      register: sg_docker_check
+      changed_when: false
+      failed_when: false
+      when: ansible_facts.os_family != "Alpine" # sg may be absent there
+
+    - name: Report whether the docker group grant is live
+      ansible.builtin.debug:
+        msg: >-
+          {{ "OK: " ~ docker_login_user ~ " can run docker via the docker group (verified with sg)."
+             if (sg_docker_check.rc | default(1)) == 0
+             else "The docker group was granted in /etc/group, but sg couldn't use it yet — see the reminder below." }}
+      when: ansible_facts.os_family != "Alpine"
+
     - name: Remind about group membership
       ansible.builtin.debug:
         msg: >-
-          Docker is installed. Log out and back in (or run `newgrp docker`)
-          so {{ docker_login_user }} can run `docker`/`docker compose`
-          without sudo, then: ./bin/run-stack.sh basic
+          Docker is installed and the daemon is running. IMPORTANT: the
+          terminal you ran this playbook from still has your OLD group list
+          (it existed before {{ docker_login_user }} was added to `docker`),
+          so plain `docker`/`docker compose` commands will keep failing with
+          "permission denied" in THAT terminal until you either open a brand
+          new terminal window/tab, or run `newgrp docker` in it. Then:
+          ./bin/run-stack.sh basic

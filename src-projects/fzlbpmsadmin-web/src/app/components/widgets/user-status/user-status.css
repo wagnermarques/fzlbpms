@@ -1,0 +1,6 @@
+.user-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: none;
+}

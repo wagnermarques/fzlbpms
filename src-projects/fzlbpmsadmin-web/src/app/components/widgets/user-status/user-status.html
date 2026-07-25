@@ -1,0 +1,11 @@
+@if (userName) {
+  <button mat-button class="user-status" (click)="logout.emit()">
+    <mat-icon>account_circle</mat-icon>
+    <span>{{ userName }}</span>
+  </button>
+} @else {
+  <button mat-button class="user-status" (click)="login.emit()">
+    <mat-icon>login</mat-icon>
+    <span>Login</span>
+  </button>
+}

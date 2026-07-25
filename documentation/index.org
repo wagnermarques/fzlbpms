@@ -6,6 +6,9 @@
   project from the Maven archetype, edit the BPMN, archive it in Nexus and
   deploy it to the Flowable runtime.
 - [[./getting-started.org][Getting started]]
+- [[file:classesplan/index.org][Class Plan — Login Widget, Camel BFF, Keycloak & Reverse-Proxy Debugging]] —
+  6-session course built from a real feature + real production bug fixed in
+  this repo, with free study links for students.
 
 * Centralized Login with Keycloak:
        * Infrastructure: Added fzl-keycloak and a dedicated fzl-keycloak-db (PostgreSQL) to docker-compose.yml.

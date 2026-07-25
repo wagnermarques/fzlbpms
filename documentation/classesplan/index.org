@@ -1,0 +1,502 @@
+#+Title: Class Plan — Login Widget, Camel BFF, Keycloak & Reverse-Proxy Debugging
+
+* Overview
+
+This is a full teaching plan built around a *real feature we shipped and a real
+production bug we fixed* in this repository: adding a login widget to
+=fzlbpmsadmin-web=, wiring it to an Apache Camel backend-for-frontend (BFF)
+that talks to Keycloak, and then debugging why login worked on the local LAN
+but failed through a public HTTPS tunnel (Cloudflare).
+
+That single case study touches almost every layer of a modern full-stack
+system: a reusable frontend component, a reverse proxy, a Docker Compose
+deployment, an integration/routing engine (Camel), an identity provider
+(Keycloak/OIDC), and the HTTP proxy-header trust model that connects them all.
+Teaching it end-to-end, in the order it actually happened, is more valuable
+than teaching the layers in isolation — students see *why* each concept
+exists, not just its syntax.
+
+Reference code for every session lives in this repository:
+- Frontend widget: [[file:../../src-projects/fzlbpmsadmin-web/src/app/components/widgets/login-dialog/][login-dialog component]] and [[file:../../src-projects/fzlbpmsadmin-web/src/app/components/widgets/user-status/][user-status component]]
+- Auth service: [[file:../../src-projects/fzlbpmsadmin-web/src/app/services/auth.ts][auth.ts]]
+- Reverse proxy: [[file:../../containers/fzl-nginx/nginx-conf.d/00-catchall.conf][00-catchall.conf]]
+- Camel routes: [[file:../../src-projects/karaf_bundles/blueprint-xmls-bundles/keycloak-admin-camel-context.xml][keycloak-admin-camel-context.xml]]
+- Deployment: [[file:../../docker-compose.yml][docker-compose.yml]]
+
+* How to Use This Plan
+
+- It is written as *6 sessions of ~3 hours* (~18h total), but every session
+  stands alone enough to be split into two shorter classes if needed.
+- Each session has: objectives, key concepts, a live-coding/demo script you
+  can literally follow using this repo, a hands-on exercise for students, a
+  short discussion/quiz, and curated *free* resources.
+- Session 0 is for *you*, the instructor — a self-study checklist so you can
+  teach the material with confidence, not just from a script.
+- The whole thing closes with a capstone lab where students reproduce and fix
+  the exact bug we hit, from a broken starting point you prepare for them.
+
+* Learning Objectives
+
+By the end of the course, students should be able to:
+1. Design a small Angular component that is *portable* across projects
+   (input/output driven, no hidden dependencies) versus one that is
+   app-specific (owns real business/auth logic).
+2. Explain Angular's zoneless change detection model and why signals — not
+   plain mutated properties — are the correct way to drive UI state
+   imperatively (e.g. from a dialog opener).
+3. Configure an nginx reverse proxy with multiple `location` blocks, and
+   explain prefix-matching pitfalls (why `/fzlbpms/` and `/fzlbpmsadmin/` can
+   silently collide).
+4. Explain the difference between a Docker *image* and a *container*, and
+   why rebuilding an image does not update a running/stopped container until
+   it is recreated.
+5. Read and extend an Apache Camel route (Blueprint XML, REST DSL), and
+   explain how Camel propagates exchange headers between an inbound consumer
+   and an outbound producer.
+6. Explain OAuth2 grant types (specifically Resource Owner Password
+   Credentials), decode a JWT by hand, and explain Keycloak's `sslRequired`
+   policy and its `X-Forwarded-*` trust model.
+7. Apply a systematic debugging method — reproduce with `curl`, isolate one
+   variable at a time, read the literal error message, confirm the fix — to
+   a multi-layer distributed-systems bug.
+
+* Target Audience & Prerequisites
+
+Intermediate students who already know: basic JavaScript/TypeScript, HTML/CSS,
+the command line, and have *seen* Git and Docker before (they don't need to be
+fluent). This is **not** an absolute-beginner course — it assumes comfort
+reading code and a terminal.
+
+* Session 0 — Instructor / Self-Study Prep Checklist
+
+Before teaching this course, make sure you are personally comfortable with
+each item below. This is exactly the material you (and your students) need —
+budget your own study time here first.
+
+** Prerequisite knowledge checklist (with free resources)
+
+*** Linux command line & Docker
+- [[https://docs.docker.com/get-started/][Docker — Get Started guide]] (free, official)
+- [[https://docs.docker.com/compose/how-tos/production/][Docker Compose — production how-to]] (free, official) — read the section on
+  rebuilding vs. recreating a service; this is exactly the `docker start` vs
+  `docker compose up --build` confusion from our case study.
+
+*** HTTP fundamentals
+- [[https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview][MDN — Overview of HTTP]] (free)
+- [[https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For][MDN — X-Forwarded-For header]] (free) — read this before Session 5, it is
+  the header at the center of our real bug.
+
+*** Reverse proxies / nginx
+- [[https://nginx.org/en/docs/beginners_guide.html][nginx — Beginner's Guide]] (free, official)
+- [[https://nginx.org/en/docs/http/ngx_http_proxy_module.html][nginx — ngx_http_proxy_module reference]] (free, official) — `proxy_pass`,
+  `proxy_set_header`.
+
+*** Modern Angular (standalone components & signals)
+- [[https://angular.dev/guide/components][Angular — Anatomy of a component]] (free, official)
+- [[https://angular.dev/guide/signals][Angular — Signals guide]] (free, official)
+- [[https://material.angular.dev][Angular Material — component docs]] (free, official)
+
+*** Apache Camel
+- [[https://camel.apache.org/manual/rest-dsl.html][Apache Camel — REST DSL reference]] (free, official)
+- [[https://camel.apache.org/camel-karaf/3.22.x/blueprint.html][Apache Camel — Blueprint on Karaf]] (free, official; already linked from
+  [[file:../osgi-blueprint.org][our OSGi/Blueprint notes]])
+
+*** OAuth2, OpenID Connect, JWT & Keycloak
+- [[https://oauth.net/2/grant-types/password/][oauth.net — Resource Owner Password Credentials grant]] (free) — read the
+  deprecation warning carefully, it's a great discussion point for Session 5.
+- [[https://datatracker.ietf.org/doc/html/rfc6749][RFC 6749 — The OAuth 2.0 Authorization Framework]] (free, the actual spec)
+- [[https://datatracker.ietf.org/doc/html/rfc7519][RFC 7519 — JSON Web Token (JWT)]] (free, the actual spec)
+- [[https://www.jwt.io/][jwt.io]] (free) — paste any token from our app and inspect it live.
+- [[https://www.keycloak.org/documentation][Keycloak — official documentation]] (free, official)
+
+*** Security mindset
+- [[https://owasp.org/www-project-top-ten/][OWASP Top Ten]] (free) — trust-boundary and injection thinking directly
+  applies to "why must a backend never blindly forward client headers
+  downstream."
+
+* Architecture Map
+
+Draw this on the board in Session 1 and keep referring back to it — every
+session adds detail to one arrow.
+
+#+begin_example
+ Browser (LAN or via Cloudflare tunnel, http or https)
+    |
+    |  GET /fzlbpmsadmin/...        POST /fzlbpms/auth/login
+    v                                   v
+ +----------------------------------------------------+
+ |                    fzl-nginx  (:80)                 |
+ |  location /fzlbpmsadmin/  -> static Angular files   |
+ |  location /fzlbpms/       -> proxy_pass ------------+---+
+ |  location /auth/          -> proxy_pass Keycloak    |   |
+ +----------------------------------------------------+   |
+                                                            v
+                                        +----------------------------------+
+                                        | fzl-karaf-camel-integration:9090  |
+                                        | Apache Camel (Blueprint routes)   |
+                                        | REST DSL -> direct: routes        |
+                                        +----------------------------------+
+                                                            |
+                                                            | POST /auth/realms/.../token
+                                                            v
+                                        +----------------------------------+
+                                        |         fzl-keycloak:8080         |
+                                        |  KC_PROXY_HEADERS=xforwarded      |
+                                        |  realm sslRequired=external       |
+                                        +----------------------------------+
+                                                            |
+                                                            v
+                                        +----------------------------------+
+                                        |        fzl-keycloak-db            |
+                                        +----------------------------------+
+#+end_example
+
+* Session 1 — Reusable Angular Components & the Widget/Service Split (3h)
+
+** Objectives
+- Build a small standalone Angular component that is genuinely reusable
+  across projects.
+- Understand the difference between a *portable widget* (input/output only)
+  and an *app-specific service* (owns real logic, is not portable).
+
+** Key concepts
+- Standalone components, `@Input`/`@Output`.
+- Why "reusable in another Angular app" means *zero hidden dependencies* —
+  no injected app services, no hardcoded URLs, no assumptions about the
+  host app's routing or auth.
+- Composition: `App` owns state and orchestration; `FixedHead` is a
+  layout shell; `UserStatus`/`LoginDialog` are pure presentation.
+
+** Live demo (follow along in the repo)
+1. Open [[file:../../src-projects/fzlbpmsadmin-web/src/app/components/widgets/user-status/user-status.ts][user-status.ts]] — point out it has *no* imports besides Angular/Material.
+   It doesn't know what "logged in" means; it just renders whatever
+   `userName` it's given.
+2. Open [[file:../../src-projects/fzlbpmsadmin-web/src/app/components/widgets/login-dialog/login-dialog.ts][login-dialog.ts]] — same idea: it collects a username/password and emits
+   them. It has never heard of Keycloak or Camel.
+3. Open [[file:../../src-projects/fzlbpmsadmin-web/src/app/services/auth.ts][auth.ts]] — contrast it: this file *is* app-specific (hardcodes the
+   `/fzlbpms/auth/login` contract). This is the one file you would rewrite,
+   not reuse, if you dropped these widgets into a different app.
+4. Open [[file:../../src-projects/fzlbpmsadmin-web/src/app/app.ts][app.ts]] and trace the wiring: `App` injects both `AuthService` and
+   `MatDialog`, and is the only place that connects the portable widget to
+   the app-specific service.
+
+** Hands-on exercise
+Give students a stripped-down version of `FixedHead` with a hardcoded
+`account_circle` icon (exactly what this repo looked like *before* our
+change). Ask them to extract a `UserStatus`-style component with
+`@Input()`/`@Output()` only, with no knowledge of how login actually happens.
+
+** Discussion / quiz
+- "Why not just inject `AuthService` directly into `LoginDialog`?" (Answer:
+  it would still *work*, but the component would no longer be portable —
+  copying it to another app would require also copying/faking that service.)
+- What's the smallest possible diff to make a component non-portable? (Any
+  import that reaches outside `@angular/*` and the component's own inputs.)
+
+* Session 2 — Signals & Zoneless Change Detection (the NG0100 bug) (3h)
+
+** Objectives
+- Understand what zoneless change detection is and how it differs from
+  Zone.js-based change detection.
+- Debug a real `NG0100 ExpressionChangedAfterItHasBeenCheckedError`.
+
+** Key concepts
+- `provideZonelessChangeDetection()` — Angular schedules re-renders based on
+  signal writes (and a few other explicit triggers), *not* on every browser
+  event like Zone.js does.
+- Why mutating a component's plain property from *outside* it (e.g.
+  `dialogRef.componentInstance.errorMessage = '...'`) doesn't reliably
+  schedule a re-render under zoneless CD — there's no signal write to notify
+  the reactivity graph.
+- The fix: expose `signal()`s on the component and call `.set()` from the
+  opener.
+
+** Live demo — reproduce the exact bug
+1. Show the *broken* version (git history / diff): `@Input() errorMessage`
+   set imperatively as `instance.errorMessage = '...'` from `app.ts`.
+2. Run the app, submit wrong credentials, open devtools console — show the
+   `NG0100` stack trace live.
+3. Walk through the fix in [[file:../../src-projects/fzlbpmsadmin-web/src/app/components/widgets/login-dialog/login-dialog.ts][login-dialog.ts]]: `submitting = signal(false)`,
+   `errorMessage = signal<string | null>(null)`, template reads `submitting()`.
+4. Show the corresponding change in [[file:../../src-projects/fzlbpmsadmin-web/src/app/app.ts][app.ts]]: `instance.errorMessage.set(...)`.
+5. Re-run, confirm the error message now renders with no console error.
+
+** Hands-on exercise
+Give students a small zoneless component with an `@Input()` mutated
+imperatively from a parent's method (not a template binding). Have them
+reproduce the `NG0100` error, then fix it with a signal, verifying in the
+console before/after.
+
+** Resources
+- [[https://angular.dev/guide/signals][Angular — Signals guide]]
+- [[https://angular.dev/guide/components][Angular — Anatomy of a component]]
+
+* Session 3 — Reverse Proxies with nginx & the Docker Image/Container Trap (3h)
+
+** Objectives
+- Write and reason about nginx `location` blocks and prefix matching.
+- Correctly redeploy a Dockerized service after a code or config change.
+
+** Key concepts
+- `location` prefix matching is *literal string prefix*, not path-segment
+  aware — `/fzlbpms/` and `/fzlbpmsadmin/` share a prefix, so an
+  *unslashed* proxy key like `/fzlbpms` (no trailing slash) also matches
+  `/fzlbpmsadmin/...` and silently steals traffic meant for the SPA.
+- `docker build` produces a new *image*; it does not touch any existing
+  *container*. `docker start` resumes a container using the image ID it was
+  *created* with — not whatever the `latest` tag currently points to.
+  `docker compose up -d <service>` is what compares and recreates.
+
+** Live demo — reproduce both real bugs from this project
+1. *nginx collision*: add a proxy block with key `/fzlbpms` (no trailing
+   slash) in a scratch nginx config, curl `/fzlbpmsadmin/` through it, show
+   it 404s because it got proxied to the wrong upstream. Fix by adding the
+   trailing slash, re-test. (This is the exact bug we hit while wiring the
+   Angular dev-server proxy — see [[file:../../src-projects/fzlbpmsadmin-web/proxy.conf.json][proxy.conf.json]] and the nginx block in
+   [[file:../../containers/fzl-nginx/nginx-conf.d/00-catchall.conf][00-catchall.conf]].)
+2. *Docker image/container trap*: build an image, change nothing about the
+   running container, `docker start` it, show the OLD behavior is still
+   live. Then run `docker compose up -d --build`, show the NEW behavior
+   appears. This literally happened in this project's session history.
+
+** Hands-on exercise
+Students are given a small nginx config with two `location` blocks that
+collide (one missing a trailing slash). They must find the collision using
+only `curl -v` output (no editor-assisted "obviously wrong" hints) and fix it.
+
+** Resources
+- [[https://nginx.org/en/docs/beginners_guide.html][nginx — Beginner's Guide]]
+- [[https://nginx.org/en/docs/http/ngx_http_proxy_module.html][nginx — ngx_http_proxy_module reference]]
+- [[https://docs.docker.com/compose/how-tos/production/][Docker Compose — production how-to]] (rebuild/redeploy section)
+
+* Session 4 — Apache Camel as an Integration Layer (BFF pattern) (3h)
+
+** Objectives
+- Read a Camel Blueprint XML route end to end.
+- Understand the Backend-for-Frontend (BFF) pattern and why a confidential
+  OAuth2 client should be the *only* thing that ever talks to the identity
+  provider directly.
+- Understand how Camel exchange headers flow between an inbound consumer and
+  an outbound producer — the mechanism behind our real bug.
+
+** Key concepts
+- `restConfiguration` + `<rest>` DSL define REST endpoints that forward to
+  `direct:` routes (Camel's in-JVM pub/sub).
+- `removeHeaders pattern="..."` — Camel's wildcard pattern (not full regex)
+  for stripping exchange headers before further processing.
+- **Header propagation**: unless explicitly removed, every header an inbound
+  consumer receives becomes an exchange header, and Camel's HTTP producer
+  forwards *all* exchange headers on its outbound call by default. This is
+  the single most important idea of the whole course — it's the root
+  mechanism of our production bug.
+
+** Live demo
+1. Walk through [[file:../../src-projects/karaf_bundles/blueprint-xmls-bundles/keycloak-admin-camel-context.xml][keycloak-admin-camel-context.xml]] top to bottom:
+   `restConfiguration`, the `/fzlbpms/auth` and `/fzlbpms/admin/users`
+   `<rest>` blocks, then the `auth-login` route.
+2. Point out the *original* bug: `<removeHeaders pattern="CamelHttp*"/>`
+   only strips Camel's own internal headers (`CamelHttpUri`,
+   `CamelHttpMethod`, ...) — it does *not* strip `X-Forwarded-For`,
+   `Origin`, `Host`, etc. that arrived from the real client via nginx.
+3. Contrast with the *setup* routes (`kc-get-admin-token`,
+   `kc-ensure-realm`, ...), which already used `pattern="*"` — ask students
+   "why did the author strip everything here, but only `CamelHttp*` in the
+   client-facing routes?" (Answer: an oversight — inconsistency is a great
+   bug-smell to teach students to notice.)
+4. Show `docker exec fzl-karaf-camel-integration ...` — explain Karaf's
+   hot-deploy folder (`/opt/karaf/deploy`) versus the git-tracked bundle
+   source in `src-projects/karaf_bundles/`, and why editing the *wrong* copy
+   would have looked like it worked but reverted on next container restart.
+
+** Hands-on exercise
+Give students a two-route Camel Blueprint file: an inbound REST endpoint
+that reads a header (e.g. `X-Debug-Token`) for its own auditing, and an
+outbound call to a mock server. Have them prove (using a mock HTTP endpoint
+that echoes received headers) that headers leak through unless explicitly
+removed, then fix it.
+
+** Resources
+- [[https://camel.apache.org/manual/rest-dsl.html][Apache Camel — REST DSL reference]]
+- [[https://camel.apache.org/camel-karaf/3.22.x/blueprint.html][Apache Camel — Blueprint on Karaf]]
+
+* Session 5 — OAuth2, JWT & Keycloak's Proxy-Header Trust Model (3h)
+
+** Objectives
+- Explain the Resource Owner Password Credentials (ROPC) grant and why it's
+  discouraged for public clients but acceptable for a trusted confidential
+  BFF.
+- Decode a JWT by hand and identify its claims.
+- Explain Keycloak's `sslRequired` policy and `KC_PROXY_HEADERS` trust model.
+
+** Key concepts
+- OAuth2 grant types overview; ROPC specifically (client collects the
+  password and exchanges it directly) versus Authorization Code (the
+  browser never sees the password). ROPC is deprecated in OAuth 2.1 and
+  banned by the OAuth Security BCP for *public* clients — but here it's a
+  *confidential* client (`fzlbpms-camel`, holds a `client_secret`) used
+  server-to-server, which is the accepted exception. Make students argue
+  both sides.
+- JWT structure: header.payload.signature, base64url-encoded, claims like
+  `preferred_username`, `name`, `exp`.
+- `sslRequired: external` — Keycloak requires HTTPS for requests it
+  classifies as coming from outside a private network.
+- `KC_PROXY_HEADERS=xforwarded` — tells Keycloak to *trust*
+  `X-Forwarded-For`/`X-Forwarded-Proto` to determine the "real" client
+  instead of the TCP peer address. This is correct when the *immediate*
+  hop is a trusted reverse proxy — and dangerous when an untrusted hop
+  in between (like our Camel service, forwarding a client's own headers
+  verbatim) is also trusted transitively.
+
+** Live demo
+1. Get a real token: `curl -X POST http://localhost:9090/fzlbpms/auth/login
+   -H 'Content-Type: application/json' -d '{"username":"...","password":"..."}'`.
+   Paste `access_token` into [[https://www.jwt.io/][jwt.io]], inspect the claims live
+   (`preferred_username`, `name`, `exp`, `azp`).
+2. Show [[file:../../src-projects/fzlbpmsadmin-web/src/app/services/auth.ts][auth.ts]]'s `decodeJwtPayload` — a ~4-line hand-rolled base64url decode,
+   no library needed. Ask: why don't we *verify the signature* client-side?
+   (Answer: the browser has no way to validate trust of a public key here;
+   verification is the *server's* job on every protected request — the
+   client only reads claims for display.)
+3. Reproduce the real bug on the command line:
+   #+begin_src shell :exports both
+   # Succeeds: private-range X-Forwarded-For
+   curl -s -X POST http://localhost:9090/fzlbpms/auth/login \
+     -H 'Content-Type: application/json' \
+     -H 'X-Forwarded-For: 10.0.0.5' \
+     -d '{"username":"fzlbpmsadmin","password":"<pwd>"}'
+
+   # Fails: public X-Forwarded-For -> Keycloak demands HTTPS
+   curl -s -X POST http://localhost:9090/fzlbpms/auth/login \
+     -H 'Content-Type: application/json' \
+     -H 'X-Forwarded-For: 8.8.8.8' \
+     -d '{"username":"fzlbpmsadmin","password":"<pwd>"}'
+   #+end_src
+4. Read the literal error together: `{"error":"invalid_request",
+   "error_description":"HTTPS required"}` — teach students to trust and
+   read error messages verbatim before theorizing.
+
+** Discussion / quiz
+- Why does a *private* `X-Forwarded-For` pass but a *public* one fail? Have
+  students explain it back in their own words using the architecture map.
+- Is `KC_PROXY_HEADERS=xforwarded` itself wrong? (No — it's correct *if and
+  only if* every hop that's allowed to set/forward that header is trusted.
+  The bug was Camel blindly re-forwarding a header it received, not
+  Keycloak trusting proxy headers per se.)
+
+** Resources
+- [[https://oauth.net/2/grant-types/password/][oauth.net — Password grant]]
+- [[https://datatracker.ietf.org/doc/html/rfc6749][RFC 6749 — OAuth 2.0]]
+- [[https://datatracker.ietf.org/doc/html/rfc7519][RFC 7519 — JWT]]
+- [[https://www.jwt.io/][jwt.io]]
+- [[https://www.keycloak.org/documentation][Keycloak documentation]]
+- [[https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For][MDN — X-Forwarded-For]]
+
+* Session 6 — Capstone: Debugging Methodology & Full Case Study Lab (3h)
+
+** Objectives
+- Apply a systematic, reproducible debugging method to a multi-layer bug.
+- Reproduce, diagnose, and fix the exact "login works on LAN, fails through
+  the tunnel" bug independently.
+
+** The debugging method (teach this explicitly, it's the real lesson)
+1. *Reproduce with the simplest possible tool.* We used raw `curl`, not the
+   browser — it removes an entire layer of uncertainty (CORS, JS, caching).
+2. *Read the error message literally* before theorizing. Keycloak's actual
+   response body — `"HTTPS required"` — told us exactly what to search for.
+3. *Isolate one variable at a time.* We didn't guess "it's CORS" or "it's
+   Cloudflare" — we called the backend directly, then spoofed one header
+   (`X-Forwarded-For`) at a time until the failure reproduced in isolation.
+4. *Confirm the fix at the same layer you found the bug*, then re-verify
+   end-to-end (we re-tested the actual tunnel URL after patching the route,
+   not just the isolated repro).
+5. *Know which copy of a file is real.* We found two identical-looking
+   route files — one git-tracked source, one a gitignored runtime copy —
+   and had to identify which one Karaf actually hot-deploys from before
+   trusting any edit.
+
+** Capstone lab setup (prepare this ahead of time)
+Give each student/pair a checked-out branch where:
+- The Camel route's `removeHeaders pattern="CamelHttp*"` is restored (bug
+  reintroduced).
+- They're told only: *"Login works when I test locally, but fails for my
+  classmate accessing over a tunnel/different network. Find out why and fix
+  it."* No further hints.
+
+** Expected student workflow (your answer key)
+1. Reproduce with `curl` directly against the Karaf port, no tunnel needed
+   — spoof `X-Forwarded-For` with a public IP and get the same
+   `403 HTTPS required`.
+2. Trace the header from nginx's `proxy_set_header X-Forwarded-For
+   $proxy_add_x_forwarded_for;` through to the Camel route's `<to
+   uri="http://{{KC_HOST}}...">` call.
+3. Compare against the setup routes in the same file that already use
+   `pattern="*"`.
+4. Apply the same fix to all client-facing routes, verify via `docker exec`
+   hot-deploy (no rebuild needed), and re-test the original failing curl
+   command.
+
+** Assessment ideas
+- *Written*: draw the architecture map from memory and annotate where the
+  bug lived and why.
+- *Practical*: the capstone lab itself, graded on whether they isolated the
+  variable methodically (partial credit for a correct fix reached by
+  guessing, full credit for a fix reached by the method above).
+- *Discussion*: "Where else in this codebase might the same class of bug
+  exist?" (Good answer: any other Camel route that calls an external service
+  and only strips `CamelHttp*`.)
+
+* Glossary
+
+- *BFF (Backend for Frontend)* :: a backend service that exists specifically
+  to sit between a frontend and one or more other backends/identity
+  providers, so the frontend never talks to them directly.
+- *Confidential client* :: an OAuth2 client trusted to hold a secret
+  (`client_secret`), as opposed to a *public client* (e.g. a raw SPA) which
+  cannot keep a secret.
+- *Exchange (Camel)* :: the in-flight message object (body + headers +
+  properties) that flows through a Camel route.
+- *Reverse proxy* :: a server that sits in front of one or more backend
+  services and forwards client requests to them, presenting a single
+  origin to the outside world.
+- *Signal (Angular)* :: a reactive primitive that notifies consumers when
+  its value changes, used by zoneless Angular to know when to re-render.
+- *sslRequired (Keycloak)* :: a realm-level policy that can require HTTPS
+  for requests Keycloak classifies as external.
+- *Zoneless change detection* :: an Angular mode that schedules UI updates
+  based on explicit signals/triggers instead of patching every async
+  browser API via Zone.js.
+
+* Appendix — Case Study Timeline (narrative)
+
+Useful to hand out as a one-page story after Session 6, or read aloud before
+the capstone lab to set context:
+
+1. Added a portable login widget + app-specific `AuthService` to the Angular
+   admin app.
+2. Discovered the Angular Material dialog wasn't showing after deploy — root
+   cause: `docker start` doesn't pick up a freshly built image; fixed with
+   `docker compose up --build`.
+3. Wired the widget to a real backend: found the Camel BFF's
+   `/fzlbpms/auth/login` endpoint (password-grant against Keycloak),
+   added an nginx proxy block for it.
+4. Hit a subtle nginx prefix collision (`/fzlbpms` without a trailing slash
+   also matched `/fzlbpmsadmin/`) while wiring the local dev proxy — caught
+   it via a plain `curl -v`, fixed with a trailing slash.
+5. Hit an Angular zoneless-CD bug (`NG0100`) from mutating a dialog's
+   `@Input()` imperatively — fixed by switching to `signal()`s.
+6. Verified the whole flow with a headless-browser script (login, wrong
+   password, right password, logout) against the *real* running backend —
+   not mocks.
+7. User reported login worked on the LAN but failed through a Cloudflare
+   tunnel. Reproduced with `curl` against both URLs, got Keycloak's literal
+   `"HTTPS required"` error on the tunnel path only.
+8. Isolated the cause to `X-Forwarded-For` by spoofing it directly against
+   the Camel service — public IP fails, private IP succeeds.
+9. Traced the leak to Camel's default header-forwarding behavior and an
+   inconsistent `removeHeaders` pattern in the client-facing routes.
+10. Fixed all 9 affected routes, applied the fix live via `docker exec`
+    (Karaf hot-deploy, no rebuild), and confirmed with the exact original
+    failing `curl` command from the bug report.
+
+Every one of those ten steps is a teachable moment on its own — this course
+just gives them names and puts them in order.

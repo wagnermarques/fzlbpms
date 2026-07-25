@@ -7,7 +7,5 @@
   <button mat-icon-button>
     <mat-icon>notifications</mat-icon>
   </button>
-  <button mat-icon-button>
-    <mat-icon>account_circle</mat-icon>
-  </button>
+  <app-user-status [userName]="userName" (login)="login.emit()" (logout)="logout.emit()" />
 </mat-toolbar>

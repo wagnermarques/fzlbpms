@@ -286,7 +286,7 @@
       <setBody>
         <simple>grant_type=password&amp;client_id=fzlbpms-camel&amp;client_secret={{KC_CAMEL_CLIENT_SECRET}}&amp;username=${exchangeProperty.auth.username}&amp;password=${exchangeProperty.auth.password}</simple>
       </setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Content-Type">
         <constant>application/x-www-form-urlencoded</constant>
       </setHeader>
@@ -306,7 +306,7 @@
       <setBody>
         <simple>grant_type=refresh_token&amp;client_id=fzlbpms-camel&amp;client_secret={{KC_CAMEL_CLIENT_SECRET}}&amp;refresh_token=${exchangeProperty.auth.refreshToken}</simple>
       </setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Content-Type">
         <constant>application/x-www-form-urlencoded</constant>
       </setHeader>
@@ -326,7 +326,7 @@
       <setBody>
         <simple>client_id=fzlbpms-camel&amp;client_secret={{KC_CAMEL_CLIENT_SECRET}}&amp;refresh_token=${exchangeProperty.auth.refreshToken}</simple>
       </setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Content-Type">
         <constant>application/x-www-form-urlencoded</constant>
       </setHeader>
@@ -340,7 +340,7 @@
       <from uri="direct:kc-list-users"/>
       <to uri="direct:kc-get-admin-token"/>
       <setBody><constant></constant></setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
@@ -357,7 +357,7 @@
       </setProperty>
       <to uri="direct:kc-get-admin-token"/>
       <setBody><constant></constant></setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
@@ -372,7 +372,7 @@
     <route id="kc-create-user">
       <from uri="direct:kc-create-user"/>
       <to uri="direct:kc-get-admin-token"/>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
@@ -393,7 +393,7 @@
         <simple>${header.id}</simple>
       </setProperty>
       <to uri="direct:kc-get-admin-token"/>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
@@ -414,7 +414,7 @@
       </setProperty>
       <to uri="direct:kc-get-admin-token"/>
       <setBody><constant></constant></setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>
@@ -443,7 +443,7 @@
       <setBody>
         <simple>{"type":"password","value":"${exchangeProperty.kc.newPassword}","temporary":${exchangeProperty.kc.temporary}}</simple>
       </setBody>
-      <removeHeaders pattern="CamelHttp*"/>
+      <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
         <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
       </setHeader>

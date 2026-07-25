@@ -1,4 +1,4 @@
-<app-fixed-head [drawer]="drawer" />
+<app-fixed-head [drawer]="drawer" [userName]="currentUser()" (login)="login()" (logout)="logout()" />
 
 <mat-drawer-container class="drawer-container">
   <mat-drawer #drawer [mode]="isSmallScreen ? 'over' : 'side'" [opened]="!isSmallScreen" class="sidenav">
@@ -10,6 +10,11 @@
       <a mat-list-item routerLink="/" (click)="drawer.close()">
         <mat-icon matListItemIcon>home</mat-icon>
         <span matListItemTitle>Home</span>
+      </a>
+
+      <a mat-list-item routerLink="/appshomeview" (click)="drawer.close()">
+        <mat-icon matListItemIcon>apps</mat-icon>
+        <span matListItemTitle>Aplicações</span>
       </a>
     </mat-nav-list>
   </mat-drawer>

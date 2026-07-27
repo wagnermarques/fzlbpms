@@ -44,6 +44,8 @@
     FZL_WEBAPP_CLIENT_ID   — public client id for fzlbpmsadmin-web's PKCE login
     FZL_MOODLE_CLIENT_ID   — confidential client id for Moodle's auth_oauth2 plugin
     FZL_MOODLE_CLIENT_SECRET — secret for the Moodle confidential client
+    FZL_FLOWABLE_CLIENT_ID — confidential client id for Flowable UI's OIDC login
+    FZL_FLOWABLE_CLIENT_SECRET — secret for the Flowable confidential client
 -->
 <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -121,6 +123,7 @@
         <to uri="direct:kc-ensure-client"/>
         <to uri="direct:kc-ensure-webapp-client"/>
         <to uri="direct:kc-ensure-moodle-client"/>
+        <to uri="direct:kc-ensure-flowable-client"/>
         <to uri="direct:kc-ensure-admin-user"/>
         <log message="[KC-SETUP] Provisioning complete."/>
         <doCatch>
@@ -331,6 +334,53 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] Client '{{FZL_MOODLE_CLIENT_ID}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE FLOWABLE CLIENT (confidential, browser-redirect)
+         Registered so Flowable UI's built-in Spring Security OAuth2 login
+         (flowable.common.app.security.type=oauth2, configured via env vars
+         in docker-compose.yml) can redirect the browser to this same realm
+         and share the Keycloak SSO session cookie with fzlbpmsadmin-web
+         and Moodle. The redirect URI follows Spring Security's default
+         template {baseUrl}/login/oauth2/code/{registrationId}.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-flowable-client">
+      <from uri="direct:kc-ensure-flowable-client"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_FLOWABLE_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"clientId":"{{FZL_FLOWABLE_CLIENT_ID}}","name":"Flowable UI","description":"Flowable UI Spring Security OIDC SSO client","enabled":true,"publicClient":false,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"serviceAccountsEnabled":false,"secret":"{{FZL_FLOWABLE_CLIENT_SECRET}}","redirectUris":["https://{{FZL_PUBLIC_HOSTNAME}}/flowable-ui/*","http://localhost/flowable-ui/*","http://localhost:8080/flowable-ui/*"]}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Confidential client '{{FZL_FLOWABLE_CLIENT_ID}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Flowable client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Client '{{FZL_FLOWABLE_CLIENT_ID}}' already exists."/>
         </otherwise>
       </choice>
     </route>

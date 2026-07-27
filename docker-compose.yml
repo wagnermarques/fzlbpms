@@ -167,6 +167,8 @@ services:
       FZL_WEBAPP_CLIENT_ID: ${FZL_WEBAPP_CLIENT_ID:?}
       FZL_MOODLE_CLIENT_ID: ${FZL_MOODLE_CLIENT_ID:?}
       FZL_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}
+      FZL_FLOWABLE_CLIENT_ID: ${FZL_FLOWABLE_CLIENT_ID:?}
+      FZL_FLOWABLE_CLIENT_SECRET: ${FZL_FLOWABLE_CLIENT_SECRET:?}
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy
@@ -419,6 +421,27 @@ services:
       - SPRING_DATASOURCE_DRIVER-CLASS-NAME=org.postgresql.Driver
       # Configure flowable UI memory limit if needed
       - JAVA_OPTS=-Xms512m -Xmx1024m
+      # --- Keycloak SSO (OIDC login instead of Flowable's own IDM form) ---
+      # Honor X-Forwarded-Proto/Host from nginx so the OAuth2 redirect_uri
+      # is built with the public https origin, not the container's http one.
+      - SERVER_FORWARD_HEADERS_STRATEGY=framework
+      - FLOWABLE_COMMON_APP_SECURITY_TYPE=oauth2
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID=${FZL_FLOWABLE_CLIENT_ID:?}
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET=${FZL_FLOWABLE_CLIENT_SECRET:?}
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_NAME=Keycloak
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_AUTHORIZATION_GRANT_TYPE=authorization_code
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE=openid,profile,email
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=https://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_USER_NAME_ATTRIBUTE=preferred_username
+      # Every realm user who can log in gets full Flowable privileges —
+      # acceptable while the realm only holds fzlbpms staff; switch to a
+      # claim-based mapping (authorities-attribute) if that changes.
+      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_DEFAULT_AUTHORITIES=access-idm,access-admin,access-modeler,access-task,access-rest-api
+      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_DEFAULT_GROUPS=flowableUser
+      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_FULL_NAME_ATTRIBUTE=name
+      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_FIRST_NAME_ATTRIBUTE=given_name
+      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_LAST_NAME_ATTRIBUTE=family_name
+      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_EMAIL_ATTRIBUTE=email
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

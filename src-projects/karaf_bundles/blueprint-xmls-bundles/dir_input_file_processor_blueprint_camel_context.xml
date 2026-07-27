@@ -10,7 +10,7 @@
   <camelContext id="FZL_BluePrintXml_CamelContext" xmlns="http://camel.apache.org/schema/blueprint">
     <route id="WatchDirectoryCamelRoute">
       <from uri="file:/dir_input/?delete=false"/>
-      <setHeader headerName="fileExtension">
+      <setHeader name="fileExtension">
         <simple>${file:ext}</simple>
       </setHeader>
       <log message="Processing file: ${file:name}"/>

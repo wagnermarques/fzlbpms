@@ -1,4 +1,4 @@
-#+Title: Tutorial — Single Sign-On between fzlbpmsadmin-web and Moodle via Keycloak
+#+Title: Tutorial — Single Sign-On between fzlbpmsadmin-web, Moodle and Flowable UI via Keycloak
 #+Author: fzlbpms
 #+Options: toc:3
 
@@ -318,6 +318,110 @@ A pre-change backup of config.php exists as =config.php.bak-pre-sso=.
    - Clear cookies, open =/moodle= first → Keycloak form → log in →
      =/fzlbpmsadmin/= Login button signs you in with no password prompt.
 
+* Step 6 — Flowable UI on the same SSO session
+
+Flowable UI 6.7+ ships with *native* OIDC support — no code, no plugin, just
+configuration. Its own =flowable-default.properties= documents the knobs
+(commented out) inside the war.
+
+** Keycloak client
+
+A third client, =flowable= (confidential), provisioned by the Camel route
+=kc-ensure-flowable-client= exactly like the Moodle one. The redirect URI
+follows Spring Security's default template
+={baseUrl}/login/oauth2/code/{registrationId}=:
+
+#+begin_example
+https://fzlbpms.com.br/flowable-ui/login/oauth2/code/keycloak
+#+end_example
+
+Credentials live in =.env= as =FZL_FLOWABLE_CLIENT_ID= /
+=FZL_FLOWABLE_CLIENT_SECRET=.
+
+** flowable-ui service configuration (docker-compose)
+
+Three groups of settings:
+
+1. *Proxy awareness* — like every other app in this stack, Flowable must
+   honor the forwarded headers so its redirect URI is built with the public
+   https origin (and the nginx =/flowable-ui/= location must forward
+   =$client_proto= / =$client_port=, same as Step 3):
+   #+begin_src yaml
+   - SERVER_FORWARD_HEADERS_STRATEGY=framework
+   #+end_src
+
+2. *Switch authentication to OIDC* (standard Spring Security properties —
+   these bind fine as env vars):
+   #+begin_src yaml
+   - FLOWABLE_COMMON_APP_SECURITY_TYPE=oauth2
+   - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID=${FZL_FLOWABLE_CLIENT_ID:?}
+   - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_SECRET=${FZL_FLOWABLE_CLIENT_SECRET:?}
+   - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_AUTHORIZATION_GRANT_TYPE=authorization_code
+   - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE=openid,profile,email
+   - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=https://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
+   - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_USER_NAME_ATTRIBUTE=preferred_username
+   #+end_src
+
+3. *Privileges* — Flowable computes privileges at login time from these
+   properties; there is nothing per-user in its database. =access-idm=,
+   =access-admin=, =access-modeler=, =access-task= and =access-rest-api=
+   together are "full admin" (all four app tiles).
+
+** The binding trap: why these must go through SPRING_APPLICATION_JSON
+
+This one cost real debugging time. The =flowable.common.app.security.oauth2.*=
+properties *silently do not bind* when written as individual env vars like
+=FLOWABLE_COMMON_APP_SECURITY_OAUTH2_DEFAULT_AUTHORITIES=:
+
+- Flowable's Java field is =oAuth2=, whose canonical property name is
+  =o-auth2= — not =oauth2=;
+- and env-var relaxed binding splits every =_= into a path segment, so
+  =DEFAULT_AUTHORITIES= becomes =default.authorities=, which never matches
+  the real leaf =default-authorities=.
+
+The failure mode is nasty because *login still works* (the
+=spring.security.*= properties are conventional and bind fine) — the user
+just arrives with only =ROLE_USER= / =SCOPE_*= authorities, no =access-*=
+privileges, and the landing page renders as an *empty shell with zero app
+tiles*.
+
+The fix is =SPRING_APPLICATION_JSON=, which injects a property source with
+the *exact* property names:
+
+#+begin_src yaml
+- >-
+  SPRING_APPLICATION_JSON={
+  "flowable.common.app.security.oauth2.default-authorities":"access-idm,access-admin,access-modeler,access-task,access-rest-api",
+  "flowable.common.app.security.oauth2.default-groups":"flowableUser",
+  "flowable.common.app.security.oauth2.full-name-attribute":"name",
+  "flowable.common.app.security.oauth2.first-name-attribute":"given_name",
+  "flowable.common.app.security.oauth2.last-name-attribute":"family_name",
+  "flowable.common.app.security.oauth2.email-attribute":"email"}
+#+end_src
+
+Note =default-authorities= applies to *every* user who can log in to the
+realm — fine while the realm only holds staff; switch to a claim-based
+mapping (=authorities-attribute= + a Keycloak role mapper) before opening
+the realm to regular users.
+
+** Verifying
+
+After a fresh login, Flowable's own REST tells you exactly what the session
+got (run with a logged-in cookie jar):
+
+#+begin_src sh
+curl -b cookies.txt https://fzlbpms.com.br/flowable-ui/app/rest/account
+# → "privileges":[…,"access-idm","access-admin","access-modeler","access-task","access-rest-api",…]
+curl -b cookies.txt https://fzlbpms.com.br/flowable-ui/app/rest/runtime/app-definitions
+# → 4 apps: tasks, modeler, admin, idm  (this endpoint fills the landing page)
+#+end_src
+
+Two operational caveats:
+- Flowable's own login form is *gone* — unlike Moodle there is no escape
+  hatch; if Keycloak is down, Flowable UI is unreachable.
+- =docker compose restart= does *not* apply changed compose env vars — the
+  container must be recreated with =docker compose up -d=.
+
 * Troubleshooting
 
 | Symptom                                            | Cause / Fix                                                        |
@@ -330,3 +434,5 @@ A pre-change backup of config.php exists as =config.php.bak-pre-sso=.
 | Moodle shows its own login form                    | =alternateloginurl= / =forcelogin= not set, or you used =?loginredirect=0= |
 | Redirect loop on failed OAuth                      | =kcsso.php='s =errorcode= guard sends you to the manual form — check Keycloak client config (redirect URI, secret) |
 | Still logged in after "logout"                     | Logout must hit Keycloak's end-session endpoint, not just clear local storage — see =auth.ts logout()= |
+| Flowable: login works but landing page is empty    | =flowable.common.app.security.oauth2.*= didn't bind — must use =SPRING_APPLICATION_JSON=, not individual env vars (Step 6) |
+| Flowable: changed env vars have no effect          | =docker compose restart= keeps the old container config — recreate with =docker compose up -d= |

@@ -7,7 +7,14 @@
   On startup (40 s delay to let Keycloak boot) this context:
     1. Creates the 'fzlbpms' realm if it does not exist.
     2. Creates the 'fzlbpms-camel' confidential client if it does not exist.
-    3. Creates the 'fzlbpmsadmin' user if it does not exist.
+    3. Creates the {{FZL_WEBAPP_CLIENT_ID}} public client (Authorization
+       Code + PKCE) used by fzlbpmsadmin-web's browser login — this is the
+       client that gives the browser a real Keycloak SSO session cookie,
+       which ROPC (client #2, above) never does.
+    4. Creates the {{FZL_MOODLE_CLIENT_ID}} confidential client used by
+       Moodle's auth_oauth2 plugin, so Moodle can share that same SSO
+       session (see bin/moodle/configure-oauth2-keycloak.php).
+    5. Creates the 'fzlbpmsadmin' user if it does not exist.
 
   Auth endpoints (port 9090):
     POST /fzlbpms/auth/login    {username, password}  → tokens
@@ -31,6 +38,12 @@
     FZL_REALM              — realm to manage              (fzlbpms)
     FZLBPMS_ADMIN_USERNAME — bootstrap admin username for the fzlbpms realm
     FZLBPMS_ADMIN_PASSWORD — bootstrap admin password (temporary; change after first login)
+    FZL_PUBLIC_HOSTNAME    — canonical externally-reachable hostname, used to build
+                             redirect URIs for the SSO clients below (KC_HOSTNAME
+                             must match — see docker-compose.yml)
+    FZL_WEBAPP_CLIENT_ID   — public client id for fzlbpmsadmin-web's PKCE login
+    FZL_MOODLE_CLIENT_ID   — confidential client id for Moodle's auth_oauth2 plugin
+    FZL_MOODLE_CLIENT_SECRET — secret for the Moodle confidential client
 -->
 <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -106,6 +119,8 @@
         <to uri="direct:kc-get-admin-token"/>
         <to uri="direct:kc-ensure-realm"/>
         <to uri="direct:kc-ensure-client"/>
+        <to uri="direct:kc-ensure-webapp-client"/>
+        <to uri="direct:kc-ensure-moodle-client"/>
         <to uri="direct:kc-ensure-admin-user"/>
         <log message="[KC-SETUP] Provisioning complete."/>
         <doCatch>
@@ -222,6 +237,100 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] Client 'fzlbpms-camel' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE WEBAPP CLIENT (public, browser-redirect / PKCE)
+         publicClient=true            → no client secret; PKCE (S256) stands
+                                         in for it, safe for browser-side code.
+         standardFlowEnabled=true     → Authorization Code flow: the browser
+                                         is redirected to Keycloak's login
+                                         page, which is what actually sets
+                                         the Keycloak SSO session cookie.
+         directAccessGrantsEnabled=false → ROPC intentionally disabled here;
+                                         that's what fzlbpms-camel is for.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-webapp-client">
+      <from uri="direct:kc-ensure-webapp-client"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_WEBAPP_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"clientId":"{{FZL_WEBAPP_CLIENT_ID}}","name":"FzlBPMS Admin Web","description":"Browser SPA — Authorization Code + PKCE login, sets the Keycloak SSO session cookie shared with Moodle","enabled":true,"publicClient":true,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"serviceAccountsEnabled":false,"attributes":{"pkce.code.challenge.method":"S256","post.logout.redirect.uris":"+"},"redirectUris":["https://{{FZL_PUBLIC_HOSTNAME}}/fzlbpmsadmin/*","http://localhost/fzlbpmsadmin/*","http://localhost:4200/*"],"webOrigins":["https://{{FZL_PUBLIC_HOSTNAME}}","http://localhost","http://localhost:4200"]}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Public client '{{FZL_WEBAPP_CLIENT_ID}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Webapp client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Client '{{FZL_WEBAPP_CLIENT_ID}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE MOODLE CLIENT (confidential, browser-redirect)
+         Registered so Moodle's auth_oauth2 plugin (configured by
+         bin/moodle/configure-oauth2-keycloak.php) can redirect the browser
+         to this same realm — since kc-ensure-webapp-client already set the
+         Keycloak SSO cookie, this redirect comes back silently (SSO).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-moodle-client">
+      <from uri="direct:kc-ensure-moodle-client"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_MOODLE_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"clientId":"{{FZL_MOODLE_CLIENT_ID}}","name":"Moodle","description":"Moodle auth_oauth2 SSO client","enabled":true,"publicClient":false,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"serviceAccountsEnabled":false,"secret":"{{FZL_MOODLE_CLIENT_SECRET}}","redirectUris":["https://{{FZL_PUBLIC_HOSTNAME}}/moodle/admin/oauth2callback.php","http://localhost/moodle/admin/oauth2callback.php"]}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Confidential client '{{FZL_MOODLE_CLIENT_ID}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Moodle client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Client '{{FZL_MOODLE_CLIENT_ID}}' already exists."/>
         </otherwise>
       </choice>
     </route>

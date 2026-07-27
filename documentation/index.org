@@ -9,6 +9,14 @@
 - [[file:classesplan/index.org][Class Plan — Login Widget, Camel BFF, Keycloak & Reverse-Proxy Debugging]] —
   6-session course built from a real feature + real production bug fixed in
   this repo, with free study links for students.
+- [[file:classesplan/autenticacao/oauth/index.org][Class Plan — OAuth2, OIDC & Single Sign-On Across fzlbpmsadmin-web and Moodle]] —
+  companion 4-session course: ROPC vs Authorization Code + PKCE, the
+  Keycloak SSO session cookie, wiring Moodle's auth_oauth2 plugin, and a
+  capstone reproducing this repo's real KC_HOSTNAME reverse-proxy bug.
+- [[file:classesplan/keycloaksinglesignonmoodle.org][Tutorial — Single Sign-On between fzlbpmsadmin-web and Moodle via Keycloak]] —
+  step-by-step guide to the SSO as actually shipped: Keycloak clients, SPA
+  PKCE flow, the X-Forwarded-Proto proxy fix, Moodle's headless OAuth2
+  issuer setup, and the kcsso.php auto-login redirector.
 
 * Centralized Login with Keycloak:
        * Infrastructure: Added fzl-keycloak and a dedicated fzl-keycloak-db (PostgreSQL) to docker-compose.yml.

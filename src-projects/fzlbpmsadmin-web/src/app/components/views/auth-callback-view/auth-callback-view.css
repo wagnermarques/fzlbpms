@@ -1,0 +1,10 @@
+.auth-callback-loading,
+.auth-callback-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+}

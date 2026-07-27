@@ -1,0 +1,332 @@
+#+Title: Tutorial — Single Sign-On between fzlbpmsadmin-web and Moodle via Keycloak
+#+Author: fzlbpms
+#+Options: toc:3
+
+* Goal
+
+Log in once and be authenticated everywhere: a user who signs in to
+=fzlbpmsadmin-web= (the Angular SPA) is automatically logged in when they
+open Moodle, and vice-versa — no second password prompt, no extra click.
+
+The mechanism that makes this possible is the *Keycloak SSO session cookie*.
+Both applications delegate authentication to the same Keycloak realm
+(=fzlbpms=). Whichever app authenticates first creates a session *inside
+Keycloak* (stored as a cookie on the =/auth= path of the shared domain
+=fzlbpms.com.br=). When the second app starts its own OpenID Connect flow,
+Keycloak sees that cookie, skips the login form, and immediately issues an
+authorization code for the already-authenticated user.
+
+#+begin_example
+  Browser ──(1) login──▶ fzlbpmsadmin-web ──OIDC Auth Code + PKCE──▶ Keycloak
+     │                                                                 │
+     │                    KEYCLOAK_SESSION cookie set on /auth ◀───────┘
+     │
+     └──(2) open /moodle ──▶ Moodle auth_oauth2 ──OIDC Auth Code──▶ Keycloak
+                                                                       │
+                              cookie found → no login form, code ◀─────┘
+                              issued for the same user
+#+end_example
+
+* Architecture / Moving Parts
+
+| Component                   | Role                                                              |
+|-----------------------------+-------------------------------------------------------------------|
+| =fzl-keycloak= (26.0)       | Identity provider; realm =fzlbpms=; canonical host =fzlbpms.com.br= |
+| =fzl-nginx=                 | Reverse proxy for everything: =/auth= → Keycloak, =/moodle= → PHP-FPM, =/fzlbpmsadmin/= → static SPA |
+| Cloudflare                  | Terminates TLS at the edge; origin traffic reaches nginx as plain HTTP |
+| =fzl-karaf-camel-integration= | Camel routes that *provision* Keycloak idempotently on startup (realm, clients, admin user) |
+| =fzlbpmsadmin-web=          | Angular SPA using Authorization Code + PKCE (public client)        |
+| Moodle 5.2 + =auth_oauth2=  | Consumes the same realm through a confidential client (=moodle=)   |
+| =moodle-oauth2-configurator=  | One-shot compose service that configures Moodle's OAuth2 issuer headlessly |
+
+Key files in this repository:
+- [[file:../src-projects/karaf_bundles/blueprint-xmls-bundles/keycloak-admin-camel-context.xml][keycloak-admin-camel-context.xml]] — Keycloak provisioning routes
+- [[file:../src-projects/fzlbpmsadmin-web/src/app/services/auth.ts][auth.ts]] / [[file:../src-projects/fzlbpmsadmin-web/src/app/services/pkce.ts][pkce.ts]] — SPA login flow
+- [[file:../containers/fzl-nginx/nginx-conf.d/00-catchall.conf][00-catchall.conf]] — reverse-proxy configuration
+- [[file:../bin/moodle/configure-oauth2-keycloak.php][configure-oauth2-keycloak.php]] — Moodle issuer setup
+- [[file:../docker-compose.yml][docker-compose.yml]] — service wiring
+- =src-projects/var_www/html/moodle/public/kcsso.php= — Moodle auto-login hop (bind mount, owned by www-data)
+- =src-projects/var_www/html/moodle/config.php= — =forcelogin= / =alternateloginurl=
+
+* Step 1 — Keycloak: one realm, two clients
+
+The Camel context provisions everything idempotently on each startup
+(route =kc-setup-startup=). The parts relevant to SSO:
+
+** Client for the SPA (=fzlbpmsadmin-web=) — public + PKCE
+
+A browser app cannot keep a secret, so the client is *public* and secured by
+PKCE (S256). Standard flow (authorization code) is on; direct access grants
+are off — the SPA never sees a password form of its own.
+
+#+begin_src js
+{
+  "clientId": "fzlbpmsadmin-web",
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "directAccessGrantsEnabled": false,
+  "attributes": { "pkce.code.challenge.method": "S256",
+                  "post.logout.redirect.uris": "+" },
+  "redirectUris": ["https://fzlbpms.com.br/fzlbpmsadmin/*", "..."],
+  "webOrigins":   ["https://fzlbpms.com.br", "..."]
+}
+#+end_src
+
+** Client for Moodle (=moodle=) — confidential
+
+Moodle is a server-side app, so it uses a *confidential* client with a
+secret. Its redirect URI is Moodle's fixed OAuth2 callback:
+
+#+begin_src js
+{
+  "clientId": "moodle",
+  "publicClient": false,
+  "standardFlowEnabled": true,
+  "secret": "{{FZL_MOODLE_CLIENT_SECRET}}",
+  "redirectUris": ["https://fzlbpms.com.br/moodle/admin/oauth2callback.php", "..."]
+}
+#+end_src
+
+** One canonical hostname
+
+Keycloak is configured with a *fixed* =KC_HOSTNAME= (the public one), so
+every URL it emits — discovery document, authorization endpoint, token
+endpoint — always says =https://fzlbpms.com.br/auth/...= regardless of who
+asked. Both apps and both browsers therefore share the exact same issuer
+and, crucially, the same cookie domain/path.
+
+#+begin_src yaml
+# docker-compose.yml (fzl-keycloak)
+KC_HOSTNAME: ${FZL_PUBLIC_HOSTNAME:-localhost}
+KC_HTTP_ENABLED: "true"
+KC_HTTP_RELATIVE_PATH: /auth
+KC_PROXY_HEADERS: xforwarded
+#+end_src
+
+* Step 2 — The SPA: Authorization Code + PKCE
+
+=auth.ts= implements the redirect flow by hand (no library needed):
+
+1. =login()= generates a random =code_verifier= + =state=, stores them in
+   =sessionStorage=, derives the S256 =code_challenge=, and sends the whole
+   browser to Keycloak's =/protocol/openid-connect/auth= endpoint.
+2. Keycloak authenticates the user (or silently reuses its SSO cookie) and
+   redirects back to =/fzlbpmsadmin/auth-callback?code=...&state=...=.
+3. The =AuthCallbackView= route validates =state= and exchanges the code at
+   the token endpoint with the stored =code_verifier= (same origin, so no
+   CORS involved).
+4. Tokens land in =localStorage=; the user's name comes from the JWT claims.
+
+Logout is also a full-page redirect — to Keycloak's *end-session* endpoint —
+because clearing localStorage alone would leave the Keycloak SSO cookie
+alive and the next "login" would silently sign you back in.
+
+* Step 3 — The proxy-header trap (the bug that broke everything)
+
+This was the single root cause behind both "login button does nothing" and
+"Moodle can't reach the issuer":
+
+- Cloudflare terminates TLS; nginx receives *plain HTTP*, so nginx's
+  =$scheme= variable is always =http=.
+- The old config did =proxy_set_header X-Forwarded-Proto $scheme;= —
+  *overwriting* the truthful =X-Forwarded-Proto: https= that Cloudflare had
+  already set.
+- Keycloak (=KC_PROXY_HEADERS: xforwarded=) trusts that header, concluded
+  the request was insecure HTTP from a public address, and answered:
+
+#+begin_example
+HTTP 403  {"error":"invalid_request","error_description":"HTTPS required"}
+#+end_example
+
+** The fix: preserve the edge's proto, fall back for LAN
+
+A =map= at http level in =00-catchall.conf= (conf.d files are included at
+http scope, so a map above the =server= block is valid):
+
+#+begin_src conf
+map $http_x_forwarded_proto $client_proto {
+    default $scheme;   # direct LAN clients: no incoming header → http
+    https   https;     # tunnel clients: keep what Cloudflare said
+}
+map $client_proto $client_port {
+    default 80;
+    https   443;
+}
+
+# inside the /auth/ location:
+proxy_set_header X-Forwarded-Proto $client_proto;
+proxy_set_header X-Forwarded-Port  $client_port;
+#+end_src
+
+Rule of thumb: *a proxy in the middle of a chain must forward the
+first-hop's =X-Forwarded-*= headers, not replace them with its own view.*
+
+Moodle has the mirror-image of the same problem; its =config.php= already
+derives =wwwroot= and =$_SERVER['HTTPS']= from =X-Forwarded-Proto=.
+
+* Step 4 — Moodle: configure the OAuth2 issuer headlessly
+
+The one-shot compose service =moodle-oauth2-configurator= runs
+[[file:../bin/moodle/configure-oauth2-keycloak.php][configure-oauth2-keycloak.php]] inside the PHP-FPM image with retries
+(Keycloak provisioning has its own startup delay). Three hard-won lessons
+are baked into it:
+
+1. *Mount moodledata too.* Moodle CLI dies with "=$CFG->dataroot is not
+   configured properly=" if only =/var/www/html= is mounted:
+
+   #+begin_src yaml
+   volumes:
+     - ./src-projects/var_www/html:/var/www/html
+     - ./src-projects/moodledata:/var/www/moodledata   # ← required
+     - ./bin/moodle:/opt/moodle-scripts:ro
+   #+end_src
+
+2. *=image= must be ''.* The =mdl_oauth2_issuer.image= column is NOT NULL;
+   passing nothing makes =create_issuer()= fail with "Error writing to
+   database".
+
+3. *Run endpoint discovery explicitly.* Neither =create_issuer()= nor
+   =update_issuer()= fetches =/.well-known/openid-configuration= for a
+   custom issuer. Without this call the issuer has *no authorization/token
+   endpoints and no claim mappings*, and the login button silently fails:
+
+   #+begin_src php
+   \core\oauth2\service\custom::discover_endpoints($issuer);
+   #+end_src
+
+The script also enables the =oauth2= auth plugin alongside the existing
+ones. After a successful run you should see 11 endpoints and mappings like
+=given_name → firstname=, =family_name → lastname=, =email → email= in the
+=mdl_oauth2_endpoint= / =mdl_oauth2_user_field_mapping= tables.
+
+Re-run any time with:
+
+#+begin_src sh
+docker compose up moodle-oauth2-configurator
+#+end_src
+
+* Step 5 — Moodle auto-login (no button click)
+
+Out of the box, Moodle only starts the OIDC flow when the user clicks the
+identity-provider button on its login page — and a guest visiting =/moodle=
+never even reaches that page. Two settings plus one tiny file fix this.
+
+** =config.php=
+
+#+begin_src php
+// Every page requires login…
+$CFG->forcelogin = true;
+// …and the login page is replaced by our redirector:
+$CFG->alternateloginurl = $CFG->wwwroot . '/kcsso.php';
+#+end_src
+
+** =public/kcsso.php= — why the extra hop exists
+
+=auth/oauth2/login.php= calls =require_sesskey()=: it demands a session-bound
+CSRF token, which a *static* =alternateloginurl= string can never carry.
+=kcsso.php= bridges that gap — it shares the visitor's session, so it can
+mint a valid =sesskey()= and forward:
+
+#+begin_src php
+require(__DIR__ . '/config.php');
+
+// A failed OAuth attempt loops back here with an errorcode —
+// fall through to the manual form instead of bouncing forever.
+$errorcode = optional_param('errorcode', 0, PARAM_INT);
+if ($errorcode) {
+    redirect(new moodle_url('/login/index.php',
+        ['loginredirect' => 0, 'errorcode' => $errorcode]));
+}
+
+if (isloggedin() && !isguestuser()) {
+    redirect(new moodle_url('/'));
+}
+
+$target = null;
+foreach (\core\oauth2\api::get_all_issuers(true) as $issuer) {
+    if ($issuer->is_available_for_login()) { $target = $issuer; break; }
+}
+if (!$target) {
+    redirect(new moodle_url('/login/index.php', ['loginredirect' => 0]));
+}
+
+$wantsurl = optional_param('wantsurl', '', PARAM_LOCALURL);
+if ($wantsurl === '' && !empty($SESSION->wantsurl)) {
+    $wantsurl = $SESSION->wantsurl;
+}
+
+redirect(new moodle_url('/auth/oauth2/login.php', [
+    'id' => $target->get('id'),
+    'wantsurl' => $wantsurl,
+    'sesskey' => sesskey(),
+]));
+#+end_src
+
+The resulting chain for an anonymous visit to =/moodle/=:
+
+#+begin_example
+/moodle/  →(forcelogin)→  /login/index.php
+          →(alternateloginurl)→  /kcsso.php
+          →(sesskey minted)→     /auth/oauth2/login.php?id=…&sesskey=…
+          →(OIDC)→               Keycloak /protocol/openid-connect/auth
+          →(SSO cookie found)→   /moodle/admin/oauth2callback.php?code=…
+          →                      logged in, account auto-created on 1st visit
+#+end_example
+
+** Escape hatch
+
+If Keycloak is down, or you need the local Moodle admin account:
+
+#+begin_example
+https://fzlbpms.com.br/moodle/login/index.php?loginredirect=0
+#+end_example
+
+(=loginredirect=0= is honored by core =login/index.php= and bypasses
+=alternateloginurl=.)
+
+** Ownership note
+
+The Moodle tree in =src-projects/var_www/html/moodle= is owned by uid 33
+(www-data). Edit it *through the container*, e.g.:
+
+#+begin_src sh
+docker cp kcsso.php fzl-php8.3-fpm:/var/www/html/moodle/public/kcsso.php
+docker exec fzl-php8.3-fpm chown 33:33 /var/www/html/moodle/public/kcsso.php
+#+end_src
+
+A pre-change backup of config.php exists as =config.php.bak-pre-sso=.
+
+* Verification checklist
+
+1. Discovery document reachable over the public URL (was 403 before the
+   proxy fix):
+   #+begin_src sh
+   curl -s https://fzlbpms.com.br/auth/realms/fzlbpms/.well-known/openid-configuration | head -c 200
+   #+end_src
+
+2. Redirect chain from Moodle ends at Keycloak (cookie jar needed, the
+   sesskey is session-bound):
+   #+begin_src sh
+   curl -s -c cj.txt -b cj.txt -L -o /dev/null \
+        -w '%{num_redirects} redirects → %{url_effective}\n' \
+        https://fzlbpms.com.br/moodle/
+   # expect: 4 redirects → https://fzlbpms.com.br/auth/realms/fzlbpms/protocol/openid-connect/auth?client_id=moodle…
+   #+end_src
+
+3. Browser test, both directions:
+   - Log in at =/fzlbpmsadmin/= → open =/moodle= → already logged in.
+   - Clear cookies, open =/moodle= first → Keycloak form → log in →
+     =/fzlbpmsadmin/= Login button signs you in with no password prompt.
+
+* Troubleshooting
+
+| Symptom                                            | Cause / Fix                                                        |
+|----------------------------------------------------+--------------------------------------------------------------------|
+| =403 {"error":…"HTTPS required"}= from any /auth URL | nginx overwrote =X-Forwarded-Proto=; use the =$client_proto= map (Step 3) |
+| Configurator: "=$CFG->dataroot is not configured=" | =/var/www/moodledata= volume missing in the configurator service    |
+| Configurator: "Error writing to database"          | =image= field null — must be =''= (NOT NULL column)                 |
+| Discovery registers only 1 endpoint                | Issuer URL unreachable *from inside the container* — test with curl from the container itself |
+| Login button in SPA "does nothing"                 | Stale bundle or stale token in localStorage — rebuild =fzl-nginx= (SPA is baked into the image) and hard-refresh / clear site data |
+| Moodle shows its own login form                    | =alternateloginurl= / =forcelogin= not set, or you used =?loginredirect=0= |
+| Redirect loop on failed OAuth                      | =kcsso.php='s =errorcode= guard sends you to the manual form — check Keycloak client config (redirect URI, secret) |
+| Still logged in after "logout"                     | Logout must hit Keycloak's end-session endpoint, not just clear local storage — see =auth.ts logout()= |

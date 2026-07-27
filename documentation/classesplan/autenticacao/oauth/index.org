@@ -1,0 +1,355 @@
+#+Title: Class Plan — OAuth2, OIDC & Single Sign-On Across fzlbpmsadmin-web and Moodle
+
+* Overview
+
+This is a teaching plan built around a second real feature shipped in this
+repository: giving ~fzlbpmsadmin-web~ and Moodle *true single sign-on* through
+a shared Keycloak realm, and along the way fixing the actual architectural
+reason it didn't work before — the web app's original login used a grant
+type (Resource Owner Password Credentials / ROPC) that structurally cannot
+produce browser-based SSO, because the browser never visits the identity
+provider's login page.
+
+This complements
+[[file:../../index.org][the earlier Login Widget / Camel BFF / Keycloak class plan]] — that one
+covers *how a single app logs in*; this one covers *how two apps share one
+login*. Read or teach that one first if the audience hasn't seen it; Sessions
+1–3 here assume familiarity with Keycloak realms/clients and the Camel BFF.
+
+Reference code for every session lives in this repository:
+- Old (ROPC) vs new (PKCE) web login: ~git log -p~ on
+  [[file:../../../../src-projects/fzlbpmsadmin-web/src/app/services/auth.ts][auth.ts]],
+  plus the new [[file:../../../../src-projects/fzlbpmsadmin-web/src/app/services/pkce.ts][pkce.ts]]
+  helper and [[file:../../../../src-projects/fzlbpmsadmin-web/src/app/components/views/auth-callback-view/][auth-callback-view]] component.
+- Keycloak client bootstrap (both the old ROPC client and the two new SSO
+  clients): [[file:../../../../src-projects/karaf_bundles/blueprint-xmls-bundles/keycloak-admin-camel-context.xml][keycloak-admin-camel-context.xml]]
+- Moodle's side of the handshake: [[file:../../../../bin/moodle/configure-oauth2-keycloak.php][configure-oauth2-keycloak.php]] and Moodle's
+  own plugin at ~src-projects/var_www/html/moodle/public/auth/oauth2~
+- Deployment wiring: [[file:../../../../docker-compose.yml][docker-compose.yml]] (search for ~moodle-oauth2-configurator~
+  and ~KC_HOSTNAME~) and [[file:../../../../.env.template][.env.template]]
+
+* How to Use This Plan
+
+- Written as *4 sessions of ~2.5h* (~10h total) plus a Session 0 instructor
+  prep checklist and a capstone lab, in the same format as the referenced
+  class plan: objectives, key concepts, a live-coding/demo script you can
+  follow against this exact repo, a hands-on exercise, a short discussion,
+  and free resources.
+- The capstone lab has students reproduce this repo's actual
+  ~KC_HOSTNAME~ bug (Section 3 below) from a broken starting point you
+  prepare for them — it is a small, sharp, real-world reverse-proxy/IdP
+  misconfiguration, not a toy exercise.
+
+* Learning Objectives
+
+By the end of the course, students should be able to:
+1. Explain OAuth2's roles (resource owner, client, authorization server,
+   resource server) and pick the right grant type for a given client shape
+   (server-to-server, browser SPA, mobile/desktop, legacy trusted-first-party).
+2. Explain concretely *why* Resource Owner Password Credentials cannot
+   produce browser SSO, and why it's deprecated in the OAuth 2.0 Security
+   BCP even for its original "trusted first-party app" use case.
+3. Explain PKCE (code_verifier/code_challenge/S256) and why it lets a
+   public, secret-less browser client be trusted for the Authorization Code
+   flow.
+4. Distinguish OAuth2 (authorization) from OIDC (authentication built on
+   top of it), and ID Token from Access Token.
+5. Explain what a Keycloak (or any OIDC provider) SSO session cookie
+   actually is, and how two independently-registered clients on the same
+   realm can silently reuse it.
+6. Read and extend Moodle's ~core\oauth2~ persistent API to configure an
+   issuer headlessly, and explain why an *update* to an OAuth2 issuer must
+   explicitly re-trigger discovery.
+7. Diagnose a reverse-proxy hostname mismatch between what a backend
+   service reports as its own address and what the browser can actually
+   reach — the single most common way self-hosted OIDC deployments break.
+
+* Target Audience & Prerequisites
+
+Same as the referenced class plan: intermediate students comfortable with a
+terminal, basic Git/Docker, and JavaScript/TypeScript. Additionally assumes
+they've either taken that earlier course or already understand: what a
+Keycloak realm/client is, what the Camel BFF does, and how ~fzlbpms-camel~'s
+ROPC login worked before this change.
+
+* Session 0 — Instructor / Self-Study Prep Checklist
+
+** Prerequisite knowledge checklist (free resources)
+
+*** OAuth 2.0 & grant types
+- [[https://datatracker.ietf.org/doc/html/rfc6749][RFC 6749 — The OAuth 2.0 Authorization Framework]] (the spec itself; read
+  §4 "Obtaining Authorization" for the grant-type comparison)
+- [[https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics][OAuth 2.0 Security Best Current Practice]] — §2.4 explicitly recommends
+  against ROPC; this is the primary source for Session 1's "why we moved
+  off ROPC" argument.
+- [[https://oauth.net/2/grant-types/authorization-code/][oauth.net — Authorization Code grant]] and
+  [[https://oauth.net/2/grant-types/password/][oauth.net — ROPC grant]] (both free, shorter than the RFC)
+
+*** PKCE
+- [[https://datatracker.ietf.org/doc/html/rfc7636][RFC 7636 — Proof Key for Code Exchange]]
+- [[https://oauth.net/2/pkce/][oauth.net — PKCE]] (free, has the code_verifier/code_challenge diagram)
+
+*** OpenID Connect & JWT
+- [[https://openid.net/specs/openid-connect-core-1_0.html][OpenID Connect Core 1.0]] (free, the actual spec — §2 "ID Token" is the
+  key section)
+- [[https://datatracker.ietf.org/doc/html/rfc7519][RFC 7519 — JSON Web Token (JWT)]]
+- [[https://www.jwt.io/][jwt.io]] — paste a token from this app and inspect it live (already linked
+  from this repo's ~documentation/index.org~)
+
+*** Keycloak specifics
+- [[https://www.keycloak.org/docs/latest/server_admin/#_oidc_clients][Keycloak docs — OIDC clients]] (public vs confidential, standard vs direct
+  access flows — maps directly onto this repo's three clients)
+- [[https://www.keycloak.org/server/hostname][Keycloak docs — Configuring the hostname]] (free, official — read this
+  *before* Session 3, it's the exact mechanism behind the ~KC_HOSTNAME~ bug)
+- [[https://www.keycloak.org/docs/latest/server_admin/#_sessions][Keycloak docs — Sessions]] (the SSO cookie mechanics for Session 2)
+
+*** Moodle
+- [[https://moodledev.io/docs/apis/subsystems/oauth2][Moodle Developer docs — OAuth2 API]] (free, official)
+- [[https://docs.moodle.org/en/OAuth_2_admin][Moodle docs — OAuth 2 admin]] (the same screen the class's PHP script
+  drives headlessly)
+
+* Architecture Map — Before and After
+
+#+begin_example
+ BEFORE (ROPC — no browser SSO possible)
+ Browser ──(username+password, XHR)──▶ fzl-nginx ──▶ Camel BFF ──▶ Keycloak
+                                                       (fzlbpms-camel client,
+                                                        grant_type=password)
+ The browser never navigates to Keycloak. No SSO cookie is ever set.
+
+ AFTER (Authorization Code + PKCE — real browser SSO)
+ Browser ──(full page redirect)──▶ Keycloak login page   [sets SSO cookie]
+    │                                (fzlbpmsadmin-web client, public+PKCE)
+    ◀──(redirect back with ?code=...)───────┘
+ Browser ──(POST code+verifier, XHR)──▶ Keycloak token endpoint  [tokens]
+
+ Later, same browser:
+ Browser ──(full page redirect)──▶ Moodle "Login with Keycloak"
+    │                                (moodle client, confidential)
+    ▼
+ Keycloak sees the SSO cookie ─▶ skips the login form ─▶ redirects straight
+ back to Moodle with a code. This silent round-trip *is* SSO.
+#+end_example
+
+Draw this twice on the board: once with the cookie icon crossed out (before)
+and once with it present (after). The entire course is explaining why that
+one cookie is the whole story.
+
+* Session 1 — OAuth2 Grant Types & Why ROPC Can't Do SSO (2.5h)
+
+** Objectives
+- Compare grant types by *who talks to the authorization server* and *what
+  the client can prove about itself*.
+- Trace, in this repo, exactly why ROPC leaves no trace of the user's
+  browser session at Keycloak.
+
+** Key concepts
+- Confidential vs public clients; what a "client secret" actually protects
+  against.
+- Grant type ⇄ client shape mapping: Client Credentials (service-to-service,
+  no user), ROPC (trusted first-party, has direct credentials — used by the
+  Tauri desktop app here via ~auth_commands.rs~), Authorization Code
+  (anything with a browser/webview redirect), Authorization Code + PKCE
+  (the above, but for a client that *cannot* keep a secret).
+- Why "the browser never navigates to the IdP" is disqualifying for SSO —
+  SSO isn't a token-sharing trick, it's *session cookie reuse at the IdP*.
+
+** Live-coding / demo script
+1. ~git show <the ROPC-era commit>~ on ~auth.ts~ — walk the old ~login()~:
+   a plain ~HttpClient.post~ to ~/fzlbpms/auth/login~. Open browser dev
+   tools, do a login, show the Network tab: no navigation, one XHR, no
+   ~Set-Cookie~ from Keycloak anywhere in the trace.
+2. Open ~keycloak-admin-camel-context.xml~'s ~auth-login~ route (still
+   present, still used by the Tauri app) and read the literal
+   ~grant_type=password~ body it builds.
+3. Now do the same login flow on the *new* code: click Login, watch the
+   full-page navigation to ~/auth/realms/fzlbpms/protocol/openid-connect/auth~,
+   inspect the resulting cookie (~KEYCLOAK_SESSION~ or similar) in
+   Application → Cookies.
+
+** Exercise
+Have students classify five hypothetical clients (a Postman collection
+script, a native mobile app, this repo's Tauri desktop app, a second SPA on
+a different origin, a cron job calling an internal API) by the correct grant
+type, and justify each choice in one sentence.
+
+** Discussion / quiz
+"The Tauri desktop app still uses ROPC after this change — is that a bug we
+left in, or a legitimate choice?" (It's legitimate: it's a first-party,
+developer-controlled client with no browser involved at all, so there's no
+SSO cookie to gain — the OAuth 2.0 Security BCP's objection to ROPC is
+mainly about it *training users to type passwords into third-party UIs* and
+about the impossibility of MFA/step-up auth, not about this specific
+architecture.)
+
+* Session 2 — PKCE and the BFF Pattern, Revisited (2.5h)
+
+** Objectives
+- Implement (or read, if time-constrained) the PKCE code_verifier /
+  code_challenge dance from scratch.
+- Understand what changed vs. stayed the same in this repo's BFF role.
+
+** Key concepts
+- Why a public client can't hold a secret (anyone can read a SPA's bundled
+  JS), and how PKCE substitutes a *per-login, ephemeral* proof for a
+  long-lived static secret.
+- The exact steps: generate `code_verifier` → derive `code_challenge =
+  BASE64URL(SHA256(code_verifier))` → send the challenge at authorize time
+  → send the verifier at token-exchange time → server checks they match.
+- What "BFF" still means here: Camel remains the backend-for-frontend for
+  user CRUD and for the Tauri app's ROPC login (unchanged), but the browser
+  now talks to Keycloak *directly* for its own login — the BFF pattern
+  isn't "all traffic must go through the backend," it's "the backend
+  fronts whatever the frontend can't safely do itself." A public PKCE
+  client safely can do its own login; ROPC never could.
+
+** Live-coding / demo script
+1. Read [[file:../../../../src-projects/fzlbpmsadmin-web/src/app/services/pkce.ts][pkce.ts]] line by line — it's ~30 lines, deliberately dependency-free.
+   Have students predict `code_challenge`'s output length before running it
+   (SHA-256 → 32 bytes → base64url, no padding → 43 chars, always).
+2. Walk ~auth.ts~'s new `login()`/`handleCallback()`/`refresh()`/`logout()` —
+   point out `state` (CSRF protection, unrelated to PKCE) is generated and
+   checked separately from `code_verifier`.
+3. Walk the Keycloak client JSON in `kc-ensure-webapp-client`
+   (`keycloak-admin-camel-context.xml`) — `publicClient: true`,
+   `directAccessGrantsEnabled: false`, `attributes:
+   {"pkce.code.challenge.method":"S256"}`. Ask: what happens if that last
+   attribute were missing? (Keycloak would accept the flow *without*
+   requiring PKCE — a public client with no PKCE and no secret is exploitable
+   via authorization-code interception.)
+
+** Exercise
+Have students intercept (via browser dev tools, not a MITM proxy — keep it
+simple) an authorization request URL, copy just the `code` parameter from
+the callback, and try to replay the token exchange *without* the matching
+`code_verifier` (e.g. from a fresh incognito tab that never set the
+`sessionStorage` entry). It should fail — that failure *is* the security
+property PKCE provides.
+
+* Session 3 — The Keycloak SSO Cookie & Wiring Up Moodle (2.5h)
+
+** Objectives
+- Explain exactly what makes the second app's login silent.
+- Drive Moodle's OAuth2 persistent API headlessly, the way
+  `configure-oauth2-keycloak.php` does.
+
+** Key concepts
+- A Keycloak realm keeps *one* browser session per user per realm,
+  independent of which client initiated it. Any client registered on that
+  realm can request "please authenticate this user," and if a valid session
+  cookie is present, Keycloak's login page is skipped entirely (`prompt=none`
+  semantics, even without the app asking for it explicitly — the *user*
+  already has a valid session).
+- Moodle's `auth_oauth2` plugin is just another OIDC Relying Party — nothing
+  Moodle-specific happens at the Keycloak layer. The "showonloginpage" field
+  and the "Login with Keycloak" button are Moodle UI; the SSO itself is pure
+  OIDC.
+- Moodle's `core\oauth2\api` persistent layer: `create_issuer()` triggers
+  auto-discovery (`{baseurl}/.well-known/openid-configuration`) *once*;
+  `update_issuer()` deliberately does not re-discover, which is why the
+  script explicitly calls `\core\oauth2\service\custom::discover_endpoints()`
+  after an update.
+
+** Live-coding / demo script
+1. In the Keycloak admin console, open Sessions for a logged-in test user —
+   show the *single* session, and that both `fzlbpmsadmin-web` and `moodle`
+   appear as "clients" using that same session once both have been visited.
+2. Read `configure-oauth2-keycloak.php` top to bottom — this is a good
+   moment to discuss why `\core\session\manager::set_user(get_admin())` is
+   necessary (Moodle's `core\oauth2\api::*` calls enforce
+   `moodle/site:config`, which needs a real `$USER` even for a CLI script).
+3. Run it live: `docker compose up moodle-oauth2-configurator`, then open
+   Moodle's Site administration → Server → OAuth 2 services and show the
+   "Keycloak" issuer it just created — point out the auto-populated
+   endpoints and field mappings came entirely from discovery, not from
+   anything the script hardcoded.
+4. The actual SSO proof: log into `fzlbpmsadmin-web`, then in the *same*
+   browser open Moodle's login page and click "Login with Keycloak" — no
+   password prompt.
+
+** Exercise
+Have students add a *third* hypothetical app (e.g. a "grades-export" tool)
+to the realm by writing just the Keycloak client JSON (following the exact
+shape of `kc-ensure-moodle-client`) and explaining which fields would need
+to change and which wouldn't.
+
+* Session 4 — Capstone: the `KC_HOSTNAME` Bug (2.5h)
+
+** Objectives
+- Apply a systematic debugging method to a real, reproducible OIDC
+  deployment bug — the single most common self-hosted OIDC failure mode.
+
+** The real bug (background for the instructor)
+Keycloak generates every URL it hands to a client or browser — the login
+page's form action, the discovery document's `authorization_endpoint`,
+`token_endpoint`, `issuer`, everything — using *one* hostname
+(`KC_HOSTNAME`). Before this change, this repo hardcoded
+`KC_HOSTNAME: localhost`. That's fine as long as literally every client
+(browser and server) reaches Keycloak by the literal string `localhost` —
+but this stack is also reachable through a Cloudflare tunnel on a real
+public domain. A browser hitting the tunnel domain would have been handed
+an `authorization_endpoint` claiming to live at `http://localhost/...` —
+unreachable from outside the host machine. The fix
+(`KC_HOSTNAME: ${FZL_PUBLIC_HOSTNAME:-localhost}` in `docker-compose.yml`)
+picks one canonical hostname on purpose — a single fixed hostname can't be
+simultaneously correct for two different domains, so this deployment made a
+deliberate choice (the public domain) with a known, accepted trade-off
+(LAN-only access to the login flow now round-trips through the tunnel).
+
+** Live-coding / demo script — reproduce it, then fix it
+1. Start from a deliberately broken checkout: revert `KC_HOSTNAME` to a
+   literal `localhost` while accessing the stack through the tunnel domain.
+2. Click Login on `fzlbpmsadmin-web`. Open dev tools *before* clicking so
+   students see the full redirect chain. Follow the systematic method:
+   - Reproduce with `curl -s https://<tunnel-domain>/auth/realms/fzlbpms/.well-known/openid-configuration
+     | jq .authorization_endpoint` — read the literal wrong hostname in the
+     JSON, out loud.
+   - Isolate one variable: is this nginx, Keycloak, or the Angular app? (It's
+     Keycloak self-reporting the wrong hostname — nginx and the browser are
+     both innocent here, which is the "aha" of the exercise.)
+   - Read the literal error: the browser's own `ERR_CONNECTION_REFUSED` /
+     `DNS_PROBE_FINISHED_NXDOMAIN` on the second redirect is the direct
+     symptom, not the cause.
+   - Confirm the fix: set `KC_HOSTNAME` correctly, recreate the container,
+     re-run the same `curl` and see the corrected hostname.
+
+** Exercise / mini-capstone
+Give students a *different* broken variable to diagnose blind (without
+being told what's wrong): e.g. the Keycloak client's `redirectUris` missing
+the tunnel-domain entry (Keycloak's own, more specific "Invalid
+parameter: redirect_uri" error — a good contrast case to Session 4's main
+bug, since this one *does* say exactly what's wrong).
+
+** Wrap-up discussion
+"Why does OIDC put the burden of getting hostnames right on the identity
+provider operator, instead of just trusting whatever `Host` header shows
+up?" (Because trusting an arbitrary incoming `Host` header for URL
+generation is itself a vulnerability class — host header injection — so a
+fixed, operator-chosen hostname is the safe default; Keycloak's dynamic
+per-request mode exists but is opt-in for exactly this reason.)
+
+* Security Note (cross-cutting, mention in every session)
+
+Access/refresh/ID tokens in `fzlbpmsadmin-web` still live in `localStorage`
+(unchanged by this work) — any XSS on the app's origin can read them. This
+is a real, known, *unresolved* trade-off inherited from the original design,
+not something PKCE or SSO fixes; PKCE protects the *authorization code
+exchange*, not token storage afterward. Worth a short discussion of the
+alternative (httpOnly, SameSite cookies set by a same-origin BFF) and why
+that's a larger architectural change than this course covers.
+
+* Capstone Lab (standalone, assign after Session 4)
+
+1. Log into `fzlbpmsadmin-web` in a fresh browser profile.
+2. In the same profile, open Moodle's login page and confirm SSO (no
+   password prompt).
+3. Open the Keycloak admin console, find the active session, and identify
+   both client names attached to it.
+4. Log out from `fzlbpmsadmin-web` and confirm (via the Keycloak admin
+   console, not just the app's own UI) that the session was actually
+   terminated, not just the local tokens cleared.
+5. Write a two-paragraph incident report, in the style of Session 4's
+   `KC_HOSTNAME` bug, for a *hypothetical* new bug: "the `moodle` Keycloak
+   client's redirect URI list is missing the production domain." What
+   would the symptom be, where would you look first, and how would you
+   confirm the fix?

@@ -1,0 +1,10 @@
+@if (errorMessage()) {
+  <div class="auth-callback-error">
+    <p>{{ errorMessage() }}</p>
+    <a routerLink="/">Back to home</a>
+  </div>
+} @else {
+  <div class="auth-callback-loading">
+    <p>Signing you in…</p>
+  </div>
+}

@@ -436,12 +436,19 @@ services:
       # Every realm user who can log in gets full Flowable privileges —
       # acceptable while the realm only holds fzlbpms staff; switch to a
       # claim-based mapping (authorities-attribute) if that changes.
-      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_DEFAULT_AUTHORITIES=access-idm,access-admin,access-modeler,access-task,access-rest-api
-      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_DEFAULT_GROUPS=flowableUser
-      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_FULL_NAME_ATTRIBUTE=name
-      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_FIRST_NAME_ATTRIBUTE=given_name
-      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_LAST_NAME_ATTRIBUTE=family_name
-      - FLOWABLE_COMMON_APP_SECURITY_OAUTH2_EMAIL_ATTRIBUTE=email
+      # NOTE: these flowable.common.app.security.oauth2.* properties CANNOT be
+      # set as individual env vars — the Java field is `oAuth2` (canonical
+      # name "o-auth2") and dashed leaves like default-authorities don't
+      # survive env-var relaxed binding. SPRING_APPLICATION_JSON binds the
+      # exact property names, matching flowable-default.properties.
+      - >-
+        SPRING_APPLICATION_JSON={
+        "flowable.common.app.security.oauth2.default-authorities":"access-idm,access-admin,access-modeler,access-task,access-rest-api",
+        "flowable.common.app.security.oauth2.default-groups":"flowableUser",
+        "flowable.common.app.security.oauth2.full-name-attribute":"name",
+        "flowable.common.app.security.oauth2.first-name-attribute":"given_name",
+        "flowable.common.app.security.oauth2.last-name-attribute":"family_name",
+        "flowable.common.app.security.oauth2.email-attribute":"email"}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

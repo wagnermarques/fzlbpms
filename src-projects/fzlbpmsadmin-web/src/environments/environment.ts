@@ -1,8 +1,10 @@
 export const environment = {
   apiUrl: '/fzlbpms',
-  // Keycloak only ever reports this one fixed hostname (KC_HOSTNAME) in the
-  // URLs it generates, regardless of which origin the app itself was loaded
-  // from — see keycloak-admin-camel-context.xml's header comment.
-  keycloakIssuer: 'https://fzlbpms.com.br/auth/realms/fzlbpms',
+  // Keycloak is reverse-proxied at /auth/ on the same origin the app itself
+  // was loaded from (see auth.ts), so no hostname needs to be hardcoded here
+  // — the app works unmodified whether it's loaded from localhost or the
+  // public domain (FZL_PUBLIC_HOSTNAME). Only Keycloak's own KC_HOSTNAME
+  // needs to match — see docker-compose.yml / bin/switch-domain.sh.
+  keycloakRealmPath: '/auth/realms/fzlbpms',
   keycloakClientId: 'fzlbpmsadmin-web',
 };

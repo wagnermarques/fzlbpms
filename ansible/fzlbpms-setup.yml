@@ -25,6 +25,10 @@
   become: false # only package/service/group management escalates
   vars:
     docker_login_user: "{{ ansible_env.SUDO_USER | default(ansible_env.USER) }}"
+    # Assumes the repo lives at the same path on the target host as on the
+    # controller — true for the "localhost, ansible_connection=local" hosts
+    # in inventory.ini that this playbook actually targets.
+    fzlbpms_repo_root: "{{ (playbook_dir + '/..') | realpath }}"
 
     docker_packages:
       Debian: # covers Debian and Ubuntu (same ansible_os_family)
@@ -224,6 +228,139 @@
         name: docker
         state: restarted
       when: docker_daemon_json is changed
+
+    # ------------------------------------------------------------------
+    # SELinux: label bind-mounted data/source dirs for container access.
+    # On an SELinux-enforcing host (Fedora Workstation's default), a bind
+    # mount keeps whatever label the host directory already has — usually
+    # unlabeled_t — instead of picking up a container-accessible one.
+    # Containers run under the container_t domain, which SELinux denies
+    # access to unlabeled_t files, so Postgres/MySQL/Redis fail with
+    # "Permission denied" reading their own data files even though the
+    # Unix permissions look correct, and anything depending on them (e.g.
+    # Moodle) surfaces it as a generic DB connection error.
+    # container_file_t is the label the container policy allows; this is
+    # what `sudo semanage fcontext ... && sudo restorecon -R ...` does by
+    # hand, made idempotent and repeatable here.
+    # ------------------------------------------------------------------
+    - name: Ensure semanage is available (policycoreutils-python-utils)
+      become: true
+      ansible.builtin.dnf:
+        name: policycoreutils-python-utils
+        state: present
+      when:
+        - ansible_facts.os_family == "RedHat"
+        - ansible_facts.selinux.status | default('disabled') == "enabled"
+
+    - name: Persist container_file_t SELinux context for containers/ and src-projects/
+      become: true
+      community.general.sefcontext:
+        target: "{{ fzlbpms_repo_root }}/{{ item }}(/.*)?"
+        setype: container_file_t
+        state: present
+      loop:
+        - containers
+        - src-projects
+      when: ansible_facts.selinux.status | default('disabled') == "enabled"
+
+    - name: Apply the container_file_t context to already-existing files
+      become: true
+      ansible.builtin.command: "restorecon -Rv {{ fzlbpms_repo_root }}/{{ item }}"
+      loop:
+        - containers
+        - src-projects
+      register: restorecon_result
+      changed_when: restorecon_result.stdout != ""
+      when: ansible_facts.selinux.status | default('disabled') == "enabled"
+
+    # ------------------------------------------------------------------
+    # Local HTTPS for SSO testing: https://fzlbpms.local
+    #
+    # Moodle's OAuth2 issuer (and Flowable's OIDC client) both make direct,
+    # server-to-server HTTPS calls to Keycloak — not just browser redirects
+    # — and Moodle hard-refuses non-HTTPS issuer URLs. "localhost" can't
+    # satisfy this: inside a container it resolves to that container's own
+    # loopback, not to fzl-nginx. fzlbpms.local solves both problems at
+    # once — a Docker network alias on fzl-nginx (docker-compose.yml) makes
+    # it resolve to the right container from every other container, and the
+    # /etc/hosts entry below makes it resolve to 127.0.0.1 from the browser
+    # on this machine. mkcert issues a certificate for it that's actually
+    # trusted (no browser warning) and that Moodle/Flowable can trust too
+    # (bin/setup-local-https.sh copies the CA into their containers).
+    #
+    # See bin/switch-domain.sh fzlbpms.local to actually point the stack at it.
+    # ------------------------------------------------------------------
+    - name: Install mkcert + nss-tools (for browser/NSS trust store integration)
+      become: true
+      ansible.builtin.dnf:
+        name:
+          - mkcert
+          - nss-tools
+        state: present
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Add fzlbpms.local to /etc/hosts (resolves to this machine for your browser)
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 fzlbpms.local"
+        regexp: '^127\.0\.0\.1\s+fzlbpms\.local\s*$'
+        state: present
+
+# mkcert -install normally installs its CA into BOTH the system trust store
+    # (via an internal `sudo tee`, which cannot prompt for a password under
+    # Ansible) and the user's browser/NSS store (no sudo). Split the two:
+    # the NSS half runs as the real user, and the system half is done here
+    # with become — after which the script's own `mkcert -install` finds
+    # everything already trusted and never reaches for sudo.
+    - name: Create the mkcert CA and trust it in {{ docker_login_user }}'s browser/NSS store
+      become: false
+      ansible.builtin.command: mkcert -install
+      environment:
+        TRUST_STORES: nss
+      register: mkcert_nss
+      changed_when: (mkcert_nss.stdout + mkcert_nss.stderr) is search('now installed')
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Locate the mkcert CA root directory
+      become: false
+      ansible.builtin.command: mkcert -CAROOT
+      register: mkcert_caroot
+      changed_when: false
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Trust the mkcert CA in the system store (what mkcert's internal sudo would do)
+      become: true
+      ansible.builtin.copy:
+        src: "{{ mkcert_caroot.stdout | trim }}/rootCA.pem"
+        dest: /etc/pki/ca-trust/source/anchors/mkcert-{{ docker_login_user }}-rootCA.pem
+        remote_src: true
+        mode: "0644"
+      register: mkcert_system_anchor
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Rebuild the system CA bundle to include the mkcert CA
+      become: true
+      ansible.builtin.command: update-ca-trust
+      when:
+        - ansible_facts.os_family == "RedHat"
+        - mkcert_system_anchor is changed
+
+    - name: Issue and stage the fzlbpms.local certificate (bin/setup-local-https.sh)
+      become: false # cert issuance + staging is all user-level file work in the repo
+      ansible.builtin.command: ./bin/setup-local-https.sh
+      args:
+        chdir: "{{ fzlbpms_repo_root }}"
+      register: local_https_setup
+      changed_when: "'Done.' in local_https_setup.stdout"
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Show setup-local-https.sh output
+      ansible.builtin.debug:
+        msg: "{{ local_https_setup.stdout_lines }}"
+      when:
+        - ansible_facts.os_family == "RedHat"
+        - local_https_setup.stdout_lines is defined
 
     # ------------------------------------------------------------------
     # Verification

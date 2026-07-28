@@ -9,6 +9,15 @@ containers/fzl-nexus/nexus-data
 containers/fzl-redis/redis-data
 containers/fzl-mysql/mysql-data
 containers/fzl-php8.3-fpm/moodledata
+containers/fzl-superset/superset-db-data
+containers/fzl-superset/redis-data
+containers/fzl-superset/superset-home
+
+# mkcert-issued local HTTPS cert + CA copies (bin/setup-local-https.sh) —
+# machine-specific, regenerated per developer, never shared.
+containers/fzl-nginx/certs/*.pem
+containers/fzl-php8.3-fpm/certs/*.crt
+containers/flowable-ui/certs/*.pem
 
 #theese files is generated after to starts the portainer container
 #we don't want to send it to repo

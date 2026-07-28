@@ -24,7 +24,8 @@ const PKCE_VERIFIER_KEY = 'fzlbpms.pkce_verifier';
 const OAUTH_STATE_KEY = 'fzlbpms.oauth_state';
 
 const REDIRECT_URI = () => `${window.location.origin}/fzlbpmsadmin/auth-callback`;
-const TOKEN_ENDPOINT = `${environment.keycloakIssuer}/protocol/openid-connect/token`;
+const KEYCLOAK_ISSUER = () => `${window.location.origin}${environment.keycloakRealmPath}`;
+const TOKEN_ENDPOINT = () => `${KEYCLOAK_ISSUER()}/protocol/openid-connect/token`;
 const FORM_HEADERS = new HttpHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' });
 
 function decodeJwtPayload(token: string): Record<string, unknown> {
@@ -56,7 +57,7 @@ export class AuthService {
       code_challenge_method: 'S256',
     });
 
-    window.location.href = `${environment.keycloakIssuer}/protocol/openid-connect/auth?${params}`;
+    window.location.href = `${KEYCLOAK_ISSUER()}/protocol/openid-connect/auth?${params}`;
   }
 
   /** Exchanges the authorization code for tokens. Call from the /auth-callback route. */
@@ -79,7 +80,7 @@ export class AuthService {
     });
 
     return this.http
-      .post<TokenResponse>(TOKEN_ENDPOINT, body.toString(), { headers: FORM_HEADERS })
+      .post<TokenResponse>(TOKEN_ENDPOINT(), body.toString(), { headers: FORM_HEADERS })
       .pipe(tap((tokens) => this.storeSession(tokens)));
   }
 
@@ -91,7 +92,7 @@ export class AuthService {
     });
 
     return this.http
-      .post<TokenResponse>(TOKEN_ENDPOINT, body.toString(), { headers: FORM_HEADERS })
+      .post<TokenResponse>(TOKEN_ENDPOINT(), body.toString(), { headers: FORM_HEADERS })
       .pipe(tap((tokens) => this.storeSession(tokens)));
   }
 
@@ -108,7 +109,7 @@ export class AuthService {
       post_logout_redirect_uri: `${window.location.origin}/fzlbpmsadmin/`,
       ...(idToken ? { id_token_hint: idToken } : {}),
     });
-    window.location.href = `${environment.keycloakIssuer}/protocol/openid-connect/logout?${params}`;
+    window.location.href = `${KEYCLOAK_ISSUER()}/protocol/openid-connect/logout?${params}`;
   }
 
   private storeSession(tokens: TokenResponse): void {

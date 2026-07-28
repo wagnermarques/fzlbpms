@@ -15,11 +15,22 @@ services:
     container_name: fzl-nginx
     ports:
       - "${FZL_NGINX_PORT_HTTP:?}:80"
+      - "${FZL_NGINX_PORT_HTTPS:?}:443"
     volumes:
       - ./src-projects/var_www/html:/var/www/html:rw #na conf do nginx: root /var/www/html;
       - ./src-projects/moodledata:/var/www/moodledata:rw
+      # Populated by bin/setup-local-https.sh / ansible/fzlbpms-setup.yml —
+      # see docker-entrypoint.d/10-install-mkcert-certs.sh for how a missing
+      # or empty dir here is handled safely.
+      - ./containers/fzl-nginx/certs:/run/mkcert-certs:ro
     networks:
-      - fzl-network
+      fzl-network:
+        # Lets other containers (Moodle, Flowable) reach this same nginx —
+        # and therefore Keycloak — via https://fzlbpms.local, matching what
+        # a browser resolves via the /etc/hosts entry on the dev machine.
+        # See bin/switch-domain.sh and ansible/fzlbpms-setup.yml.
+        aliases:
+          - fzlbpms.local
 
   fzl-php8.1-fpm:
     build:
@@ -39,6 +50,10 @@ services:
     volumes:
       - ./src-projects/var_www/html:/var/www/html
       - ./src-projects/moodledata:/var/www/moodledata
+      # Trusted by docker-entrypoint.sh at container start if present — see
+      # bin/setup-local-https.sh. Needed for curl/Guzzle calls to
+      # https://fzlbpms.local (Moodle's OAuth2 discovery/token exchange).
+      - ./containers/fzl-php8.3-fpm/certs:/usr/local/share/ca-certificates/mkcert:ro
     networks:
       - fzl-network
     environment:
@@ -96,8 +111,9 @@ services:
       - ./src-projects/var_www/html:/var/www/html
       - ./src-projects/moodledata:/var/www/moodledata
       - ./bin/moodle:/opt/moodle-scripts:ro
+      - ./containers/fzl-php8.3-fpm/certs:/usr/local/share/ca-certificates/mkcert:ro
     environment:
-      KEYCLOAK_ISSUER_BASEURL: https://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
+      KEYCLOAK_ISSUER_BASEURL: ${FZL_PUBLIC_PROTO:-https}://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
       KEYCLOAK_MOODLE_CLIENT_ID: ${FZL_MOODLE_CLIENT_ID:?}
       KEYCLOAK_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}
     networks:
@@ -431,7 +447,7 @@ services:
       - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_NAME=Keycloak
       - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_AUTHORIZATION_GRANT_TYPE=authorization_code
       - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE=openid,profile,email
-      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=https://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=${FZL_PUBLIC_PROTO:-https}://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
       - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_USER_NAME_ATTRIBUTE=preferred_username
       # Every realm user who can log in gets full Flowable privileges —
       # acceptable while the realm only holds fzlbpms staff; switch to a
@@ -449,6 +465,33 @@ services:
         "flowable.common.app.security.oauth2.first-name-attribute":"given_name",
         "flowable.common.app.security.oauth2.last-name-attribute":"family_name",
         "flowable.common.app.security.oauth2.email-attribute":"email"}
+    volumes:
+      # Populated by bin/setup-local-https.sh / ansible/fzlbpms-setup.yml.
+      # The 'flowable' user can't write the JVM's own cacerts (root-owned),
+      # so the entrypoint below builds a writable copy instead — see there
+      # for why. Needed for this container's own OIDC discovery/token-
+      # exchange calls to https://fzlbpms.local (Keycloak).
+      - ./containers/flowable-ui/certs:/run/mkcert-certs:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ -f /run/mkcert-certs/mkcert-ca.pem ]; then
+          TRUSTSTORE=/tmp/cacerts-with-mkcert
+          cp "$$JAVA_HOME/lib/security/cacerts" "$$TRUSTSTORE"
+          if "$$JAVA_HOME/bin/keytool" -importcert -noprompt -trustcacerts \
+              -alias mkcert-local-ca \
+              -file /run/mkcert-certs/mkcert-ca.pem \
+              -keystore "$$TRUSTSTORE" -storepass changeit; then
+            export JAVA_OPTS="$${JAVA_OPTS:-} -Djavax.net.ssl.trustStore=$$TRUSTSTORE -Djavax.net.ssl.trustStorePassword=changeit"
+            echo "[entrypoint] Trusted the local mkcert CA for https://fzlbpms.local."
+          else
+            echo "[entrypoint] WARNING - failed to import the mkcert CA; https://fzlbpms.local calls will fail TLS verification."
+          fi
+        else
+          echo "[entrypoint] No mkcert CA at /run/mkcert-certs - https://fzlbpms.local calls will fail TLS verification. Run bin/setup-local-https.sh to fix."
+        fi
+        exec /flowable-entrypoint.sh
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

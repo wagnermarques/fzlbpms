@@ -41,6 +41,21 @@ try {
     // which needs a real (admin) $USER in session context for a CLI request.
     \core\session\manager::set_user(get_admin());
 
+    // Moodle's SSRF protection (curl_security_helper) blocks curl requests to
+    // private IP ranges by default — including 172.16.0.0/12, which is
+    // exactly where Docker's default bridge network (and therefore
+    // fzlbpms.local / fzl-nginx) lives. That's the right default for a
+    // production site taking arbitrary user-supplied URLs, but here the
+    // OAuth2 discovery target is our own docker-compose stack, not
+    // user input, so it's safe to exempt this one range while leaving the
+    // other defaults (loopback, 10.0.0.0/8, 192.168.0.0/16, cloud metadata
+    // IP, etc.) blocked.
+    $blockedhosts = array_filter(
+        array_map('trim', explode("\n", $CFG->curlsecurityblockedhosts ?? '')),
+        static fn($entry) => $entry !== '' && $entry !== '172.16.0.0/12'
+    );
+    set_config('curlsecurityblockedhosts', implode("\n", $blockedhosts));
+
     $data = (object) [
         'name' => $name,
         // The DB column is NOT NULL — an empty string means "no logo".

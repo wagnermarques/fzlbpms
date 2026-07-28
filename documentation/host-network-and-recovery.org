@@ -1,0 +1,178 @@
+#+Title: Host Network Troubleshooting & System Recovery Points
+
+Documentation of the 2026-07-28 outage ("Could not upgrade OAuth 2 token.
+HTTP status for remote endpoint: 0" in Moodle), the diagnosis method, the
+permanent fix, and the procedure to create/restore recovery points of the
+whole system.
+
+* The incident — Moodle SSO login failing with "HTTP status: 0"
+
+** Symptom
+
+Logging into Moodle through Keycloak redirected back to
+=/moodle/auth/oauth2/login.php?...&oauth2code=...= and Moodle showed:
+
+#+begin_example
+Could not upgrade OAuth 2 token. HTTP status for remote endpoint: 0
+#+end_example
+
+HTTP status *0* means Moodle's server-side curl to Keycloak's token
+endpoint never got a TCP connection at all (DNS/routing/TLS failure) —
+it is NOT an OAuth2/Keycloak configuration error.
+
+** Root cause
+
+The home router changed its LAN IPv4 address from =192.168.3.1= to
+=192.168.3.38=. The host's NetworkManager profile ("Conexão cabeada 1",
+interface =enp7s0=) had a *static* IPv4 config pointing at the old
+gateway, so *all IPv4 egress from the host died*. This was masked
+because:
+
+- The =cloudflared= tunnel (=fzlbpms-tunnel=) connects outward over
+  *IPv6*, which is autoconfigured from router advertisements and kept
+  working — the public site stayed up.
+- The host itself fell back to IPv6 for most traffic, so casual tests
+  ("the site loads, google works") looked fine.
+- Docker containers on =fzlbpms_fzl-network= are *IPv4-only*, so they
+  were the only thing fully cut off — and Moodle's token exchange to
+  =https://fzlbpms.com.br/auth/...= runs from inside the
+  =fzl-php8.3-fpm= container, out through Cloudflare and back.
+
+** The fix (persistent)
+
+Switched the wired profile to DHCP so the gateway follows the router
+automatically:
+
+#+begin_src shell
+  nmcli con mod "Conexão cabeada 1" ipv4.method auto ipv4.gateway ""
+  nmcli dev reapply enp7s0
+#+end_src
+
+Note: NetworkManager grants the console user
+=settings.modify.system= via polkit — no sudo needed for nmcli.
+
+** Diagnosis checklist (in order of cheapness)
+
+When a container reports "HTTP status: 0" / connection failures:
+
+1. Test from inside the container (separates app config from network):
+   #+begin_src shell
+     docker exec fzl-php8.3-fpm curl -sS -o /dev/null -w "%{http_code} %{errormsg}\n" \
+       https://fzlbpms.com.br/auth/realms/master/.well-known/openid-configuration
+     docker exec fzl-php8.3-fpm curl -sS -o /dev/null -w "%{http_code}\n" https://www.google.com
+   #+end_src
+   If google also fails, it is host networking, not SSO config.
+
+2. Compare host IPv4 vs IPv6 — this catches the "IPv6 masks a dead
+   IPv4" trap:
+   #+begin_src shell
+     curl -4 -sS -o /dev/null -w "ipv4: %{http_code}\n" https://www.google.com
+     curl -6 -sS -o /dev/null -w "ipv6: %{http_code}\n" https://www.google.com
+   #+end_src
+
+3. Check the ARP state of the default gateway — the single best tell:
+   #+begin_src shell
+     ip route | head -3          # who is the gateway?
+     ip neigh show               # gateway showing FAILED = dead gateway
+   #+end_src
+
+4. Only then suspect the firewall. Docker's iptables rules and
+   firewalld coexist on Fedora; to prove/disprove a firewall drop use
+   nft tracing instead of reading rules:
+   #+begin_src shell
+     sudo nft add table ip traceme
+     sudo nft 'add chain ip traceme trace_pre { type filter hook prerouting priority -350; }'
+     sudo nft add rule ip traceme trace_pre ip saddr <CONTAINER_IP> meta nftrace set 1
+     sudo nft monitor trace      # then curl from the container in another shell
+     sudo nft delete table ip traceme
+   #+end_src
+   In this incident the trace proved packets passed iptables, firewalld
+   and got MASQUERADEd — the drop was ARP failure at the gateway.
+
+* Recovery points (backup & restore)
+
+The host is Fedora with *Btrfs* on both =/= and =/home= (same
+filesystem, =/dev/sda3=), which makes full-system snapshots instant and
+initially zero-cost. A complete recovery point has two layers.
+
+** Layer 1 — database dumps (no sudo required)
+
+Btrfs snapshots of a *running* PostgreSQL are only crash-consistent;
+proper SQL dumps are the clean restore path. Dump all three instances:
+
+#+begin_src shell
+  B=/home/wgn/backups/recovery-$(date +%F)-<label>
+  mkdir -p $B
+  for c in fzl-postgresql fzl-keycloak-db flowable-postgres; do
+      docker exec $c sh -c 'pg_dumpall -U ${POSTGRES_USER:-postgres}' > $B/$c.sql
+  done
+#+end_src
+
+- =fzl-postgresql= holds the Moodle database.
+- =fzl-keycloak-db= holds all Keycloak realms/clients/users.
+- =flowable-postgres= holds the Flowable engine data.
+
+Baseline created on 2026-07-28:
+=/home/wgn/backups/recovery-2026-07-28-sso-working/=
+
+** Layer 2 — Btrfs filesystem snapshots (needs sudo)
+
+Read-only snapshots of the whole system and home. They capture every
+config: NetworkManager profiles, docker-compose state, nginx conf, the
+Moodle tree in the containers' bind mounts, cloudflared config, etc.
+
+#+begin_src shell
+  sudo mkdir -p /.snapshots-manual
+  sudo btrfs subvolume snapshot -r /     /.snapshots-manual/root-$(date +%F)-<label>
+  sudo btrfs subvolume snapshot -r /home /.snapshots-manual/home-$(date +%F)-<label>
+  sudo btrfs subvolume list / | grep <label>     # verify
+#+end_src
+
+Baseline created on 2026-07-28:
+=root-2026-07-28-sso-working= and =home-2026-07-28-sso-working=.
+
+Snapshots cost ~0 bytes when created and grow only as the live system
+diverges (copy-on-write).
+
+** How to restore
+
+*** A single file or config (the common case)
+
+Snapshots are browsable like normal directories:
+
+#+begin_src shell
+  ls /.snapshots-manual/root-2026-07-28-sso-working/etc/NetworkManager/system-connections/
+  sudo cp /.snapshots-manual/root-<date>-<label>/etc/<path> /etc/<path>
+#+end_src
+
+*** A database
+
+#+begin_src shell
+  # stop the apps that use the DB first (e.g. php-fpm for Moodle), then:
+  docker exec -i fzl-postgresql psql -U postgres < \
+      /home/wgn/backups/recovery-<date>-<label>/fzl-postgresql.sql
+#+end_src
+
+*** Full system rollback
+
+Possible with Btrfs (=btrfs subvolume set-default= + reboot) but it is
+a manual procedure on Fedora's subvolume layout — do it deliberately,
+not from memory. The file-level restore above covers almost every real
+case.
+
+** Ongoing protection (recommended)
+
+- Install *snapper* for automatic timeline snapshots with cleanup:
+  #+begin_src shell
+    sudo dnf install snapper
+    sudo snapper -c root create-config /
+    sudo snapper -c home create-config /home
+    sudo snapper -c root create --description "manual baseline"
+    snapper -c root list
+  #+end_src
+  =snapper undochange= can revert files between any two snapshots.
+
+- *Caveat*: snapshots live on the same disk — they protect against bad
+  changes and mistakes, *not* disk failure. Copy the small
+  =~/backups/= directory (a few MB of SQL dumps) off-machine
+  (e.g. Google Drive) to cover the data that matters most.

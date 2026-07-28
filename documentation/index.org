@@ -13,6 +13,11 @@
   companion 4-session course: ROPC vs Authorization Code + PKCE, the
   Keycloak SSO session cookie, wiring Moodle's auth_oauth2 plugin, and a
   capstone reproducing this repo's real KC_HOSTNAME reverse-proxy bug.
+- [[file:host-network-and-recovery.org][Host Network Troubleshooting & System Recovery Points]] —
+  the 2026-07-28 "HTTP status: 0" Moodle SSO outage (router changed its
+  LAN IP, IPv6 masked the dead IPv4, containers are IPv4-only), the
+  diagnosis checklist, and how to create/restore full-system recovery
+  points with Btrfs snapshots + PostgreSQL dumps.
 - [[file:classesplan/keycloaksinglesignonmoodle.org][Tutorial — Single Sign-On between fzlbpmsadmin-web, Moodle and Flowable UI via Keycloak]] —
   step-by-step guide to the SSO as actually shipped: Keycloak clients, SPA
   PKCE flow, the X-Forwarded-Proto proxy fix, Moodle's headless OAuth2

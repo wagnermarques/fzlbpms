@@ -116,6 +116,10 @@ services:
       KEYCLOAK_ISSUER_BASEURL: ${FZL_PUBLIC_PROTO:-https}://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
       KEYCLOAK_MOODLE_CLIENT_ID: ${FZL_MOODLE_CLIENT_ID:?}
       KEYCLOAK_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}
+      # SSO user to promote to Moodle site administrator (see
+      # configure-oauth2-keycloak.php — requires that user's first Keycloak
+      # login to have happened, and is a no-op until then).
+      MOODLE_SITEADMIN_USERNAME: ${FZLBPMS_ADMIN_USERNAME:?}
     networks:
       - fzl-network
     restart: "no"

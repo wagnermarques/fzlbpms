@@ -101,6 +101,39 @@ try {
         echo "[oauth2-setup] 'oauth2' auth plugin already enabled.\n";
     }
 
+    // Promote the platform's SSO admin (FZLBPMS_ADMIN_USERNAME, the Keycloak
+    // user Camel bootstraps) to Moodle site administrator. The Moodle account
+    // only exists after that user's FIRST Keycloak login, and auth_oauth2
+    // creates it with the email as the username (e.g.
+    // 'fzlbpmsadmin@fzlbpms.local', not 'fzlbpmsadmin') — so match oauth2
+    // accounts by exact username OR by the local-part of username/email.
+    // Idempotent: appends to $CFG->siteadmins only when missing.
+    $ssoadmin = getenv('MOODLE_SITEADMIN_USERNAME');
+    if ($ssoadmin) {
+        $match = null;
+        foreach ($DB->get_records('user', ['auth' => 'oauth2', 'deleted' => 0]) as $u) {
+            if ($u->username === $ssoadmin
+                    || str_starts_with($u->username, $ssoadmin . '@')
+                    || str_starts_with($u->email, $ssoadmin . '@')) {
+                $match = $u;
+                break;
+            }
+        }
+        if ($match) {
+            $admins = array_filter(array_map('trim', explode(',', $CFG->siteadmins ?? '')));
+            if (!in_array((string) $match->id, array_map('strval', $admins), true)) {
+                $admins[] = $match->id;
+                set_config('siteadmins', implode(',', $admins));
+                echo "[oauth2-setup] '{$match->username}' (id {$match->id}) promoted to site administrator.\n";
+            } else {
+                echo "[oauth2-setup] '{$match->username}' is already a site administrator.\n";
+            }
+        } else {
+            echo "[oauth2-setup] SSO user '{$ssoadmin}' has no Moodle account yet (it is created "
+                . "on their first Keycloak login) — re-run this configurator afterwards to promote them.\n";
+        }
+    }
+
     echo "[oauth2-setup] Done.\n";
 } catch (\Throwable $e) {
     $detail = property_exists($e, 'debuginfo') && $e->debuginfo ? " — " . $e->debuginfo : '';

@@ -125,6 +125,28 @@ services:
     restart: "no"
     entrypoint: ["bash", "/opt/moodle-scripts/configure-oauth2-keycloak-entrypoint.sh"]
 
+  # One-shot, idempotent provisioner that enables Moodle's REST web services
+  # and binds the shared MOODLE_WS_TOKEN to a dedicated fzlbpms_ws service
+  # account, so the Camel moodle bundle can create categories/courses. Runs
+  # after Moodle is installed. Safe to re-run.
+  moodle-webservice-configurator:
+    build:
+      context: ./containers/fzl-php8.3-fpm/
+      dockerfile: Dockerfile
+    container_name: fzl-moodle-webservice-configurator
+    depends_on:
+      - moodle-installer
+    volumes:
+      - ./src-projects/var_www/html:/var/www/html
+      - ./src-projects/moodledata:/var/www/moodledata
+      - ./bin/moodle:/opt/moodle-scripts:ro
+    environment:
+      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:?}
+    networks:
+      - fzl-network
+    restart: "no"
+    entrypoint: ["bash", "/opt/moodle-scripts/configure-moodle-webservice-entrypoint.sh"]
+
   fzl-mysql:
     image: mysql:8.4.6
     container_name: fzl-mysql
@@ -173,6 +195,7 @@ services:
     container_name: fzl-karaf-camel-integration
     ports:
       - "${FZL_KARAF_REST_PORT:?}:9090"
+      - "${FZL_KARAF_MOODLE_REST_PORT:-9091}:9091"
     environment:
       KC_HOST: fzl-keycloak
       KC_HTTP_RELATIVE_PATH: /auth
@@ -189,9 +212,19 @@ services:
       FZL_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}
       FZL_FLOWABLE_CLIENT_ID: ${FZL_FLOWABLE_CLIENT_ID:?}
       FZL_FLOWABLE_CLIENT_SECRET: ${FZL_FLOWABLE_CLIENT_SECRET:?}
+      # Moodle REST web service (consumed by moodle-admin-camel-context.xml).
+      # Uses the canonical https host so Moodle sees its own wwwroot; the JVM
+      # trusts the mkcert CA via the certs mount below + entrypoint import.
+      MOODLE_WS_URL: ${MOODLE_WS_URL:-https://fzlbpms.local/moodle/webservice/rest/server.php}
+      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:?}
+      # CSV the moodle bundle reads for the "disciplinas" endpoint (path is
+      # inside the container; karaf_input_dir is mounted at /opt/karaf/input_data).
+      MOODLE_DISCIPLINAS_CSV: ${MOODLE_DISCIPLINAS_CSV:-/opt/karaf/input_data/disciplinas_modulos_desenvolvimento_sistemas.csv}
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy
+      # mkcert CA so the JVM trusts https://fzlbpms.local (see entrypoint.sh).
+      - ./containers/fzl-karaf-camel-integration/certs:/run/mkcert-certs:ro
       - ./src-projects/karaf_input_dir:/opt/karaf/input_data
       - ./src-projects/karaf_output_dir:/opt/karaf/output_data
       - ./src-projects/karaf_project_sources_dir:/opt/karaf/sources:rw
@@ -476,6 +509,8 @@ services:
       # for why. Needed for this container's own OIDC discovery/token-
       # exchange calls to https://fzlbpms.local (Keycloak).
       - ./containers/flowable-ui/certs:/run/mkcert-certs:ro
+      # CSVs the moodle-provision-courses process reads (Groovy script task).
+      - ./workspaces/fzlcoord/csvs-2026Sem2:/opt/fzlbpms/csvs:ro
     entrypoint:
       - sh
       - -c

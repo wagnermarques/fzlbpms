@@ -50,7 +50,8 @@ TRUST_STORES=system,nss mkcert -install
 NGINX_CERTS_DIR="containers/fzl-nginx/certs"
 PHP_CERTS_DIR="containers/fzl-php8.3-fpm/certs"
 FLOWABLE_CERTS_DIR="containers/flowable-ui/certs"
-mkdir -p "$NGINX_CERTS_DIR" "$PHP_CERTS_DIR" "$FLOWABLE_CERTS_DIR"
+KARAF_CERTS_DIR="containers/fzl-karaf-camel-integration/certs"
+mkdir -p "$NGINX_CERTS_DIR" "$PHP_CERTS_DIR" "$FLOWABLE_CERTS_DIR" "$KARAF_CERTS_DIR"
 
 log "Issuing a certificate for fzlbpms.local..."
 mkcert \
@@ -62,6 +63,7 @@ CAROOT="$(mkcert -CAROOT)"
 log "Copying mkcert's root CA (${CAROOT}/rootCA.pem) for Moodle/Flowable to trust..."
 cp "$CAROOT/rootCA.pem" "$PHP_CERTS_DIR/mkcert-ca.crt"
 cp "$CAROOT/rootCA.pem" "$FLOWABLE_CERTS_DIR/mkcert-ca.pem"
+cp "$CAROOT/rootCA.pem" "$KARAF_CERTS_DIR/mkcert-ca.pem"
 
 log "Done. Restart the affected containers to pick this up:"
 log "  docker compose up -d fzl-nginx fzl-php8.3-fpm flowable-ui"

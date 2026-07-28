@@ -15,6 +15,25 @@ ls -la /opt/karaf
 #echo "==== MODO DE DEBUG ATIVADO. CONTAINER EM ESPERA. ===="
 #sleep infinity
 
+# Trust the local mkcert CA so Camel routes can call https://fzlbpms.local
+# (Moodle web services) with TLS verification. Runs as root (we're still
+# root here, before gosu) so it can write the JDK's cacerts directly. The CA
+# is bind-mounted from containers/fzl-karaf-camel-integration/certs, staged
+# by bin/setup-local-https.sh. Safe no-op when absent.
+MKCERT_CA="/run/mkcert-certs/mkcert-ca.pem"
+if [ -f "$MKCERT_CA" ]; then
+  echo "==== TRUSTING LOCAL mkcert CA IN THE JVM ===="
+  if "${JAVA_HOME}/bin/keytool" -importcert -noprompt -trustcacerts \
+       -alias mkcert-local-ca -file "$MKCERT_CA" \
+       -keystore "${JAVA_HOME}/lib/security/cacerts" -storepass changeit 2>/dev/null; then
+    echo "  Imported mkcert CA into ${JAVA_HOME}/lib/security/cacerts."
+  else
+    echo "  mkcert CA already present (or import skipped)."
+  fi
+else
+  echo "==== No mkcert CA at $MKCERT_CA — https://fzlbpms.local calls will fail TLS verification. Run bin/setup-local-https.sh. ===="
+fi
+
 echo "==== DEPLOYING BLUEPRINT XML BUNDLES ===="
 # Copy every Blueprint XML from the git-tracked source directory into
 # Karaf's hot-deploy folder.  Karaf picks them up automatically on startup.

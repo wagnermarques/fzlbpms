@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  moodle-provision-courses
+
+  Reads the fzlcoord "disciplinas" CSV and provisions Moodle from it:
+    1. loadCsv (Groovy script task) — parses the CSV into `categoryName`
+       (the `curso`) and `disciplinas` (one map {shortname, fullname} per row).
+    2. createCategory (HTTP task) — POSTs to the Camel moodle bundle, which
+       calls core_course_create_categories. One category per run.
+    3. extractCategoryId (Groovy) — reads the new category id from the response.
+    4. createCourses (HTTP task, sequential multi-instance over `disciplinas`)
+       — one POST per discipline to the Camel bundle, which calls
+       core_course_create_courses in the category from step 3.
+
+  The process talks only to the Camel moodle bundle (HTTP), never to Moodle
+  directly — the bundle owns the Moodle web-service details.
+
+  The CSV is read from /opt/fzlbpms/csvs/... (mounted into flowable-ui by
+  docker-compose). Override with the `csvPath` process variable if needed.
+  Runs on flowable-ui's Java 11 + Groovy 3.0.9 (script tasks).
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://fzlbpms.com.br/processes"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath">
+
+  <process id="moodle-provision-courses" name="Moodle — provision category and courses from CSV" isExecutable="true">
+
+    <startEvent id="startEvent" name="Start"/>
+    <sequenceFlow id="toLoadCsv" sourceRef="startEvent" targetRef="loadCsv"/>
+
+    <!-- 1. Parse the CSV → categoryName + disciplinas -->
+    <scriptTask id="loadCsv" name="Load CSV" scriptFormat="groovy">
+      <script><![CDATA[
+        def path = (execution.hasVariable('csvPath') ? csvPath
+                    : '/opt/fzlbpms/csvs/disciplinas_modulos_desenvolvimento_sistemas.csv')
+        def f = new File(path)
+        if (!f.exists()) { throw new org.flowable.common.engine.api.FlowableException("CSV not found: " + path) }
+        def lines = f.readLines('UTF-8').findAll { it != null }
+        if (lines && lines[0].startsWith('﻿')) { lines[0] = lines[0].substring(1) }
+        def rows = lines.drop(1).findAll { it?.trim() }.collect { line ->
+          def c = line.split(',', -1)
+          [ curso:              (c.size() > 0 ? c[0].trim() : ''),
+            modulo:             (c.size() > 1 ? c[1].trim() : ''),
+            disciplina:         (c.size() > 2 ? c[2].trim() : ''),
+            disciplina_nome:    (c.size() > 3 ? c[3].trim() : ''),
+            moodle_course_name: (c.size() > 4 ? c[4].trim() : '') ]
+        }
+        // URL-encode here, where the strings are correct UTF-8 on Java 11.
+        // Flowable's HTTP task encodes request bodies as ISO-8859-1 and would
+        // otherwise corrupt accents / drop the en-dash; sending pre-encoded
+        // ASCII keeps the whole path to the Camel bundle charset-safe. The
+        // bundle forwards these verbatim into the Moodle form body.
+        def enc = { v -> java.net.URLEncoder.encode((v ?: '').toString(), 'UTF-8') }
+        def categoryName = rows ? rows[0].curso : ''
+        execution.setVariable('categoryName', categoryName)
+        execution.setVariable('categoryNameEnc', enc(categoryName))
+        def discs = new ArrayList()
+        rows.each { r ->
+          def full = r.moodle_course_name ?: (r.disciplina_nome ?: r.disciplina)
+          def shortname = r.disciplina + ' - ' + r.modulo
+          def m = new java.util.HashMap()
+          m.put('shortnameEnc', enc(shortname))
+          m.put('fullnameEnc', enc(full))
+          discs.add(m)
+        }
+        execution.setVariable('disciplinas', discs)
+      ]]></script>
+    </scriptTask>
+    <sequenceFlow id="toCreateCategory" sourceRef="loadCsv" targetRef="createCategory"/>
+
+    <!-- 2. Create the category via the Camel moodle bundle -->
+    <serviceTask id="createCategory" name="Create Moodle category" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl"><flowable:string>http://fzl-karaf-camel-integration:9091/fzlbpms/moodle/categories</flowable:string></flowable:field>
+        <flowable:field name="requestHeaders"><flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string></flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"name":"${categoryNameEnc}","parent":0}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>categoryResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>true</flowable:string></flowable:field>
+      </extensionElements>
+    </serviceTask>
+    <sequenceFlow id="toExtractId" sourceRef="createCategory" targetRef="extractCategoryId"/>
+
+    <!-- 3. Pull the new category id out of the JSON response -->
+    <scriptTask id="extractCategoryId" name="Extract category id" scriptFormat="groovy">
+      <script><![CDATA[
+        // flowable-ui bundles groovy-3.0.9 but not groovy-json — use the
+        // Jackson ObjectMapper that's already on Flowable's classpath.
+        def node = new com.fasterxml.jackson.databind.ObjectMapper()
+                      .readTree(categoryResponse.toString())
+        if (node == null || !node.isArray() || node.size() == 0 || node.get(0).get('id') == null) {
+          throw new org.flowable.common.engine.api.FlowableException("Category creation failed: " + categoryResponse)
+        }
+        execution.setVariable('categoryId', node.get(0).get('id').asInt())
+      ]]></script>
+    </scriptTask>
+    <sequenceFlow id="toCreateCourses" sourceRef="extractCategoryId" targetRef="createCourses"/>
+
+    <!-- 4. One course per discipline, sequentially -->
+    <serviceTask id="createCourses" name="Create Moodle course" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl"><flowable:string>http://fzl-karaf-camel-integration:9091/fzlbpms/moodle/courses</flowable:string></flowable:field>
+        <flowable:field name="requestHeaders"><flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string></flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"fullname":"${disc.fullnameEnc}","shortname":"${disc.shortnameEnc}","categoryid":${categoryId}}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>courseResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>true</flowable:string></flowable:field>
+      </extensionElements>
+      <multiInstanceLoopCharacteristics isSequential="true"
+          flowable:collection="${disciplinas}" flowable:elementVariable="disc"/>
+    </serviceTask>
+    <sequenceFlow id="toEnd" sourceRef="createCourses" targetRef="endEvent"/>
+
+    <endEvent id="endEvent" name="End"/>
+
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_moodle-provision-courses">
+    <bpmndi:BPMNPlane bpmnElement="moodle-provision-courses" id="BPMNPlane_moodle-provision-courses">
+      <bpmndi:BPMNShape bpmnElement="startEvent" id="S_startEvent">
+        <omgdc:Bounds height="30.0" width="30.0" x="100.0" y="163.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="loadCsv" id="S_loadCsv">
+        <omgdc:Bounds height="80.0" width="100.0" x="180.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createCategory" id="S_createCategory">
+        <omgdc:Bounds height="80.0" width="100.0" x="330.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="extractCategoryId" id="S_extractCategoryId">
+        <omgdc:Bounds height="80.0" width="100.0" x="480.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createCourses" id="S_createCourses">
+        <omgdc:Bounds height="80.0" width="100.0" x="630.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="endEvent" id="S_endEvent">
+        <omgdc:Bounds height="28.0" width="28.0" x="780.0" y="164.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="toLoadCsv" id="E_toLoadCsv">
+        <omgdi:waypoint x="130.0" y="178.0"/><omgdi:waypoint x="180.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toCreateCategory" id="E_toCreateCategory">
+        <omgdi:waypoint x="280.0" y="178.0"/><omgdi:waypoint x="330.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toExtractId" id="E_toExtractId">
+        <omgdi:waypoint x="430.0" y="178.0"/><omgdi:waypoint x="480.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toCreateCourses" id="E_toCreateCourses">
+        <omgdi:waypoint x="580.0" y="178.0"/><omgdi:waypoint x="630.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toEnd" id="E_toEnd">
+        <omgdi:waypoint x="730.0" y="178.0"/><omgdi:waypoint x="780.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

@@ -18,6 +18,7 @@ containers/fzl-superset/superset-home
 containers/fzl-nginx/certs/*.pem
 containers/fzl-php8.3-fpm/certs/*.crt
 containers/flowable-ui/certs/*.pem
+containers/fzl-karaf-camel-integration/certs/*.pem
 
 #theese files is generated after to starts the portainer container
 #we don't want to send it to repo

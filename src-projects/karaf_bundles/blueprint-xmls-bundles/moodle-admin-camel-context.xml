@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Moodle Admin — Camel Blueprint routes for fzlbpms.
+
+  Integration bundle that a Flowable process drives, over HTTP, to provision
+  Moodle course categories and courses. It is the single place that knows the
+  "correct Moodle service": it calls Moodle's REST web services
+  (core_course_create_categories, core_course_create_courses) so the Flowable
+  process never has to know Moodle's WS parameter format.
+
+  The Flowable process reads the CSV itself (a Groovy script task) and posts
+  clean JSON to these endpoints.
+
+  REST API (Jetty on port 9091 — keycloak-admin-camel-context.xml owns 9090):
+
+    POST /fzlbpms/moodle/categories   {"name":"...","parent":0}
+         → core_course_create_categories. Returns Moodle JSON: [{"id":N,"name":"..."}]
+
+    POST /fzlbpms/moodle/courses      {"fullname":"...","shortname":"...","categoryid":N}
+         → core_course_create_courses. Returns Moodle JSON: [{"id":N,"shortname":"..."}]
+
+    GET  /fzlbpms/moodle/categories   → core_course_get_categories (debug helper)
+
+  ENCODING CONTRACT: the string values (name, fullname, shortname) MUST
+  already be application/x-www-form-urlencoded (as produced by
+  java.net.URLEncoder.encode(value, "UTF-8")) — this bundle forwards them
+  verbatim into the Moodle form body. The Flowable process pre-encodes them
+  in its Groovy script task, where the strings are correct UTF-8 on Java 11.
+  This keeps the whole Flowable→Camel→Moodle path pure ASCII, sidestepping
+  Flowable's HTTP task, which otherwise encodes request bodies as ISO-8859-1
+  and corrupts accents / drops characters like the en-dash. (A plain,
+  unencoded UTF-8 value also happens to round-trip for names without
+  % & + = # — PHP's urldecode passes raw bytes through — so hand curl tests
+  with simple names still work.)
+
+  Required environment variables (set by docker-compose):
+    MOODLE_WS_URL    — full URL of Moodle's REST server, e.g.
+                       https://fzlbpms.local/moodle/webservice/rest/server.php
+    MOODLE_WS_TOKEN  — token bound to the fzlbpms_ws service account
+                       (see bin/moodle/configure-moodle-webservice.php)
+
+  The JVM must trust the TLS cert of MOODLE_WS_URL's host — the entrypoint
+  imports the local mkcert CA when MOODLE_WS_URL is https://fzlbpms.local.
+-->
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="
+             http://www.osgi.org/xmlns/blueprint/v1.0.0
+               https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+             http://camel.apache.org/schema/blueprint
+               http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+  <camelContext id="moodleAdminContext" xmlns="http://camel.apache.org/schema/blueprint">
+
+    <propertyPlaceholder id="moodleProperties" location="env:*"/>
+
+    <!-- Own Jetty port (9090 is taken by the keycloak bundle). -->
+    <restConfiguration component="jetty"
+                        port="9091"
+                        bindingMode="off"
+                        enableCORS="true"/>
+
+    <rest path="/fzlbpms/moodle">
+      <get path="/categories">
+        <to uri="direct:moodle-list-categories"/>
+      </get>
+      <post path="/categories" consumes="application/json">
+        <to uri="direct:moodle-create-category"/>
+      </post>
+      <post path="/courses" consumes="application/json">
+        <to uri="direct:moodle-create-course"/>
+      </post>
+    </rest>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CREATE CATEGORY → core_course_create_categories
+         In:  {"name":"<url-encoded curso>","parent":0}
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="moodle-create-category">
+      <from uri="direct:moodle-create-category"/>
+      <setProperty name="m.name"><jsonpath>$.name</jsonpath></setProperty>
+      <setProperty name="m.parent"><jsonpath>$.parent</jsonpath></setProperty>
+      <!-- name is already form-urlencoded by the caller (see header) -->
+      <setBody>
+        <simple>wstoken={{MOODLE_WS_TOKEN}}&amp;wsfunction=core_course_create_categories&amp;moodlewsrestformat=json&amp;categories[0][name]=${exchangeProperty.m.name}&amp;categories[0][parent]=${exchangeProperty.m.parent}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/x-www-form-urlencoded</constant></setHeader>
+      <to uri="{{MOODLE_WS_URL}}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CREATE COURSE → core_course_create_courses
+         In:  {"fullname":"...","shortname":"...","categoryid":N}
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="moodle-create-course">
+      <from uri="direct:moodle-create-course"/>
+      <setProperty name="m.fullname"><jsonpath>$.fullname</jsonpath></setProperty>
+      <setProperty name="m.shortname"><jsonpath>$.shortname</jsonpath></setProperty>
+      <setProperty name="m.categoryid"><jsonpath>$.categoryid</jsonpath></setProperty>
+      <!-- fullname/shortname are already form-urlencoded by the caller -->
+      <setBody>
+        <simple>wstoken={{MOODLE_WS_TOKEN}}&amp;wsfunction=core_course_create_courses&amp;moodlewsrestformat=json&amp;courses[0][fullname]=${exchangeProperty.m.fullname}&amp;courses[0][shortname]=${exchangeProperty.m.shortname}&amp;courses[0][categoryid]=${exchangeProperty.m.categoryid}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/x-www-form-urlencoded</constant></setHeader>
+      <to uri="{{MOODLE_WS_URL}}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         LIST CATEGORIES → core_course_get_categories (debug helper)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="moodle-list-categories">
+      <from uri="direct:moodle-list-categories"/>
+      <setBody>
+        <simple>wstoken={{MOODLE_WS_TOKEN}}&amp;wsfunction=core_course_get_categories&amp;moodlewsrestformat=json</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/x-www-form-urlencoded</constant></setHeader>
+      <to uri="{{MOODLE_WS_URL}}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+  </camelContext>
+</blueprint>

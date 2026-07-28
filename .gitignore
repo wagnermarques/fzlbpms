@@ -9,6 +9,9 @@ containers/fzl-nexus/nexus-data
 containers/fzl-redis/redis-data
 containers/fzl-mysql/mysql-data
 containers/fzl-php8.3-fpm/moodledata
+containers/fzl-superset/superset-db-data
+containers/fzl-superset/redis-data
+containers/fzl-superset/superset-home
 
 #theese files is generated after to starts the portainer container
 #we don't want to send it to repo

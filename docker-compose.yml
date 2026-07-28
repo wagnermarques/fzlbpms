@@ -480,6 +480,115 @@ services:
     networks:
       - fzl-network
 
+  # PostgreSQL database for Superset metadata (charts, dashboards, users)
+  superset-db:
+    image: postgres:16-alpine
+    container_name: superset-db
+    environment:
+      POSTGRES_DB: ${FZL_SUPERSET_DB_NAME:?}
+      POSTGRES_USER: ${FZL_SUPERSET_DB_USER:?}
+      POSTGRES_PASSWORD: ${FZL_SUPERSET_DB_PASSWORD:?}
+    ports:
+      - "${FZL_SUPERSET_DB_PORT:?}:5432" # Mapped to 5436 to avoid conflict with fzl-postgresql/flowable-db
+    volumes:
+      - ./containers/fzl-superset/superset-db-data:/var/lib/postgresql/data
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Dedicated Redis: Superset's cache and results backend
+  superset-redis:
+    image: redis:7-alpine
+    container_name: superset-redis
+    restart: unless-stopped
+    volumes:
+      - ./containers/fzl-superset/redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - fzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # One-shot, idempotent Superset provisioner: db upgrade, admin user, init
+  # (roles/permissions setup). Mirrors moodle-installer. Safe to re-run.
+  superset-init:
+    build:
+      context: ./containers/fzl-superset
+      dockerfile: Dockerfile
+    container_name: fzl-superset-init
+    depends_on:
+      superset-db:
+        condition: service_healthy
+      superset-redis:
+        condition: service_healthy
+    volumes:
+      - ./containers/fzl-superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./containers/fzl-superset/superset-home:/app/superset_home
+    environment:
+      SUPERSET_SECRET_KEY: ${FZL_SUPERSET_SECRET_KEY:?}
+      DATABASE_DIALECT: postgresql
+      DATABASE_HOST: superset-db
+      DATABASE_PORT: "5432"
+      DATABASE_DB: ${FZL_SUPERSET_DB_NAME:?}
+      DATABASE_USER: ${FZL_SUPERSET_DB_USER:?}
+      DATABASE_PASSWORD: ${FZL_SUPERSET_DB_PASSWORD:?}
+      REDIS_HOST: superset-redis
+      REDIS_PORT: "6379"
+      SUPERSET_ADMIN_USER: ${FZL_SUPERSET_ADMIN_USER:?}
+      SUPERSET_ADMIN_PASSWORD: ${FZL_SUPERSET_ADMIN_PASSWORD:?}
+      SUPERSET_ADMIN_EMAIL: ${FZL_SUPERSET_ADMIN_EMAIL:?}
+    networks:
+      - fzl-network
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -e
+        superset db upgrade
+        superset fab create-admin \
+          --username "$$SUPERSET_ADMIN_USER" \
+          --firstname Superset \
+          --lastname Admin \
+          --email "$$SUPERSET_ADMIN_EMAIL" \
+          --password "$$SUPERSET_ADMIN_PASSWORD" || true
+        superset init
+
+  # Superset webserver (BI dashboards / charts)
+  fzl-superset:
+    build:
+      context: ./containers/fzl-superset
+      dockerfile: Dockerfile
+    container_name: fzl-superset
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    ports:
+      - "${FZL_SUPERSET_PORT:?}:8088"
+    volumes:
+      - ./containers/fzl-superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./containers/fzl-superset/superset-home:/app/superset_home
+    environment:
+      SUPERSET_SECRET_KEY: ${FZL_SUPERSET_SECRET_KEY:?}
+      DATABASE_DIALECT: postgresql
+      DATABASE_HOST: superset-db
+      DATABASE_PORT: "5432"
+      DATABASE_DB: ${FZL_SUPERSET_DB_NAME:?}
+      DATABASE_USER: ${FZL_SUPERSET_DB_USER:?}
+      DATABASE_PASSWORD: ${FZL_SUPERSET_DB_PASSWORD:?}
+      REDIS_HOST: superset-redis
+      REDIS_PORT: "6379"
+    networks:
+      - fzl-network
+    restart: unless-stopped
+
 networks:
   fzl-network:
     driver: bridge

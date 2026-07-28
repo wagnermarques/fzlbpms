@@ -56,6 +56,10 @@ services = ["gitlab"]
 description = "MongoDB (overleaf) + Redis"
 services = ["fzl-mongodb", "fzl-redis"]
 
+[stacks.bi]
+description = "Apache Superset (BI dashboards)"
+services = ["superset-db", "superset-redis", "superset-init", "fzl-superset"]
+
 [stacks.fzlbpms]
 description = "Everything the fzlbpms platform needs day-to-day"
 includes = ["web", "integration", "bpm", "sso"]
@@ -63,5 +67,5 @@ services = ["fzl-fakemail"]
 
 [stacks.all]
 description = "The whole stack"
-includes = ["fzlbpms", "search", "devtools", "gitlab", "data-extra"]
+includes = ["fzlbpms", "search", "devtools", "gitlab", "data-extra", "bi"]
 services = []

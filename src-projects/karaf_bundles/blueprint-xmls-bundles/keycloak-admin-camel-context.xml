@@ -15,6 +15,10 @@
        Moodle's auth_oauth2 plugin, so Moodle can share that same SSO
        session (see bin/moodle/configure-oauth2-keycloak.php).
     5. Creates the 'fzlbpmsadmin' user if it does not exist.
+    6. Creates the {{FZL_THEIA_CLIENT_ID}} confidential client used by
+       fzl-oauth2-proxy to gate the Theia browser IDE at /theia/, plus the
+       'theia-user' realm role that gate requires, granted to the admin
+       user above.
 
   Auth endpoints (port 9090):
     POST /fzlbpms/auth/login    {username, password}  → tokens
@@ -124,7 +128,11 @@
         <to uri="direct:kc-ensure-webapp-client"/>
         <to uri="direct:kc-ensure-moodle-client"/>
         <to uri="direct:kc-ensure-flowable-client"/>
+        <to uri="direct:kc-ensure-theia-client"/>
+        <to uri="direct:kc-ensure-theia-role"/>
         <to uri="direct:kc-ensure-admin-user"/>
+        <!-- After the user exists — the grant needs its id. -->
+        <to uri="direct:kc-grant-theia-role"/>
         <log message="[KC-SETUP] Provisioning complete."/>
         <doCatch>
           <exception>java.lang.Exception</exception>
@@ -381,6 +389,146 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] Client '{{FZL_FLOWABLE_CLIENT_ID}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE THEIA CLIENT (confidential, browser-redirect)
+         Used by fzl-oauth2-proxy, which nginx consults via auth_request
+         before letting anyone reach the Theia IDE at /theia/. The redirect
+         URI is oauth2-proxy's own callback path, which is served from the
+         same origin as the IDE (see nginx-shared/app-server.conf).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-theia-client">
+      <from uri="direct:kc-ensure-theia-client"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_THEIA_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"clientId":"{{FZL_THEIA_CLIENT_ID}}","name":"Theia IDE","description":"Browser IDE at /theia/ — OIDC via fzl-oauth2-proxy","enabled":true,"publicClient":false,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"serviceAccountsEnabled":false,"secret":"{{FZL_THEIA_CLIENT_SECRET}}","redirectUris":["https://{{FZL_PUBLIC_HOSTNAME}}/oauth2/callback","http://localhost/oauth2/callback"]}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Confidential client '{{FZL_THEIA_CLIENT_ID}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Theia client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Client '{{FZL_THEIA_CLIENT_ID}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE THEIA-USER REALM ROLE
+         Authentication says who you are; this role says whether you get a
+         shell. oauth2-proxy is started with an "allowed-role" of
+         theia-user and matches it against the realm_access.roles claim,
+         so realm membership alone is deliberately NOT enough to open
+         the IDE.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-theia-role">
+      <from uri="direct:kc-ensure-theia-role"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/theia-user?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} == 200</simple>
+          <log message="[KC-SETUP] Realm role 'theia-user' already exists."/>
+        </when>
+        <otherwise>
+          <setBody>
+            <constant>{"name":"theia-user","description":"May open the Theia browser IDE at /theia/ — this grants an interactive shell inside the fzl-theia container"}</constant>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <log message="[KC-SETUP] Realm role 'theia-user' create returned ${header.CamelHttpResponseCode}."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GRANT theia-user TO THE BOOTSTRAP ADMIN
+         Runs after kc-ensure-admin-user so the user is guaranteed to exist.
+         Keycloak's realm role-mapping POST is idempotent — re-granting an
+         already-held role is a no-op 204.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-grant-theia-role">
+      <from uri="direct:kc-grant-theia-role"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/theia-user?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} != 200</simple>
+          <log message="[KC-SETUP] WARNING — realm role 'theia-user' not found; skipping grant. Nobody will be able to open /theia/."/>
+        </when>
+        <otherwise>
+          <setProperty name="kc.theiaRoleId">
+            <jsonpath>$.id</jsonpath>
+          </setProperty>
+
+          <setBody><constant></constant></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZLBPMS_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${body} == '[]'</simple>
+              <log message="[KC-SETUP] WARNING — user '{{FZLBPMS_ADMIN_USERNAME}}' not found; cannot grant 'theia-user'."/>
+            </when>
+            <otherwise>
+              <setProperty name="kc.theiaUserId">
+                <jsonpath>$[0].id</jsonpath>
+              </setProperty>
+              <setBody>
+                <simple>[{"id":"${exchangeProperty.kc.theiaRoleId}","name":"theia-user"}]</simple>
+              </setBody>
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <setHeader name="Content-Type">
+                <constant>application/json</constant>
+              </setHeader>
+              <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.theiaUserId}/role-mappings/realm?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+              <log message="[KC-SETUP] Granted 'theia-user' to '{{FZLBPMS_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
+            </otherwise>
+          </choice>
         </otherwise>
       </choice>
     </route>

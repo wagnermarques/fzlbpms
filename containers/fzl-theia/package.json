@@ -1,0 +1,67 @@
+{
+  "private": true,
+  "name": "fzlbpms-theia",
+  "version": "0.0.1",
+  "description": "Eclipse Theia browser IDE for fzlbpms, served at /theia/ by fzl-nginx",
+  "license": "EPL-2.0",
+  "dependencies": {
+    "@theia/console": "1.73.1",
+    "@theia/core": "1.73.1",
+    "@theia/debug": "1.73.1",
+    "@theia/editor": "1.73.1",
+    "@theia/filesystem": "1.73.1",
+    "@theia/getting-started": "1.73.1",
+    "@theia/keymaps": "1.73.1",
+    "@theia/markers": "1.73.1",
+    "@theia/messages": "1.73.1",
+    "@theia/monaco": "1.73.1",
+    "@theia/navigator": "1.73.1",
+    "@theia/outline-view": "1.73.1",
+    "@theia/plugin-ext": "1.73.1",
+    "@theia/plugin-ext-vscode": "1.73.1",
+    "@theia/preferences": "1.73.1",
+    "@theia/process": "1.73.1",
+    "@theia/scm": "1.73.1",
+    "@theia/search-in-workspace": "1.73.1",
+    "@theia/task": "1.73.1",
+    "@theia/terminal": "1.73.1",
+    "@theia/vsx-registry": "1.73.1",
+    "@theia/workspace": "1.73.1",
+
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@theia/cli": "1.73.1",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
+  },
+  "theia": {
+    "target": "browser",
+    "frontend": {
+      "config": {
+        "applicationName": "fzlbpms IDE",
+        "preferences": {
+          "files.enableTrash": false,
+          "files.autoSave": "off"
+        }
+      }
+    }
+  },
+  "theiaPluginsDir": "plugins",
+  "theiaPlugins": {
+    "vscode-builtin-git": "https://open-vsx.org/api/vscode/git/1.95.3/file/vscode.git-1.95.3.vsix",
+    "vscode-builtin-php": "https://open-vsx.org/api/vscode/php/1.95.3/file/vscode.php-1.95.3.vsix",
+    "vscode-builtin-xml": "https://open-vsx.org/api/vscode/xml/1.95.3/file/vscode.xml-1.95.3.vsix",
+    "vscode-builtin-yaml": "https://open-vsx.org/api/vscode/yaml/1.95.3/file/vscode.yaml-1.95.3.vsix",
+    "vscode-builtin-json": "https://open-vsx.org/api/vscode/json/1.95.3/file/vscode.json-1.95.3.vsix",
+    "vscode-builtin-javascript": "https://open-vsx.org/api/vscode/javascript/1.95.3/file/vscode.javascript-1.95.3.vsix",
+    "redhat-vscode-xml": "https://open-vsx.org/api/redhat/vscode-xml/0.29.2026061109/file/redhat.vscode-xml-0.29.2026061109.vsix"
+  },
+  "scripts": {
+    "clean": "theia clean",
+    "build": "theia build --mode production",
+    "download:plugins": "theia download:plugins",
+    "start": "theia start /home/workspace --hostname 0.0.0.0 --port 3000"
+  }
+}

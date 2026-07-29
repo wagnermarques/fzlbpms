@@ -49,7 +49,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     bcmath \
     exif 
 
-RUN pecl install imagick && docker-php-ext-enable imagick
+RUN pecl install imagick-3.8.1 && docker-php-ext-enable imagick
 
 # 3. Instala o Composer globalmente
 # Baixa o instalador do Composer

@@ -16,6 +16,12 @@
 #     -> imported into a writable copy of the JVM truststore at container
 #        start (docker-compose.yml entrypoint), so Flowable's OIDC client
 #        can do the same.
+#   containers/fzl-oauth2-proxy/certs/mkcert-ca.crt
+#     -> oauth2-proxy runs OIDC discovery against https://fzlbpms.local/auth/
+#        on startup; without this CA that call fails TLS verification and
+#        the proxy never becomes ready, so /theia/ returns 500 for everyone.
+#   containers/fzl-theia/certs/mkcert-ca.crt
+#     -> lets terminals inside the IDE curl https://fzlbpms.local without -k.
 #
 # All idempotent — safe to re-run any time (e.g. after mkcert's CA rotates).
 # Called by ansible/fzlbpms-setup.yml; you can also run it directly.
@@ -51,7 +57,10 @@ NGINX_CERTS_DIR="containers/fzl-nginx/certs"
 PHP_CERTS_DIR="containers/fzl-php8.3-fpm/certs"
 FLOWABLE_CERTS_DIR="containers/flowable-ui/certs"
 KARAF_CERTS_DIR="containers/fzl-karaf-camel-integration/certs"
-mkdir -p "$NGINX_CERTS_DIR" "$PHP_CERTS_DIR" "$FLOWABLE_CERTS_DIR" "$KARAF_CERTS_DIR"
+OAUTH2_CERTS_DIR="containers/fzl-oauth2-proxy/certs"
+THEIA_CERTS_DIR="containers/fzl-theia/certs"
+mkdir -p "$NGINX_CERTS_DIR" "$PHP_CERTS_DIR" "$FLOWABLE_CERTS_DIR" "$KARAF_CERTS_DIR" \
+         "$OAUTH2_CERTS_DIR" "$THEIA_CERTS_DIR"
 
 log "Issuing a certificate for fzlbpms.local..."
 mkcert \
@@ -64,9 +73,11 @@ log "Copying mkcert's root CA (${CAROOT}/rootCA.pem) for Moodle/Flowable to trus
 cp "$CAROOT/rootCA.pem" "$PHP_CERTS_DIR/mkcert-ca.crt"
 cp "$CAROOT/rootCA.pem" "$FLOWABLE_CERTS_DIR/mkcert-ca.pem"
 cp "$CAROOT/rootCA.pem" "$KARAF_CERTS_DIR/mkcert-ca.pem"
+cp "$CAROOT/rootCA.pem" "$OAUTH2_CERTS_DIR/mkcert-ca.crt"
+cp "$CAROOT/rootCA.pem" "$THEIA_CERTS_DIR/mkcert-ca.crt"
 
 log "Done. Restart the affected containers to pick this up:"
-log "  docker compose up -d fzl-nginx fzl-php8.3-fpm flowable-ui"
+log "  docker compose up -d fzl-nginx fzl-php8.3-fpm flowable-ui fzl-oauth2-proxy fzl-theia"
 log "  docker compose up moodle-oauth2-configurator"
 log "Then add this to /etc/hosts if you haven't already:"
 log "  127.0.0.1 fzlbpms.local"

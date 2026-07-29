@@ -212,6 +212,8 @@ services:
       FZL_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}
       FZL_FLOWABLE_CLIENT_ID: ${FZL_FLOWABLE_CLIENT_ID:?}
       FZL_FLOWABLE_CLIENT_SECRET: ${FZL_FLOWABLE_CLIENT_SECRET:?}
+      FZL_THEIA_CLIENT_ID: ${FZL_THEIA_CLIENT_ID:?}
+      FZL_THEIA_CLIENT_SECRET: ${FZL_THEIA_CLIENT_SECRET:?}
       # Moodle REST web service (consumed by moodle-admin-camel-context.xml).
       # Uses the canonical https host so Moodle sees its own wwwroot; the JVM
       # trusts the mkcert CA via the certs mount below + entrypoint import.
@@ -562,12 +564,113 @@ services:
     networks:
       - fzl-network
 
+  # Eclipse Theia browser IDE, served by fzl-nginx at /theia/ (see
+  # nginx-shared/app-server.conf). Theia derives its own asset and WebSocket
+  # URLs from window.location.pathname, so the sub-path works without any
+  # build-time base-path flag — but nginx must strip the /theia prefix
+  # (the backend mounts its routes at root) and must redirect /theia to
+  # /theia/, since a missing trailing slash breaks relative asset resolution.
+  #
+  # Single shared instance: one workspace on disk, shared by everyone who
+  # logs in. Access is gated by fzl-oauth2-proxy below — a browser IDE is a
+  # remote shell on fzl-network, so it is deliberately NOT open to the realm
+  # at large, only to holders of the 'theia-user' role.
+  fzl-theia:
+    build:
+      context: ./containers/fzl-theia
+      dockerfile: Dockerfile
+      args:
+        # Must match the host user owning ./workspaces, or the IDE cannot
+        # write to it. Override in .env if your host user isn't 1000:1000.
+        THEIA_UID: ${FZL_THEIA_UID:-1000}
+        THEIA_GID: ${FZL_THEIA_GID:-1000}
+    image: fzl-theia:0.0.1
+    container_name: fzl-theia
+    ports:
+      # Direct access, bypassing nginx and therefore bypassing SSO — useful
+      # for debugging, but do not expose this port beyond the dev machine.
+      - "${FZL_THEIA_PORT:-3000}:3000"
+    volumes:
+      # Scoped to ./workspaces on purpose: the repo root holds .env and its
+      # secrets, and everyone with IDE access would be able to read it.
+      - ./workspaces:/home/workspace:rw
+      - theia_user_data:/home/theia/.theia
+      # The container runs as non-root, so it can't run update-ca-certificates
+      # at start. Instead the CA is handed to Node directly via
+      # NODE_EXTRA_CA_CERTS (see the Dockerfile), which *appends* to the
+      # built-in bundle rather than replacing it — so Theia can reach both
+      # https://fzlbpms.local and the public Open VSX registry.
+      - ./containers/fzl-theia/certs/mkcert-ca.crt:/etc/fzlbpms/mkcert-ca.crt:ro
+    networks:
+      - fzl-network
+    restart: unless-stopped
+
+  # OIDC gate in front of /theia/. nginx calls this via auth_request; this
+  # container never proxies the IDE itself (--upstream=static://202), it only
+  # answers "is this browser session allowed?".
+  fzl-oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+    container_name: fzl-oauth2-proxy
+    command:
+      - --provider=keycloak-oidc
+      - --oidc-issuer-url=${FZL_PUBLIC_PROTO:-https}://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
+      - --client-id=${FZL_THEIA_CLIENT_ID:?}
+      - --client-secret=${FZL_THEIA_CLIENT_SECRET:?}
+      - --cookie-secret=${FZL_OAUTH2_COOKIE_SECRET:?}
+      - --redirect-url=${FZL_PUBLIC_PROTO:-https}://${FZL_PUBLIC_HOSTNAME:-localhost}/oauth2/callback
+      # Authentication answers "who", not "should this person get a shell".
+      # Gate on an explicit role rather than realm membership.
+      - --allowed-role=theia-user
+      - --email-domain=*
+      - --upstream=static://202
+      - --http-address=0.0.0.0:4180
+      - --reverse-proxy=true
+      - --set-xauthrequest=true
+      - --skip-provider-button=true
+      - --cookie-secure=${FZL_OAUTH2_COOKIE_SECURE:-true}
+      - --code-challenge-method=S256
+      # Only fzl-nginx should be believed about X-Forwarded-*. Without this,
+      # oauth2-proxy trusts those headers from any source (0.0.0.0/0), so any
+      # container on fzl-network could spoof the client IP.
+      - --trusted-proxy-ip=172.18.0.0/16
+    volumes:
+      # OIDC discovery runs against https://fzlbpms.local/auth/... — without
+      # the mkcert CA that call fails TLS verification and the proxy never
+      # becomes ready. Populated by bin/setup-local-https.sh.
+      #
+      # Mounted as a FILE inside /etc/ssl/certs, not as a directory: this is a
+      # distroless Go binary, and Go's root-CA loader scans /etc/ssl/certs for
+      # regular files, skipping subdirectories. A directory mount here silently
+      # trusts nothing and the proxy crash-loops on "certificate signed by
+      # unknown authority".
+      - ./containers/fzl-oauth2-proxy/certs/mkcert-ca.crt:/etc/ssl/certs/mkcert-ca.crt:ro
+    networks:
+      - fzl-network
+    depends_on:
+      - fzl-keycloak
+    restart: unless-stopped
+
+  fzl-cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: fzl-cloudflared
+    restart: unless-stopped
+    # Token-based ("remotely-managed") run: no local config.yml/credentials
+    # file needed — the tunnel's public-hostname routing (fzlbpms.com.br ->
+    # http://fzl-nginx:80) is configured in the Cloudflare Zero Trust
+    # dashboard against this same token, not here.
+    command: tunnel --no-autoupdate run --token ${FZL_CLOUDFLARE_TUNNEL_TOKEN:?}
+    networks:
+      - fzl-network
+
 networks:
   fzl-network:
     driver: bridge
 
 volumes:
   flowable_db_data:
+  # Theia's per-user settings, keybindings and plugin state. Kept off the
+  # ./workspaces bind mount so IDE config doesn't land in the users' files.
+  theia_user_data:
   gitlab_config:
   gitlab_logs:
   gitlab_data:

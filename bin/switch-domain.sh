@@ -44,13 +44,23 @@ else
 fi
 NEW_WWWROOT="${PROTO}://${DOMAIN}/moodle"
 
+# oauth2-proxy (the gate in front of /theia/) must not set a Secure cookie on
+# a plain-http stack — the browser would refuse to send it back and the login
+# would loop forever between Keycloak and /oauth2/start.
+if [ "$PROTO" = "https" ]; then
+    COOKIE_SECURE="true"
+else
+    COOKIE_SECURE="false"
+fi
+
 log "Domain: ${DOMAIN}  (proto: ${PROTO})"
 
-log "Updating FZL_PUBLIC_HOSTNAME / FZL_PUBLIC_PROTO / MOODLE_WWWROOT in ${ENV_FILE}..."
+log "Updating FZL_PUBLIC_HOSTNAME / FZL_PUBLIC_PROTO / MOODLE_WWWROOT / FZL_OAUTH2_COOKIE_SECURE in ${ENV_FILE}..."
 sed -i \
     -e "s#^FZL_PUBLIC_HOSTNAME=.*#FZL_PUBLIC_HOSTNAME=${DOMAIN}#" \
     -e "s#^FZL_PUBLIC_PROTO=.*#FZL_PUBLIC_PROTO=${PROTO}#" \
     -e "s#^MOODLE_WWWROOT=.*#MOODLE_WWWROOT=${NEW_WWWROOT}#" \
+    -e "s#^FZL_OAUTH2_COOKIE_SECURE=.*#FZL_OAUTH2_COOKIE_SECURE=${COOKIE_SECURE}#" \
     "$ENV_FILE"
 
 if [ -f "$CONFIG_PHP" ]; then
@@ -85,6 +95,7 @@ KC_ADMIN_PASS="$(env_get FZL_KEYCLOAK_ADMIN_PASSWORD)"
 WEBAPP_CLIENT="$(env_get FZL_WEBAPP_CLIENT_ID)"
 MOODLE_CLIENT="$(env_get FZL_MOODLE_CLIENT_ID)"
 FLOWABLE_CLIENT="$(env_get FZL_FLOWABLE_CLIENT_ID)"
+THEIA_CLIENT="$(env_get FZL_THEIA_CLIENT_ID)"
 KC_BASE="http://localhost:${KC_PORT}/auth"
 
 log "Waiting for Keycloak on ${KC_BASE}..."
@@ -137,6 +148,10 @@ if [ -n "$KC_READY" ]; then
         update_client "$WEBAPP_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/fzlbpmsadmin/*\",\"http://localhost/fzlbpmsadmin/*\",\"http://localhost:4200/*\"]" \
             "[\"${PROTO}://${DOMAIN}\",\"http://localhost\",\"http://localhost:4200\"]"
+        # oauth2-proxy's callback, which gates the Theia IDE at /theia/.
+        update_client "$THEIA_CLIENT" \
+            "[\"${PROTO}://${DOMAIN}/oauth2/callback\",\"http://localhost/oauth2/callback\"]" \
+            ""
     else
         log "WARNING — couldn't get a Keycloak admin token; redirect URIs NOT updated. Re-run this script once Keycloak is healthy."
     fi
@@ -146,6 +161,13 @@ fi
 
 log "Restarting flowable-ui (picks up the new OIDC issuer URI)..."
 docker compose up -d flowable-ui
+
+# The issuer URL, redirect URL and cookie-secure flag are all baked into this
+# container's command line from .env, so it has to be recreated, not just
+# restarted. Ignored if the ide stack isn't running.
+log "Recreating fzl-oauth2-proxy (picks up the new issuer / cookie settings)..."
+docker compose up -d fzl-oauth2-proxy 2>/dev/null \
+    || log "  (fzl-oauth2-proxy not running — skipped.)"
 
 log "Re-running the Moodle OAuth2 issuer configurator against the new domain..."
 docker compose up moodle-oauth2-configurator

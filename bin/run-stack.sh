@@ -79,6 +79,14 @@ fi
 
 mapfile -t SERVICES < <(resolve "${STACKS[@]+"${STACKS[@]}"}")
 
+# fzl-cloudflared (public Cloudflare Tunnel for fzlbpms.com.br) rides along
+# with every stack, not just the ones that list it explicitly in
+# run-stack.toml — it has to be up whenever fzl-nginx is, and down when the
+# stack it's proxying goes down.
+if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "fzl-cloudflared"; then
+    SERVICES+=("fzl-cloudflared")
+fi
+
 # Validate service names against docker-compose.yml before doing anything
 mapfile -t KNOWN < <(cd "$PROJECT_DIR" && docker compose config --services)
 for svc in "${SERVICES[@]}"; do

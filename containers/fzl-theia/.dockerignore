@@ -1,0 +1,10 @@
+# Never ship host-side build output into the image — the build stage produces
+# its own. Copying a host node_modules would also mix glibc/musl native builds.
+node_modules
+plugins
+lib
+src-gen
+gen-webpack.config.js
+gen-webpack.node.config.js
+.theia
+certs

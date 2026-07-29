@@ -40,6 +40,10 @@ services = ["flowable-db", "flowable-ui", "fzl-bpmn-drawer"]
 description = "Keycloak identity provider"
 services = ["fzl-keycloak-db", "fzl-keycloak"]
 
+[stacks.ide]
+description = "Eclipse Theia browser IDE at /theia/ (needs 'web' for nginx and 'sso' for login)"
+services = ["fzl-theia", "fzl-oauth2-proxy"]
+
 [stacks.search]
 description = "Elasticsearch + Kibana"
 services = ["fzl-elasticsearch", "fzl-kibana"]
@@ -56,9 +60,13 @@ services = ["gitlab"]
 description = "MongoDB (overleaf) + Redis"
 services = ["fzl-mongodb", "fzl-redis"]
 
+[stacks.tunnel]
+description = "Cloudflare Tunnel — exposes fzl-nginx as https://fzlbpms.com.br"
+services = ["fzl-cloudflared"]
+
 [stacks.fzlbpms]
 description = "Everything the fzlbpms platform needs day-to-day"
-includes = ["web", "integration", "bpm", "sso"]
+includes = ["web", "integration", "bpm", "sso", "ide"]
 services = ["fzl-fakemail"]
 
 [stacks.all]

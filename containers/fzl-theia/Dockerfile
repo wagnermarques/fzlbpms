@@ -77,6 +77,18 @@ ENV THEIA_DEFAULT_PLUGINS=local-dir:/app/plugins \
     USE_LOCAL_GIT=true \
     NODE_EXTRA_CA_CERTS=/etc/fzlbpms/mkcert-ca.crt
 
+# Webview-backed editors (the BPMN modeler) are served from a separate origin
+# by default: {{uuid}}.webview.{{hostname}}. That needs wildcard DNS and a
+# wildcard certificate, neither of which exists for fzlbpms.local — so the
+# webview would simply fail to load behind nginx. "{{hostname}}" flips Theia
+# to serveSameOrigin (see plugin-service.ts), serving webview assets from
+# /theia/webview/... through the existing proxy block.
+#
+# Trade-off: webview content no longer sits in its own origin sandbox. That is
+# acceptable here because every plugin is baked in at build time and the IDE is
+# already restricted to holders of the theia-user role.
+ENV THEIA_WEBVIEW_EXTERNAL_ENDPOINT="{{hostname}}"
+
 EXPOSE 3000
 
 # Run the generated backend directly so @theia/cli (a devDependency) isn't

@@ -22,6 +22,10 @@ default = "web"
 
 [stacks.basic]
 description = "the basics"
+# Pulls in fzl-theia AND fzl-oauth2-proxy together: nginx guards /theia/ with
+# auth_request against the proxy, so starting the IDE without it makes
+# /theia/ answer 500 rather than simply being unauthenticated.
+includes = ["ide"]
 services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-postgresql", "moodle-installer", "moodle-webservice-configurator", "fzl-karaf-camel-integration", "fzl-keycloak-db", "fzl-keycloak", "flowable-db", "flowable-ui"]
 
 [stacks.web]

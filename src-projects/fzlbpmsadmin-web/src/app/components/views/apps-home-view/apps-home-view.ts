@@ -26,8 +26,9 @@ export interface Application {
 export class AppsHomeView {
   // Same-origin apps are reverse-proxied by fzl-nginx, so relative paths
   // work from whatever host/IP the admin app is accessed from. BPMN Drawer
-  // isn't proxied — it's a distinct container port — so it's addressed
-  // against the current hostname instead of a hardcoded "localhost".
+  // is proxied at /bpmndrawer/ (containers/fzl-nginx/nginx-shared/app-server.conf)
+  // rather than addressed by its container port directly, so it always
+  // inherits the page's own scheme/host/TLS instead of needing its own cert.
   applications = signal<Application[]>([
     {
       name: 'Flowable BPM',
@@ -37,7 +38,7 @@ export class AppsHomeView {
     },
     {
       name: 'BPMN Drawer',
-      url: `${window.location.protocol}//${window.location.hostname}:8085/`,
+      url: '/bpmndrawer/',
       description: 'Web-based BPMN 2.0 modeler (bpmn-js) for designing and editing process diagrams.',
     },
     {

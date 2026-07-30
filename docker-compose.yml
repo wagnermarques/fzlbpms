@@ -654,11 +654,16 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: fzl-cloudflared
     restart: unless-stopped
-    # Token-based ("remotely-managed") run: no local config.yml/credentials
-    # file needed — the tunnel's public-hostname routing (fzlbpms.com.br ->
-    # http://fzl-nginx:80) is configured in the Cloudflare Zero Trust
-    # dashboard against this same token, not here.
-    command: tunnel --no-autoupdate run --token ${FZL_CLOUDFLARE_TUNNEL_TOKEN:?}
+    # This tunnel is "locally-managed" (created via the cloudflared CLI, not
+    # the dashboard's token flow) — Cloudflare fixes that type at creation
+    # time, so its Zero Trust dashboard "Routes" tab is permanently read-only
+    # regardless of how the connector is run. Routing (fzlbpms.com.br ->
+    # http://fzl-nginx:80) must come from a local ingress config instead; see
+    # containers/fzl-cloudflared/config.yml. Still authenticates via token —
+    # no credentials-file/tunnel UUID needed for that part.
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run --token ${FZL_CLOUDFLARE_TUNNEL_TOKEN:?}
+    volumes:
+      - ./containers/fzl-cloudflared/config.yml:/etc/cloudflared/config.yml:ro
     networks:
       - fzl-network
 

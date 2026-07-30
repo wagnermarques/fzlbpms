@@ -1,0 +1,15 @@
+# Ingress rules for the fzlbpms Cloudflare Tunnel.
+#
+# This tunnel was created as a "locally-managed" tunnel (via the cloudflared
+# CLI), which Cloudflare treats as a fixed type at creation time — its Zero
+# Trust dashboard "Routes" tab is permanently read-only ("Este túnel é
+# gerenciado localmente...") regardless of how the connector is later run.
+# Routing MUST be defined here, not in the dashboard.
+#
+# Still uses --token for authentication (no credentials-file/tunnel UUID
+# needed here) — this file only supplies the ingress rules that the token
+# flow doesn't otherwise have anywhere to pull from.
+ingress:
+  - hostname: fzlbpms.com.br
+    service: http://fzl-nginx:80
+  - service: http_status:404

@@ -8,6 +8,8 @@ containers/fzl-mongodb/mongodb-data
 containers/fzl-nexus/nexus-data
 containers/fzl-redis/redis-data
 containers/fzl-mysql/mysql-data
+containers/fzl-keycloak/postgres-data
+containers/fzl-postgresql/postgresql-data
 containers/fzl-php8.3-fpm/moodledata
 containers/fzl-superset/superset-db-data
 containers/fzl-superset/redis-data

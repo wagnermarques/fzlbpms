@@ -159,8 +159,8 @@ else
     log "WARNING — Keycloak never became ready; redirect URIs NOT updated. Re-run this script once it's up."
 fi
 
-log "Restarting flowable-ui (picks up the new OIDC issuer URI)..."
-docker compose up -d flowable-ui
+log "Restarting fzl-flowable-ui (picks up the new OIDC issuer URI)..."
+docker compose up -d fzl-flowable-ui
 
 # The issuer URL, redirect URL and cookie-secure flag are all baked into this
 # container's command line from .env, so it has to be recreated, not just

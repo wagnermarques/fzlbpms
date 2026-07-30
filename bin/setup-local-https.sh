@@ -12,7 +12,7 @@
 #     -> trusted by fzl-php8.3-fpm/moodle-oauth2-configurator at container
 #        start (docker-entrypoint.sh: update-ca-certificates), so Moodle's
 #        PHP backend can call https://fzlbpms.local directly.
-#   containers/flowable-ui/certs/mkcert-ca.pem
+#   containers/fzl-flowable-ui/certs/mkcert-ca.pem
 #     -> imported into a writable copy of the JVM truststore at container
 #        start (docker-compose.yml entrypoint), so Flowable's OIDC client
 #        can do the same.
@@ -55,7 +55,7 @@ TRUST_STORES=system,nss mkcert -install
 
 NGINX_CERTS_DIR="containers/fzl-nginx/certs"
 PHP_CERTS_DIR="containers/fzl-php8.3-fpm/certs"
-FLOWABLE_CERTS_DIR="containers/flowable-ui/certs"
+FLOWABLE_CERTS_DIR="containers/fzl-flowable-ui/certs"
 KARAF_CERTS_DIR="containers/fzl-karaf-camel-integration/certs"
 OAUTH2_CERTS_DIR="containers/fzl-oauth2-proxy/certs"
 THEIA_CERTS_DIR="containers/fzl-theia/certs"
@@ -77,7 +77,7 @@ cp "$CAROOT/rootCA.pem" "$OAUTH2_CERTS_DIR/mkcert-ca.crt"
 cp "$CAROOT/rootCA.pem" "$THEIA_CERTS_DIR/mkcert-ca.crt"
 
 log "Done. Restart the affected containers to pick this up:"
-log "  docker compose up -d fzl-nginx fzl-php8.3-fpm flowable-ui fzl-oauth2-proxy fzl-theia"
+log "  docker compose up -d fzl-nginx fzl-php8.3-fpm fzl-flowable-ui fzl-oauth2-proxy fzl-theia"
 log "  docker compose up moodle-oauth2-configurator"
 log "Then add this to /etc/hosts if you haven't already:"
 log "  127.0.0.1 fzlbpms.local"

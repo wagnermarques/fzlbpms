@@ -66,7 +66,7 @@ processes files dropped in `karaf_input_dir`.
 ### BPM engine
 | Service | Image | Ports | Notes |
 |---|---|---|---|
-| `flowable-ui` + `flowable-db` | `flowable/flowable-ui:6.7.2` + postgres:15 | 8080, db on 5435 | **Pinned to 6.7.2** — 6.8.0 has a `DefaultAsyncTaskExecutor` NullPointerException on task execution |
+| `fzl-flowable-ui` + `fzl-flowable-db` | `flowable/flowable-ui:6.7.2` + postgres:15 | 8080, db on 5435 | **Pinned to 6.7.2** — 6.8.0 has a `DefaultAsyncTaskExecutor` NullPointerException on task execution |
 | `fzl-bpmn-drawer` | Custom build | 8085 | BPMN modelling web app |
 
 **Flowable is the chosen engine.** Camunda (service, container image and helper scripts)
@@ -121,7 +121,7 @@ Other container definitions exist but are not (yet) in compose: `fzl-rust-restse
 The "maven templates to create a business process project" goal is implemented by the
 `fzlparent` → `fzlflowable-parent` → `fzlprocess-archetype` chain. The generated
 projects are engine-less: `mvn package` builds the BAR, `mvn deploy` archives it in
-Nexus, `mvn verify -Pdeploy-flowable` deploys it to the `flowable-ui` container.
+Nexus, `mvn verify -Pdeploy-flowable` deploys it to the `fzl-flowable-ui` container.
 Full command-line tutorial: `documentation/bpmns/index.org`.
 
 ## 5. Admin GUI (`src-projects/fzlbpmsadmin`)
@@ -233,7 +233,7 @@ docker compose up --build fzl-nginx fzl-php8.3-fpm fzl-postgresql
 docker compose up --build fzl-karaf-camel-integration fzl-nexus
 
 # BPM + SSO
-docker compose up flowable-db flowable-ui fzl-keycloak-db fzl-keycloak
+docker compose up fzl-flowable-db fzl-flowable-ui fzl-keycloak-db fzl-keycloak
 
 # Admin GUI (host)
 cd src-projects/fzlbpmsadmin/angular-ui && npm install && npm run tauri:dev

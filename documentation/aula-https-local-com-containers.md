@@ -230,7 +230,7 @@ volumes:
 update-ca-certificates
 ```
 
-### 6.2 Container JVM (`flowable-ui`)
+### 6.2 Container JVM (`fzl-flowable-ui`)
 
 A JVM ignora o trust store do sistema operacional: ela usa o keystore
 `$JAVA_HOME/lib/security/cacerts`. Dois obstáculos:
@@ -336,7 +336,7 @@ docker exec fzl-php8.3-fpm sh -c '
   openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt /tmp/leaf.pem'
 
 # A JVM do Flowable importou a CA?
-docker logs flowable-ui 2>&1 | grep "Trusted the local mkcert CA"
+docker logs fzl-flowable-ui 2>&1 | grep "Trusted the local mkcert CA"
 ```
 
 Dica de leitura dos sintomas:

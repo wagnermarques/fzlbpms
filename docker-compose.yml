@@ -363,7 +363,7 @@ services:
     restart: always
     environment:
       - MH_UI_AUTH_FILE=/maildata/auth.txt
-      # host network: web UI must not use its 8080 default (flowable-ui owns it)
+      # host network: web UI must not use its 8080 default (fzl-flowable-ui owns it)
       - SERVER_PORT=${FZL_FAKEMAIL_WEB_PORT:?}
       - MANAGEMENT_SERVER_PORT=${FZL_FAKEMAIL_MGMT_PORT:?}
       - FAKESMTP_PORT=${FZL_FAKEMAIL_SMTP_PORT:?}
@@ -439,9 +439,9 @@ services:
       - fzl-network
 
   # PostgreSQL database for Flowable UI persistence
-  flowable-db:
+  fzl-flowable-db:
     image: postgres:15-alpine
-    container_name: flowable-postgres
+    container_name: fzl-flowable-db
     environment:
       POSTGRES_DB: ${FZL_FLOWABLE_DB_NAME:?}
       POSTGRES_USER: ${FZL_FLOWABLE_DB_USER:?}
@@ -461,16 +461,16 @@ services:
   # Flowable UI: Includes Modeler, Task, Admin, IDM apps in a single container
   # Fixada na versao to 6.7.2, nao usar a versao 6.8.0
   # A DefaultAsyncTaskExecutor não estarta corretamente e lanca uma NullPointerException ao chegar em qualquer task
-  flowable-ui:
+  fzl-flowable-ui:
     image: flowable/flowable-ui:6.7.2
-    container_name: flowable-ui
+    container_name: fzl-flowable-ui
     depends_on:
-      flowable-db:
+      fzl-flowable-db:
         condition: service_healthy
     ports:
       - "${FZL_FLOWABLE_UI_PORT:?}:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://flowable-db:5432/${FZL_FLOWABLE_DB_NAME:?}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://fzl-flowable-db:5432/${FZL_FLOWABLE_DB_NAME:?}
       - SPRING_DATASOURCE_USERNAME=${FZL_FLOWABLE_DB_USER:?}
       - SPRING_DATASOURCE_PASSWORD=${FZL_FLOWABLE_DB_PASSWORD:?}
       - SPRING_DATASOURCE_DRIVER-CLASS-NAME=org.postgresql.Driver
@@ -510,7 +510,7 @@ services:
       # so the entrypoint below builds a writable copy instead — see there
       # for why. Needed for this container's own OIDC discovery/token-
       # exchange calls to https://fzlbpms.local (Keycloak).
-      - ./containers/flowable-ui/certs:/run/mkcert-certs:ro
+      - ./containers/fzl-flowable-ui/certs:/run/mkcert-certs:ro
       # CSVs the moodle-provision-courses process reads (Groovy script task).
       - ./workspaces/fzlcoord/csvs-2026Sem2:/opt/fzlbpms/csvs:ro
     entrypoint:

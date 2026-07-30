@@ -145,14 +145,14 @@ const SERVICE_ACCESS: Record<string, ServiceAccess> = {
     links: [{ label: 'BPMN Drawer', url: 'http://localhost:8085' }],
     info: [],
   },
-  'flowable-postgres': {
+  'fzl-flowable-db': {
     links: [],
     info: [
       'CLI: psql -h localhost -p 5435 -U flowable',
-      'Shell: docker exec -it flowable-postgres psql -U flowable',
+      'Shell: docker exec -it fzl-flowable-db psql -U flowable',
     ],
   },
-  'flowable-ui': {
+  'fzl-flowable-ui': {
     links: [{ label: 'Flowable UI', url: 'http://localhost/flowable-ui' }],
     info: [],
   },

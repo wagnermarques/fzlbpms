@@ -161,7 +161,12 @@ $CFG->wwwroot   = 'http://localhost:8888/MOODLE_404_STABLE';
 //
 // - On Windows systems you might specify something like 'c:\moodledata'
 
-$CFG->dataroot  = '/var/www/moodledata';
+$CFG->dataroot  = '/moodledata';
+
+// TLS terminates at Cloudflare/nginx; PHP only ever sees plain http here.
+// Without this, Moodle doesn't trust X-Forwarded-Proto, treats every
+// request as insecure, and loops trying to "fix" it via redirect().
+$CFG->sslproxy  = true;
 
 //=========================================================================
 // 4. DATA FILES PERMISSIONS

@@ -26,9 +26,9 @@ chown -R www-data:www-data /var/www/html
 fzlecho $PREFIX "Ajustando as permissoes de escrita em /var/www/html"
 chmod -R 777 /var/www/html
 
-fzlecho $PREFIX "Ajustando as permissoes de escrita em /var/www/moodledata"
-chown -R www-data:www-data /var/www/moodledata
-chmod -R 777 /var/www/moodledata
+fzlecho $PREFIX "Ajustando as permissoes de escrita em /moodledata"
+chown -R www-data:www-data /moodledata
+chmod -R 777 /moodledata
 
 fzlecho $PREFIX "Ajustando as permissoes de escrita em /var/www"
 chmod -R 777 /var/www
@@ -37,6 +37,7 @@ fzlecho $PREFIX "Permissoes ajustadas com sucesso!"
 ls -la /var/www/html
 ls -la /var/www
 ls -la /var/
+ls -la /moodledata
 
 
 # Verifica se o comando passado é vazio

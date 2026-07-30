@@ -43,7 +43,7 @@ MOODLE_FULLNAME="${MOODLE_FULLNAME:-fzlbpms Moodle}"
 MOODLE_SHORTNAME="${MOODLE_SHORTNAME:-fzlbpms}"
 
 MOODLE_DIR="${MOODLE_DIR:-/var/www/html/moodle}"
-MOODLEDATA_DIR="${MOODLEDATA_DIR:-/var/www/moodledata}"
+MOODLEDATA_DIR="${MOODLEDATA_DIR:-/moodledata}"
 WEB_USER="${WEB_USER:-www-data}"
 
 log() { echo "[moodle-installer] $*"; }
@@ -174,6 +174,15 @@ install_moodle() {
         --adminpass='${MOODLE_ADMIN_PASS}' \
         --adminemail='${MOODLE_ADMIN_EMAIL}'" "$WEB_USER"
     log "Moodle installed."
+
+    # Moodle's CLI installer has no --sslproxy flag. TLS terminates at
+    # Cloudflare/nginx — PHP only ever sees plain http — so without this,
+    # Moodle doesn't trust X-Forwarded-Proto, treats every request as
+    # insecure, and loops forever trying to "fix" it via redirect().
+    if ! grep -q 'sslproxy' "${MOODLE_DIR}/config.php"; then
+        sed -i "/require_once/i \$CFG->sslproxy = true;" "${MOODLE_DIR}/config.php"
+        log "Patched config.php with \$CFG->sslproxy = true;"
+    fi
 }
 
 purge_caches() {

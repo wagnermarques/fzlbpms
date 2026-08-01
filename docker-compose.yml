@@ -245,6 +245,8 @@ services:
 
   fzl-angular-dev:
     image: fzl-angular-dev:0.0.1
+    # Built locally, never published — see the note on fzl-theia.
+    pull_policy: build
     build:
       context: ./containers/fzl-angular-dev
       dockerfile: Dockerfile
@@ -591,6 +593,9 @@ services:
         THEIA_UID: ${FZL_THEIA_UID:-1000}
         THEIA_GID: ${FZL_THEIA_GID:-1000}
     image: fzl-theia:0.0.1
+    # Built locally, never published: without this compose tries to pull first
+    # and prints an alarming "pull access denied" on every fresh clone.
+    pull_policy: build
     container_name: fzl-theia
     ports:
       # Direct access, bypassing nginx and therefore bypassing SSO — useful

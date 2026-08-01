@@ -1,0 +1,284 @@
+#+TITLE: First run on a fresh clone — what breaks and why
+#+AUTHOR: FzlSoft
+#+OPTIONS: toc:2
+
+What a brand-new clone of this repository needs before
+=./bin/run-stack.sh basic= works, and the four failures that used to happen on
+the very first run (2026-07-31), each with its root cause and the fix now
+committed in the repo.
+
+* 1. TL;DR — the fresh clone recipe
+
+#+begin_src bash
+  git clone git@github.com:wagnermarques/fzlbpms.git
+  cd fzlbpms
+  ./bin/docker-dns-preflight.sh          # optional: 2s DNS sanity check
+  ./bin/run-stack.sh basic               # creates .env, builds, starts
+#+end_src
+
+=.env= is created automatically from =.env.template= on the first run. *Review
+it* — it ships with =changeme= placeholders for every secret.
+
+* 2. The four failures of 2026-07-31
+
+The first run on a fresh clone produced this, in order:
+
+#+begin_example
+  error while interpolating services.fzl-nginx.ports.[]:
+      required variable FZL_NGINX_PORT_HTTP is missing a value        <- (A)
+  ERROR: service 'fzl-theia' in run-stack.toml does not exist
+      in docker-compose.yml                                           <- (B)
+  ! Image fzl-theia:0.0.1  pull access denied for fzl-theia           <- (C)
+  E: Unable to locate package unzip
+      Temporary failure resolving 'deb.debian.org'                    <- (D)
+#+end_example
+
+Only (D) is a real build failure. (B) was a *lie* caused by (A), and (C) is
+cosmetic. They are covered one by one below.
+
+* 3. (A) Missing =.env=
+
+** Symptom
+
+#+begin_example
+  required variable FZL_NGINX_PORT_HTTP is missing a value
+#+end_example
+
+** Cause
+
+=.env= is gitignored (=.gitignore= line =.env=) because it holds secrets, so a
+fresh clone has none. =docker-compose.yml= declares the important variables as
+=${VAR:?}=, which makes compose fail loudly rather than silently start a broken
+stack — good design, but nothing was creating the file.
+
+A second, hidden half of the same problem: =.env.template= had *drifted* from
+=docker-compose.yml=. Even after copying the template, the run died on
+=FZL_KARAF_REST_PORT=, which the template never had.
+
+** Fix (committed)
+
+- =bin/run-stack.sh= now creates =.env= from =.env.template= when it is missing,
+  printing a notice telling you to review the secrets.
+- =.env.template= gained the missing =Karaf / Camel= section
+  (=FZL_KARAF_REST_PORT=, =FZL_KARAF_MOODLE_REST_PORT=,
+  =FZL_CAMEL_CLIENT_SECRET=).
+
+** Keeping the template honest
+
+Run this after adding any =${...}= to =docker-compose.yml= — it lists variables
+compose requires that the template does not define:
+
+#+begin_src bash
+  python3 - <<'EOF'
+  import re
+  compose = open("docker-compose.yml").read()
+  required = set(re.findall(r'\$\{([A-Z0-9_]+):\?', compose))
+  tpl = set(re.findall(r'^\s*([A-Z0-9_]+)=', open(".env.template").read(), re.M))
+  missing = sorted(required - tpl)
+  print("missing from .env.template:", missing or "none")
+  EOF
+#+end_src
+
+* 4. (B) "service 'fzl-theia' does not exist in docker-compose.yml"
+
+** Symptom
+
+A service that plainly *is* in =docker-compose.yml= is reported as unknown.
+
+** Cause
+
+=bin/run-stack.sh= validated the service list like this:
+
+#+begin_src bash
+  mapfile -t KNOWN < <(cd "$PROJECT_DIR" && docker compose config --services)
+#+end_src
+
+When =docker compose config= fails — which is exactly what (A) did — the process
+substitution produces *no output* and its exit status is invisible to
+=mapfile=, even under =set -e=. =KNOWN= ends up empty, so the first service in
+the list is reported as "does not exist". The message was pure collateral
+damage from (A).
+
+** Fix (committed)
+
+The output is captured into a variable so the failure is caught and the *real*
+compose error is printed:
+
+#+begin_src bash
+  if ! COMPOSE_OUTPUT="$(cd "$PROJECT_DIR" && docker compose config --services 2>&1)"; then
+      echo "ERROR: 'docker compose config' failed — fix docker-compose.yml or .env first:" >&2
+      echo "$COMPOSE_OUTPUT" >&2
+      exit 1
+  fi
+  mapfile -t KNOWN <<< "$COMPOSE_OUTPUT"
+#+end_src
+
+*General lesson*: =cmd < <(other)= hides =other='s exit status. Capture, check,
+then split.
+
+* 5. (C) "pull access denied for fzl-theia"
+
+** Symptom
+
+#+begin_example
+  ! Image fzl-theia:0.0.1  pull access denied for fzl-theia,
+    repository does not exist or may require 'docker login'
+#+end_example
+
+** Cause
+
+=fzl-theia= and =fzl-angular-dev= declare *both* =build:= and a custom
+=image:= tag. Compose then tries to pull that tag first and only builds after
+the pull fails. The image is local-only and never published, so the pull can
+never succeed. Harmless — but it looks like an authentication problem, which it
+is not.
+
+** Fix (committed)
+
+=pull_policy: build= on both services, so compose goes straight to building.
+
+* 6. (D) "Temporary failure resolving 'deb.debian.org'" — the real one
+
+** Symptom
+
+Image *pulls* all succeed (postgres, keycloak, cloudflared, ...), then every
+=apt-get update= inside a build fails after ~75 s:
+
+#+begin_example
+  5.189  Ign:1 http://deb.debian.org/debian trixie InRelease
+  10.19  Ign:2 ...
+  65.25  Err:1 http://deb.debian.org/debian trixie InRelease
+  65.25    Temporary failure resolving 'deb.debian.org'
+  E: Unable to locate package unzip
+  target moodle-installer: failed to solve: ... exit code: 100
+#+end_example
+
+Note the *5-second steps* between attempts: that is a DNS query timing out,
+three times, per index file.
+
+** Cause
+
+Docker copies the host's nameserver list into containers *and into BuildKit
+build sandboxes*, verbatim — without the failover logic =systemd-resolved= has.
+On this machine:
+
+#+begin_src bash
+  $ resolvectl status | grep -A2 'Link 2'
+  Current DNS Server: 8.8.8.8
+        DNS Servers: 200.145.1.1 8.8.8.8
+#+end_src
+
+=200.145.1.1= (the UNESP campus resolver) is *first* in the list, and
+=systemd-resolved= had already failed over away from it — which is why
+=Current DNS Server= is the second one. Consequences:
+
+| Who resolves          | How                                     | Result when 200.145.1.1 is unreachable |
+|-----------------------+-----------------------------------------+-----------------------------------------|
+| =dockerd= (pulls)     | host resolver → systemd-resolved         | works — resolved fails over to 8.8.8.8  |
+| build container (apt) | =/etc/resolv.conf= copied in, no failover | 5 s timeout per query → build dies      |
+
+That asymmetry is the whole confusion: "the network is obviously fine, look,
+it pulled six images" — while the builds could not resolve anything.
+
+Off the campus network (home wifi, a different router, a VPN drop), the first
+resolver is simply dead, and every fresh clone will fail the same way.
+
+** Fix — pin public DNS for Docker (do this once per machine)
+
+#+begin_src bash
+  ./bin/docker-dns-preflight.sh --fix
+#+end_src
+
+It writes =dns= into =/etc/docker/daemon.json= (keeping the existing keys) and
+restarts Docker:
+
+#+begin_src js
+  {
+    "storage-driver": "btrfs",
+    "features": { "containerd-snapshotter": false },
+    "dns": ["8.8.8.8", "1.1.1.1"]
+  }
+#+end_src
+
+From then on containers and builds use those resolvers regardless of what the
+host link offers. This is a *host* setting, not a repo setting — every new
+machine needs it once.
+
+** Prevention inside the repo (committed)
+
+- =bin/docker-dns-preflight.sh= — sends one real UDP DNS query (2 s timeout) to
+  each nameserver Docker would hand to a build, and warns *before* a doomed
+  3-minute build:
+  #+begin_example
+    DNS preflight: 200.145.1.1        ok
+    DNS preflight: 8.8.8.8            ok
+  #+end_example
+  It reproduces Docker's own selection rules: an explicit =dns= in
+  =daemon.json= wins; otherwise =/etc/resolv.conf=, skipped in favour of
+  =/run/systemd/resolve/resolv.conf= when it only lists =127.x= stubs.
+  Exit codes: =0= fine (or =--strict= not given), =1= only with =--strict=.
+- =bin/run-stack.sh= calls it automatically before =docker compose up=
+  (never fatal — a warning, since your images may already be built).
+- =containers/fzl-php8.3-fpm/Dockerfile= and =containers/fzl-theia/Dockerfile=
+  now write =/etc/apt/apt.conf.d/99fzl-retries= (=Acquire::Retries "5"= plus
+  20 s timeouts) before their =apt-get=, so a *brief* hiccup retries instead of
+  killing the build. This does not save you from a resolver that is fully down —
+  only the =daemon.json= pin does.
+
+  =containers/fzl-karaf-camel-integration/Dockerfile= was deliberately left
+  untouched, so its already-built 1.5 GB image is not invalidated. Add the same
+  =RUN printf ... 99fzl-retries= line above its first =apt-get= next time that
+  image needs rebuilding anyway.
+
+** Related
+
+The 2026-07-28 outage in [[file:host-network-and-recovery.org][host-network-and-recovery.org]] is the same family of
+problem seen from the other side (a router that changed its LAN address, with
+IPv6 masking the dead IPv4 path). If DNS *and* pulls fail, start there instead.
+
+* 7. Verifying a fresh clone without cloning
+
+The whole first-run path can be rehearsed in a scratch directory — it does not
+need Docker to actually build anything:
+
+#+begin_src bash
+  SCRATCH=$(mktemp -d)
+  mkdir -p "$SCRATCH/bin"
+  cp bin/run-stack.sh bin/docker-dns-preflight.sh "$SCRATCH/bin/"
+  cp run-stack.toml .env.template docker-compose.yml "$SCRATCH/"
+  "$SCRATCH/bin/run-stack.sh" basic --dry-run
+#+end_src
+
+Expected on a repo in good shape:
+
+#+begin_example
+  NOTE: .env did not exist — created it from .env.template.
+        Review domains, ports and secrets in .../.env before
+        exposing this stack outside your machine.
+   ==> docker compose up -d fzl-theia fzl-oauth2-proxy fzl-nginx ...
+#+end_example
+
+Any =required variable ... is missing a value= here means =.env.template= has
+drifted again — see §3.
+
+* 8. Other things a new machine needs
+
+| Requirement                       | Check                                       | Where                                  |
+|-----------------------------------+---------------------------------------------+-----------------------------------------|
+| Docker + compose v2               | =docker compose version=                    | =bin/fzlbpms-fedora-install.sh=, =ansible/= |
+| User in the =docker= group        | =id -nG \| grep docker=                      | log out/in after adding                |
+| python3 ≥ 3.11 (=tomllib=)        | =python3 -c 'import tomllib'=               | needed by =bin/run-stack.sh=           |
+| DNS pinned for Docker             | =./bin/docker-dns-preflight.sh=             | §6                                     |
+| =fzlbpms.local= in =/etc/hosts=   | =getent hosts fzlbpms.local=                | for the local SSO/domain flows         |
+| Ports 80/443 free                 | =ss -lntp 'sport = :80'=                    | =FZL_NGINX_PORT_HTTP= in =.env=        |
+
+* 9. File map of this fix
+
+| File                                        | Change                                                        |
+|---------------------------------------------+----------------------------------------------------------------|
+| =bin/run-stack.sh=                          | =.env= bootstrap; real compose errors; DNS preflight call      |
+| =bin/docker-dns-preflight.sh=               | New — DNS check (=--strict=) and =--fix= for =daemon.json=      |
+| =.env.template=                             | Added the missing =Karaf / Camel= variables                    |
+| =docker-compose.yml=                        | =pull_policy: build= on =fzl-theia=, =fzl-angular-dev=          |
+| =containers/fzl-php8.3-fpm/Dockerfile=      | apt retries before the package install                         |
+| =containers/fzl-theia/Dockerfile=           | apt retries in both stages                                     |

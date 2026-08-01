@@ -5,10 +5,26 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOML_FILE="$PROJECT_DIR/run-stack.toml"
+ENV_FILE="$PROJECT_DIR/.env"
+ENV_TEMPLATE="$PROJECT_DIR/.env.template"
 
 if [ ! -f "$TOML_FILE" ]; then
     echo "ERROR: $TOML_FILE not found" >&2
     exit 1
+fi
+
+# A fresh clone has no .env — it is gitignored. Without it every compose command
+# dies with "required variable FZL_NGINX_PORT_HTTP is missing a value", so seed
+# it from the template instead of making each new clone fail first.
+if [ ! -f "$ENV_FILE" ]; then
+    if [ ! -f "$ENV_TEMPLATE" ]; then
+        echo "ERROR: neither .env nor .env.template found in $PROJECT_DIR" >&2
+        exit 1
+    fi
+    cp "$ENV_TEMPLATE" "$ENV_FILE"
+    echo "NOTE: .env did not exist — created it from .env.template."
+    echo "      Review domains, ports and secrets in $ENV_FILE before"
+    echo "      exposing this stack outside your machine."
 fi
 
 MODE="up"
@@ -87,8 +103,16 @@ if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "fzl-cloudflared"; then
     SERVICES+=("fzl-cloudflared")
 fi
 
-# Validate service names against docker-compose.yml before doing anything
-mapfile -t KNOWN < <(cd "$PROJECT_DIR" && docker compose config --services)
+# Validate service names against docker-compose.yml before doing anything.
+# 'docker compose config' also fails when .env is incomplete; capture its status
+# so that surfaces as the real error instead of the misleading
+# "service 'x' in run-stack.toml does not exist in docker-compose.yml".
+if ! COMPOSE_OUTPUT="$(cd "$PROJECT_DIR" && docker compose config --services 2>&1)"; then
+    echo "ERROR: 'docker compose config' failed — fix docker-compose.yml or .env first:" >&2
+    echo "$COMPOSE_OUTPUT" >&2
+    exit 1
+fi
+mapfile -t KNOWN <<< "$COMPOSE_OUTPUT"
 for svc in "${SERVICES[@]}"; do
     if ! printf '%s\n' "${KNOWN[@]}" | grep -qx "$svc"; then
         echo "ERROR: service '$svc' in run-stack.toml does not exist in docker-compose.yml" >&2
@@ -99,6 +123,13 @@ done
 if [ "$MODE" = "down" ]; then
     CMD=(docker compose stop "${SERVICES[@]}")
 else
+    # Images are built on a fresh clone, and every 'apt-get update' in those
+    # builds uses the nameservers Docker copies from the host — with no
+    # failover. Catch a dead first resolver here instead of after a 3-minute
+    # build that ends in "Temporary failure resolving 'deb.debian.org'".
+    if [ "$DRY_RUN" != "1" ] && [ -x "$PROJECT_DIR/bin/docker-dns-preflight.sh" ]; then
+        "$PROJECT_DIR/bin/docker-dns-preflight.sh" || true
+    fi
     CMD=(docker compose up -d "${SERVICES[@]}")
 fi
 

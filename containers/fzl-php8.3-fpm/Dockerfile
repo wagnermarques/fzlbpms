@@ -2,6 +2,13 @@ FROM php:8.3-fpm
 
 LABEL maintainer="wagnerdocri@gmail.com"
 
+# 0. Um hiccup de rede/DNS no host derruba o build inteiro no apt-get abaixo
+#    ("Temporary failure resolving 'deb.debian.org'"). Reter antes de desistir.
+#    Isso NAO cobre DNS totalmente fora do ar — para isso veja
+#    ./bin/docker-dns-preflight.sh e documentation/fresh-clone-first-run.org
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
+    > /etc/apt/apt.conf.d/99fzl-retries
+
 # 1. Instala pacotes do sistema (lib*-dev sao dependencias de compilacao de extensoes PHP)
 #    Inclui dependencias para Composer, Git, e todas as extensoes PHP comuns para Moodle
 RUN apt-get update && apt-get install -y --no-install-recommends \

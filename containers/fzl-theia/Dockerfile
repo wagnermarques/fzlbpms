@@ -7,6 +7,11 @@
 # --- Build stage: install deps, bundle the frontend, fetch the VS Code plugins ---
 FROM node:22-bookworm AS build
 
+# Retry apt fetches: a brief DNS/network hiccup on the host otherwise kills the
+# whole (long) build. See ./bin/docker-dns-preflight.sh for the DNS side of it.
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
+    > /etc/apt/apt.conf.d/99fzl-retries
+
 # python3/make/g++ build node-pty & friends from source; libsecret is needed by
 # keytar, which @theia/core pulls in for credential storage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -35,6 +40,9 @@ RUN yarn build && yarn download:plugins
 
 # --- Runtime stage ---
 FROM node:22-bookworm-slim
+
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
+    > /etc/apt/apt.conf.d/99fzl-retries
 
 # git + a real shell make the built-in terminal and SCM view actually useful;
 # libsecret-1-0 is the runtime half of the keytar dependency above.

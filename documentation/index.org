@@ -6,6 +6,11 @@
   project from the Maven archetype, edit the BPMN, archive it in Nexus and
   deploy it to the Flowable runtime.
 - [[./getting-started.org][Getting started]]
+- [[file:fresh-clone-first-run.org][First run on a fresh clone — what breaks and why]] —
+  the =.env= bootstrap, the misleading "service does not exist" error, the
+  "pull access denied" noise, and the Docker-build DNS failure
+  ("Temporary failure resolving 'deb.debian.org'" while image pulls work
+  fine), each with root cause and the fix now in the repo.
 - [[file:classesplan/index.org][Class Plan — Login Widget, Camel BFF, Keycloak & Reverse-Proxy Debugging]] —
   6-session course built from a real feature + real production bug fixed in
   this repo, with free study links for students.

@@ -110,10 +110,19 @@ done
 
 update_client() {
     # $1 = clientId, $2 = JSON array of redirectUris, $3 = JSON array of webOrigins ('' = leave as-is)
-    local client_id="$1" redirects_json="$2" origins_json="$3" uuid
-    uuid=$(curl -sf -H "Authorization: Bearer ${KC_TOKEN}" \
-        "${KC_BASE}/admin/realms/fzlbpms/clients?clientId=${client_id}" \
-        | python3 -c 'import sys,json;l=json.load(sys.stdin);print(l[0]["id"] if l else "")')
+    local client_id="$1" redirects_json="$2" origins_json="$3" uuid resp
+    # Capture the body first: 'curl -sf' prints nothing on a non-2xx (e.g. the
+    # realm doesn't exist yet), and feeding that empty string straight into
+    # json.load() throws a raw traceback. Parse defensively instead.
+    resp=$(curl -sf -H "Authorization: Bearer ${KC_TOKEN}" \
+        "${KC_BASE}/admin/realms/fzlbpms/clients?clientId=${client_id}") || resp=""
+    uuid=$(printf '%s' "$resp" | python3 -c '
+import sys, json
+try:
+    l = json.load(sys.stdin)
+    print(l[0]["id"] if l else "")
+except Exception:
+    print("")')
     if [ -z "$uuid" ]; then
         log "WARNING — Keycloak client '${client_id}' not found (Camel bootstrap not run yet?); skipping."
         return 0
@@ -138,7 +147,24 @@ if [ -n "$KC_READY" ]; then
         --data-urlencode "username=${KC_ADMIN_USER}" \
         --data-urlencode "password=${KC_ADMIN_PASS}" \
         | python3 -c 'import sys,json;print(json.load(sys.stdin).get("access_token",""))') || KC_TOKEN=""
+    # The realm is provisioned separately (by fzl-karaf-camel-integration), so
+    # it may not exist when this runs. Probe it before touching clients: a
+    # missing realm otherwise made every update_client below fail deep inside
+    # a python json.load() with a raw traceback.
     if [ -n "$KC_TOKEN" ]; then
+        REALM_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${KC_TOKEN}" "${KC_BASE}/admin/realms/fzlbpms")
+    else
+        REALM_CODE="no-token"
+    fi
+    if [ -z "$KC_TOKEN" ]; then
+        log "WARNING — couldn't get a Keycloak admin token; redirect URIs NOT updated. Re-run this script once Keycloak is healthy."
+    elif [ "$REALM_CODE" != "200" ]; then
+        log "WARNING — the 'fzlbpms' realm does not exist yet (HTTP ${REALM_CODE}); redirect URIs NOT updated."
+        log "          It is provisioned by fzl-karaf-camel-integration (the [KC-SETUP]"
+        log "          route, ~40s after Karaf boots). Confirm that container is healthy"
+        log "          and its blueprint deployed, then re-run this script."
+    else
         update_client "$MOODLE_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/moodle/admin/oauth2callback.php\",\"http://localhost/moodle/admin/oauth2callback.php\"]" \
             ""
@@ -152,8 +178,6 @@ if [ -n "$KC_READY" ]; then
         update_client "$THEIA_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/oauth2/callback\",\"http://localhost/oauth2/callback\"]" \
             ""
-    else
-        log "WARNING — couldn't get a Keycloak admin token; redirect URIs NOT updated. Re-run this script once Keycloak is healthy."
     fi
 else
     log "WARNING — Keycloak never became ready; redirect URIs NOT updated. Re-run this script once it's up."

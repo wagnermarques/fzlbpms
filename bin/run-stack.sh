@@ -29,6 +29,7 @@ fi
 
 MODE="up"
 DRY_RUN=0
+BUILD=1
 STACKS=()
 
 for arg in "$@"; do
@@ -36,6 +37,8 @@ for arg in "$@"; do
         --list|-l)    MODE="list" ;;
         --down|-d)    MODE="down" ;;
         --dry-run|-n) DRY_RUN=1 ;;
+        --build|-b)   BUILD=1 ;;
+        --no-build)   BUILD=0 ;;
         --help|-h)
             sed -n '2,15p' "$TOML_FILE" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -123,6 +126,23 @@ done
 if [ "$MODE" = "down" ]; then
     CMD=(docker compose stop "${SERVICES[@]}")
 else
+    # A bind mount whose source FILE does not exist yet makes Docker create it
+    # as a root-owned *directory* — which then blocks bin/setup-local-https.sh
+    # from writing the real CA there (it can't overwrite a directory, and root
+    # owns it). Unlike the other services, oauth2-proxy and theia mount the
+    # mkcert CA as a single file, so guarantee those sources exist as (empty)
+    # files first; setup-local-https.sh fills them with the real CA later.
+    if [ "$DRY_RUN" != "1" ]; then
+        for cert in \
+            "$PROJECT_DIR/containers/fzl-oauth2-proxy/certs/mkcert-ca.crt" \
+            "$PROJECT_DIR/containers/fzl-theia/certs/mkcert-ca.crt"; do
+            if [ ! -e "$cert" ]; then
+                mkdir -p "$(dirname "$cert")"
+                : > "$cert"
+            fi
+        done
+    fi
+
     # Images are built on a fresh clone, and every 'apt-get update' in those
     # builds uses the nameservers Docker copies from the host — with no
     # failover. Catch a dead first resolver here instead of after a 3-minute
@@ -130,7 +150,16 @@ else
     if [ "$DRY_RUN" != "1" ] && [ -x "$PROJECT_DIR/bin/docker-dns-preflight.sh" ]; then
         "$PROJECT_DIR/bin/docker-dns-preflight.sh" || true
     fi
+
+    # Rebuild by default: 'docker compose up' never rebuilds an existing image
+    # on its own, so editing a Dockerfile/entrypoint/conf silently keeps the
+    # OLD image running — which has repeatedly shipped stale nginx/karaf images
+    # here. Docker's layer cache makes this near-free when nothing changed.
+    # Pass --no-build to skip it (e.g. to start existing images while offline).
     CMD=(docker compose up -d "${SERVICES[@]}")
+    if [ "$BUILD" = "1" ]; then
+        CMD=(docker compose up -d --build "${SERVICES[@]}")
+    fi
 fi
 
 echo " ==> ${CMD[*]}"

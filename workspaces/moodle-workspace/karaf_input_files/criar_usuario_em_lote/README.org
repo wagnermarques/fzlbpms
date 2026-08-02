@@ -1,0 +1,1 @@
+deposite um csv com campos correto para criar os usuarios em lote no moodle

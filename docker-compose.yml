@@ -678,6 +678,34 @@ services:
     networks:
       - fzl-network
 
+  # Orbeon Forms Community Edition (LGPL) — open-source forms platform (visual
+  # Form Builder + Form Runner). Built locally from the CE WAR (Orbeon images
+  # only its commercial PE). Reached at https://fzlbpms.local/orbeon/. Form
+  # definitions and data persist in fzl-postgresql (database 'orbeon', created
+  # and migrated by the container entrypoint). See containers/fzl-orbeon/README.
+  fzl-orbeon:
+    build:
+      context: ./containers/fzl-orbeon
+    image: fzl-orbeon:0.0.1
+    # Built locally, never published — go straight to building (see fzl-theia).
+    pull_policy: build
+    container_name: fzl-orbeon
+    ports:
+      # Direct access (dev), bypassing nginx + SSO. Reach it normally at
+      # https://fzlbpms.local/orbeon/. Do not expose this port off the machine.
+      - "${FZL_ORBEON_PORT:-8890}:8080"
+    environment:
+      FZL_POSTGRES_USER: ${FZL_POSTGRES_USER:?}
+      FZL_POSTGRES_PASSWORD: ${FZL_POSTGRES_PASSWORD:?}
+      FZL_ORBEON_DB_NAME: ${FZL_ORBEON_DB_NAME:-orbeon}
+      FZL_ORBEON_CRYPTO_PASSWORD: ${FZL_ORBEON_CRYPTO_PASSWORD:?}
+    depends_on:
+      fzl-postgresql:
+        condition: service_healthy
+    networks:
+      - fzl-network
+    restart: unless-stopped
+
 networks:
   fzl-network:
     driver: bridge

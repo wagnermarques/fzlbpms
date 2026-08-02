@@ -1,0 +1,31 @@
+<!-- Orbeon Forms configuration (properties-local.xml).
+     Rendered into the exploded WAR by docker-entrypoint-fzl.sh; only
+     ${ORBEON_CRYPTO_PASSWORD} is substituted from the environment.
+     Reference: https://doc.orbeon.com/configuration/properties -->
+<properties
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:oxf="http://www.orbeon.com/oxf/processors"
+    xmlns:fr="http://orbeon.org/oxf/xml/form-runner"
+    xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+>
+
+    <!-- Required. Encryption password for Orbeon; injected from
+         FZL_ORBEON_CRYPTO_PASSWORD by the container entrypoint. -->
+    <property
+        as="xs:string"
+        name="oxf.crypto.password"
+        value="${ORBEON_CRYPTO_PASSWORD}"/>
+
+    <!-- Persist ALL form definitions and data (every app/form/version = *.*.*)
+         in PostgreSQL, via the container-managed datasource named 'orbeon'
+         (Tomcat Resource jdbc/orbeon, see context.xml). -->
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.provider.*.*.*"
+        value="postgresql"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.postgresql.datasource"
+        value="orbeon"/>
+
+</properties>

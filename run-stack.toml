@@ -68,9 +68,13 @@ services = ["fzl-mongodb", "fzl-redis"]
 description = "Cloudflare Tunnel — exposes fzl-nginx as https://fzlbpms.com.br"
 services = ["fzl-cloudflared"]
 
+[stacks.forms]
+description = "Orbeon Forms — open-source visual form builder + runner"
+services = ["fzl-orbeon"]
+
 [stacks.fzlbpms]
 description = "Everything the fzlbpms platform needs day-to-day"
-includes = ["web", "integration", "bpm", "sso", "ide"]
+includes = ["web", "integration", "bpm", "sso", "ide", "forms"]
 services = ["fzl-fakemail"]
 
 [stacks.all]

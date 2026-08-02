@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Rendered to $CATALINA_HOME/conf/context.xml by docker-entrypoint-fzl.sh.
+     Only the ${ORBEON_*} placeholders are substituted (envsubst); Tomcat's own
+     ${catalina.base} is left intact. -->
+<Context>
+    <WatchedResource>WEB-INF/web.xml</WatchedResource>
+    <WatchedResource>${catalina.base}/conf/web.xml</WatchedResource>
+
+    <!-- Trust X-Forwarded-* from fzl-nginx (the Docker bridge subnets) so
+         Orbeon builds correct https URLs when reached via
+         https://fzlbpms.local/orbeon/ or the Cloudflare tunnel. -->
+    <Valve className="org.apache.catalina.valves.RemoteIpValve"
+           remoteIpHeader="X-Forwarded-For"
+           protocolHeader="X-Forwarded-Proto"
+           internalProxies="172\.\d+\.\d+\.\d+|127\.\d+\.\d+\.\d+"/>
+
+    <!-- Orbeon Forms relational persistence datasource. Orbeon looks it up as
+         java:comp/env/jdbc/orbeon; properties-local.xml points the postgresql
+         provider at the datasource named 'orbeon'. -->
+    <Resource name="jdbc/orbeon"
+              auth="Container"
+              type="javax.sql.DataSource"
+              driverClassName="org.postgresql.Driver"
+              url="jdbc:postgresql://${ORBEON_DB_HOST}:${ORBEON_DB_PORT}/${ORBEON_DB_NAME}"
+              username="${ORBEON_DB_USER}"
+              password="${ORBEON_DB_PASSWORD}"
+              maxTotal="20" maxIdle="5" maxWaitMillis="10000"
+              testOnBorrow="true" validationQuery="SELECT 1"/>
+</Context>

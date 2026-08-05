@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FzlBPMS custom feature: Apache Felix Gogo command bundle, baked into the
+  Karaf image at build time (this file lives under custom_karaf_etc/, which the
+  Dockerfile COPYs into $KARAF_HOME/etc/). Registered in
+  org.apache.karaf.features.cfg via featuresRepositories + featuresBoot, so the
+  bundle is provisioned automatically on first boot — no manual
+  `feature:install` from the client is needed.
+
+  Scope: the *simple* gogo add-on — just org.apache.felix.gogo.command, which
+  layers the extra Felix `gogo:` scope commands (lb, grep, ...) on top of the
+  gogo.runtime that Karaf's own console already provides and starts (via the
+  standard `shell` feature already in featuresBoot).
+
+  Intentionally NOT included:
+    - gogo.runtime : already present via Karaf's console; a second copy puts two
+                     Gogo CommandProcessors on the framework and breaks it.
+    - gogo.shell   : Felix's own interactive shell competes with Karaf's console
+                     for stdin. If you ever want it, add a <bundle> for
+                     mvn:org.apache.felix/org.apache.felix.gogo.shell/1.1.4 to a
+                     new feature and boot that instead.
+
+  Version is compatible with the gogo.runtime 1.1.x that Karaf 4.4.7 provides.
+-->
+<features name="fzl-gogo-1.0.0"
+         xmlns="http://karaf.apache.org/xmlns/features/v1.6.0">
+
+    <feature name="fzl-gogo-command" version="1.1.0"
+             description="Apache Felix Gogo command bundle (gogo: scope commands)">
+        <bundle>mvn:org.apache.felix/org.apache.felix.gogo.command/1.1.2</bundle>
+    </feature>
+
+</features>

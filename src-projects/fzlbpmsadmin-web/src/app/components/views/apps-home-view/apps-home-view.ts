@@ -42,6 +42,11 @@ export class AppsHomeView {
       description: 'Web-based BPMN 2.0 modeler (bpmn-js) for designing and editing process diagrams.',
     },
     {
+      name: 'Orbeon Forms',
+      url: '/orbeon/',
+      description: 'Open-source forms platform (Community Edition) — visual Form Builder and Form Runner for process start forms and data collection.',
+    },
+    {
       name: 'Moodle',
       url: '/moodle',
       description: 'Learning Management System (LMS) for educational workflows.',

@@ -28,4 +28,64 @@
         name="oxf.fr.persistence.postgresql.datasource"
         value="orbeon"/>
 
+    <!-- Orbeon 2025.1 core ships MORE-SPECIFIC defaults that pin its own
+         built-in apps to the bundled sqlite provider, and those override the
+         *.*.* wildcard above. We don't configure sqlite, so leaving them would
+         trigger the "database configuration is incomplete" banner. Redirect
+         them to PostgreSQL too. (See properties-form-runner.xml in
+         orbeon-core.jar, lines 405-406.) -->
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.provider.orbeon.*.form"
+        value="postgresql"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.provider.orbeon-features.*.form"
+        value="postgresql"/>
+
+    <!-- Language: run the whole Form Runner + Form Builder UI in Portuguese.
+         Orbeon ships Portuguese as the `pt` code (fr-resources-pt.xml /
+         fb-resources-pt.xml); there is no separate `pt-BR` UI bundle, so `pt`
+         IS the Brazilian/Portuguese translation.
+
+         Two default-language properties are needed:
+           - `oxf.fr.default-language.*.*`  -> forms and Form Builder (app/form
+             scoped pages).
+           - `oxf.fr.default-language`      -> the top-level Orbeon Forms Home
+             (/fr/, mode=landing) which passes no app/form, so it ignores the
+             *.*-scoped one and reads this bare property.
+
+         `available-languages` restricts the language selector to Portuguese
+         (no language switcher). To allow multilingual forms again, widen the
+         available-languages values back to e.g. "pt en" or the shipped default
+         "en es fr it de pt sv fi nl da ar". -->
+    <property
+        as="xs:string"
+        name="oxf.fr.default-language"
+        value="pt"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.default-language.*.*"
+        value="pt"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.available-languages.*.*"
+        value="pt"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.available-languages"
+        value="pt"/>
+
+    <!-- Optional passwords Orbeon flags as "not strong enough" in the log.
+         Reuse the injected crypto password (already scored 4/4) so the
+         configuration banner clears completely. -->
+    <property
+        as="xs:string"
+        name="oxf.fr.access-token.password"
+        value="${ORBEON_CRYPTO_PASSWORD}"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.field-encryption.password"
+        value="${ORBEON_CRYPTO_PASSWORD}"/>
+
 </properties>

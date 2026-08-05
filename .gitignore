@@ -3,6 +3,8 @@ containers/fzl-karaf-camel-integration/downloads/
 
 # Diretorios gerados por sistemas operacionais
 containers/fzl-karaf-camel-integration/karaf-data/
+# Timestamped runtime-data backups made by bin/backup-karaf-data.sh
+containers/fzl-karaf-camel-integration/karaf-data.bak-*/
 containers/fzl-elasticsearch/es-data
 containers/fzl-mongodb/mongodb-data
 containers/fzl-nexus/nexus-data

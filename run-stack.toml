@@ -26,7 +26,7 @@ description = "the basics"
 # auth_request against the proxy, so starting the IDE without it makes
 # /theia/ answer 500 rather than simply being unauthenticated.
 includes = ["ide"]
-services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-postgresql", "moodle-installer", "moodle-webservice-configurator", "fzl-karaf-camel-integration", "fzl-keycloak-db", "fzl-keycloak", "fzl-flowable-db", "fzl-flowable-ui"]
+services = ["fzl-nginx", "fzl-php8.3-fpm", "fzl-postgresql", "moodle-installer", "moodle-webservice-configurator", "fzl-karaf-camel-integration", "fzl-keycloak-db", "fzl-keycloak", "fzl-flowable-db", "fzl-flowable-ui", "fzl-orbeon"]
 
 [stacks.web]
 description = "Web entrypoint: nginx + php + databases (moodle, yii2 apps)"

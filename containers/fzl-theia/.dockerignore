@@ -8,3 +8,10 @@ gen-webpack.config.js
 gen-webpack.node.config.js
 .theia
 certs
+
+# Vendored eclipse-theia/theia reference checkout (own .git, own
+# node_modules, thousands of files) — the build never reads from it, the
+# Dockerfile clones its own copy fresh instead. Excluding it here keeps the
+# build context small; without this, `COPY . .` would ship it into the build
+# stage for nothing.
+theia

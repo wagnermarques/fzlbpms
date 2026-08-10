@@ -583,6 +583,12 @@ services:
   # logs in. Access is gated by fzl-oauth2-proxy below — a browser IDE is a
   # remote shell on fzl-network, so it is deliberately NOT open to the realm
   # at large, only to holders of the 'theia-user' role.
+  #
+  # Custom-plugin workflow: write a plugin under
+  # src-projects/fzl-theia-plugins/<name> (visible inside the IDE itself, see
+  # the volume below), run bin/theia/build-plugins.sh to package it to a
+  # .vsix in src-projects/fzl-theia-plugins-dist/, then
+  # `docker compose restart fzl-theia` to load it — no image rebuild needed.
   fzl-theia:
     build:
       context: ./containers/fzl-theia
@@ -605,6 +611,14 @@ services:
       # Scoped to ./workspaces on purpose: the repo root holds .env and its
       # secrets, and everyone with IDE access would be able to read it.
       - ./workspaces:/home/workspace:rw
+      # Plugin sources you're actively writing, mounted as a subpath of the
+      # workspace bind mount above (Docker mounts nest correctly) so they
+      # show up directly in Theia's own file explorer for editing.
+      - ./src-projects/fzl-theia-plugins:/home/workspace/fzl-theia-plugins:rw
+      # Built .vsix output (see bin/theia/build-plugins.sh) — this is the
+      # second THEIA_DEFAULT_PLUGINS local-dir source (see Dockerfile).
+      # Restart the container to pick up anything new here; no rebuild needed.
+      - ./src-projects/fzl-theia-plugins-dist:/home/custom-plugins:rw
       - theia_user_data:/home/theia/.theia
       # The container runs as non-root, so it can't run update-ca-certificates
       # at start. Instead the CA is handed to Node directly via

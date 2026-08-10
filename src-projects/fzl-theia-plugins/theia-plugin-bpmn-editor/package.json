@@ -1,0 +1,92 @@
+{
+  "name": "theia-plugin-bpmn-editor",
+  "displayName": "fzlbpms BPMN Editor",
+  "description": "BPMN 2.0 diagram editor (bpmn-js) as a VS Code custom editor, for the fzlbpms Theia IDE",
+  "version": "0.2.0",
+  "publisher": "fzlsoft",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "bpmn",
+    "bpmn-js",
+    "process-modeling",
+    "theia",
+    "flowable"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fzlsoft/fzlbpms.git",
+    "directory": "src-projects/fzl-theia-plugins/theia-plugin-bpmn-editor"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCustomEditor:fzlsoft.bpmn-editor",
+    "onCommand:fzlbpms.bpmn.new",
+    "onCommand:fzlbpms.bpmn.open"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "fzlsoft.bpmn-editor",
+        "displayName": "BPMN Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.bpmn"
+          },
+          {
+            "filenamePattern": "*.bpmn2"
+          },
+          {
+            "filenamePattern": "*.bpmn20.xml"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "fzlbpms.bpmn.new",
+        "title": "New BPMN Diagram",
+        "category": "BPMN"
+      },
+      {
+        "command": "fzlbpms.bpmn.open",
+        "title": "Open BPMN Diagram...",
+        "category": "BPMN"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "fzlbpms.bpmn.new"
+        },
+        {
+          "command": "fzlbpms.bpmn.open"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "package": "vsce package --no-dependencies --out ../../fzl-theia-plugins-dist/theia-plugin-bpmn-editor.vsix",
+    "vscode:prepublish": "npm run typecheck && npm run build -- --minify"
+  },
+  "dependencies": {
+    "bpmn-js": "^18.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.3"
+  }
+}

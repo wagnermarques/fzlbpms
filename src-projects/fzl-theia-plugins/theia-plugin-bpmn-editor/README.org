@@ -1,0 +1,246 @@
+#+TITLE: BPMN Editor — plugin VS Code para o Theia do fzlbpms
+#+OPTIONS: toc:2
+
+* Visão geral
+
+Editor visual BPMN 2.0 baseado em [[https://bpmn.io/toolkit/bpmn-js/][bpmn-js]], empacotado como *plugin VS Code*
+(=.vsix=) e instalado no =fzl-theia= sem rebuild de imagem.
+
+O editor é um /custom text editor/: o documento continua sendo o XML BPMN, e
+quem cuida de estado sujo, =Ctrl+S=, desfazer/refazer, comparação no Git e
+"reabrir como texto" é o próprio workbench. Cada alteração no diagrama vira uma
+substituição do conteúdo do documento — o plugin não escreve em disco por conta
+própria.
+
+** Por que não é mais uma extensão Theia
+
+Até a versão 0.1.0 este pacote era uma extensão Theia (=theiaExtensions=,
+=ContainerModule= do inversify). Extensões Theia são compiladas dentro do
+/bundle/ da aplicação: instalá-las exige alterar o =package.json= do app em
+=containers/fzl-theia/=, regerar o =yarn.lock= e reconstruir a imagem. Não é
+possível instalá-las em um Theia já em execução.
+
+Plugins VS Code, ao contrário, são carregados pelo /plugin host/ em tempo de
+execução. Por isso a versão 0.2.0 foi reescrita usando a API =vscode=: agora o
+ciclo é empacotar, reiniciar o contêiner e recarregar o navegador.
+
+
+* Instalação no Theia do fzlbpms
+
+Este é o caminho normal — a partir da raiz do repositório (=fzlbpms/=), no
+host:
+
+#+begin_src sh
+bin/theia/build-plugins.sh
+docker compose restart fzl-theia
+#+end_src
+
+Depois recarregue o navegador em [[http://localhost:3000/#/home/workspace]]
+(ou em =https://fzlbpms.local/theia/=, que passa pelo SSO). O =F5= do navegador
+basta; não é necessário limpar cache.
+
+O script =build-plugins.sh= faz três coisas para cada projeto em
+=src-projects/fzl-theia-plugins/=:
+
+1. =npm install= e empacotamento com =@vscode/vsce= (que dispara o
+   =vscode:prepublish= deste projeto: verificação de tipos + bundle esbuild);
+2. gravação do =.vsix= ao lado dos fontes do plugin;
+3. *descompactação* do =.vsix= em
+   =src-projects/fzl-theia-plugins-dist/theia-plugin-bpmn-editor/=, que é
+   montado no contêiner como =/home/custom-plugins= — a segunda fonte
+   =local-dir= de =THEIA_DEFAULT_PLUGINS= (ver =containers/fzl-theia/Dockerfile=).
+
+O passo 3 é obrigatório: o Theia *não* descompacta arquivos =.vsix= vindos de
+uma fonte =local-dir=. Copiar apenas o =.vsix= para o diretório faz o backend
+registrar, na inicialização, o aviso
+
+#+begin_example
+PluginDeployerImpl WARN Only user plugins will be handled by file handlers,
+please unpack the plugin 'theia-plugin-bpmn-editor.vsix' manually.
+#+end_example
+
+e o plugin simplesmente não é carregado.
+
+** Conferindo se carregou
+
+Abra a paleta de comandos (=Ctrl+Shift+P=) e digite =BPMN=. Devem aparecer:
+
+- =BPMN: New BPMN Diagram=
+- =BPMN: Open BPMN Diagram...=
+
+Se não aparecerem, veja [[*Solução de problemas][Solução de problemas]].
+
+** Instalação manual (sem o script)
+
+Útil ao instalar um =.vsix= já pronto, ou de dentro do terminal do contêiner:
+
+#+begin_src sh
+cd src-projects/fzl-theia-plugins-dist
+rm -rf theia-plugin-bpmn-editor
+unzip -q /caminho/para/theia-plugin-bpmn-editor.vsix -d .tmp
+mv .tmp/extension theia-plugin-bpmn-editor
+rm -rf .tmp
+docker compose restart fzl-theia
+#+end_src
+
+O diretório resultante precisa ter o =package.json= do plugin na raiz — é ele
+que o Theia lê.
+
+** Convivência com o Miragon BPMN Modeler
+
+A imagem do =fzl-theia= já embute o plugin =miragon-gmbh.vs-code-bpmn-modeler=,
+e o =containers/fzl-theia/package.json= define, como preferência padrão da
+aplicação:
+
+#+begin_src json
+"workbench.editorAssociations": {
+  "*.bpmn20.xml": "bpmn-modeler.bpmn",
+  "*.bpmn": "bpmn-modeler.bpmn",
+  "*.dmn": "bpmn-modeler.dmn"
+}
+#+end_src
+
+Ou seja: dar duplo clique em um =.bpmn= no explorador continua abrindo o editor
+da Miragon, mesmo com este plugin instalado. Há três formas de usar este aqui:
+
+1. =BPMN: Open BPMN Diagram...= na paleta de comandos — sempre abre neste
+   editor, sem mexer em configuração;
+2. clicar o arquivo com o botão direito no explorador e escolher =Open With...=
+   → =BPMN Editor= (aparece como /fzlbpms BPMN Editor/, ao lado de
+   =Text Editor= e do =BPMN Modeler=, este marcado como /Default/);
+3. no mesmo menu =Open With...=, escolher
+   =Configure default editor for '*.bpmn'...= → =BPMN Editor=; ou, na mão, em
+   =Preferences: Open Settings (JSON)=:
+
+   #+begin_src json
+   "workbench.editorAssociations": {
+     "*.bpmn": "fzlsoft.bpmn-editor",
+     "*.bpmn20.xml": "fzlsoft.bpmn-editor"
+   }
+   #+end_src
+
+   A preferência do usuário sobrepõe o padrão da aplicação, então isso não
+   exige rebuild da imagem. O =viewType= deste plugin é =fzlsoft.bpmn-editor=.
+
+
+* Desenvolvimento
+
+** Pré-requisitos
+
+- Node.js 20 LTS ou superior, npm e =unzip= no host (ou usar o terminal
+  integrado do próprio =fzl-theia=, que já tem Node e npm)
+- Docker Compose, para reiniciar o =fzl-theia=
+
+** Comandos
+
+#+begin_src sh
+npm install
+npm run build       # bundle de desenvolvimento (com sourcemaps)
+npm run watch       # recompila a cada alteração
+npm run typecheck   # tsc --noEmit
+#+end_src
+
+Os fontes ficam visíveis dentro do próprio IDE em
+=/home/workspace/fzl-theia-plugins/theia-plugin-bpmn-editor= (ver o volume em
+=docker-compose.yml=), então dá para editar o plugin no Theia que o executa.
+
+=npm run watch= não recarrega o plugin sozinho: o Theia lê o diretório
+descompactado em =fzl-theia-plugins-dist/=, não estes fontes. A cada rodada de
+alterações que se queira testar, rode =bin/theia/build-plugins.sh= e reinicie o
+contêiner.
+
+** Estrutura
+
+#+begin_example
+src/
+├── extension.ts             ativação e comandos (roda no plugin host, Node)
+├── bpmn-editor-provider.ts  CustomTextEditorProvider + HTML do webview
+├── bpmn-template.ts         diagrama inicial de "New BPMN Diagram"
+├── protocol.ts              mensagens trocadas entre host e webview
+├── types/assets.d.ts        declaração dos imports de CSS
+└── webview/
+    ├── main.ts              bpmn-js dentro do webview
+    └── style.css            ajustes de layout e de tema
+
+build.mjs                    esbuild: dist/extension.js + media/bpmn-editor.*
+#+end_example
+
+O =bpmn-js= e seus CSS/fontes são embutidos pelo esbuild (as fontes viram
+=data:= URIs), o que permite empacotar com =vsce --no-dependencies= e manter o
+=.vsix= em ~300 KB, sem =node_modules=.
+
+** Sincronização diagrama ↔ documento
+
+- webview → documento: cada =commandStack.changed= (com /debounce/ de 300 ms)
+  serializa o XML e o envia ao host, que aplica um =WorkspaceEdit= substituindo
+  o documento inteiro. O arquivo fica "sujo"; quem grava é o =Ctrl+S=.
+- documento → webview: alterações externas (desfazer, edição no editor de
+  texto, mudança em disco) chegam por =onDidChangeTextDocument= e reimportam o
+  diagrama. O XML que veio do webview é filtrado nesse caminho, para a edição
+  do usuário não voltar como reimportação (o que perderia seleção e /viewport/).
+
+
+* Uso
+
+- =BPMN: New BPMN Diagram=: pergunta onde salvar, grava o modelo inicial e abre
+  o arquivo neste editor. Não usa documento "sem título" de propósito: o editor
+  é associado por padrão de nome de arquivo, e um =untitled:= não tem nome para
+  casar.
+- =BPMN: Open BPMN Diagram...=: escolhe um =.bpmn=, =.bpmn2= ou =.bpmn20.xml= e
+  o abre neste editor, independentemente de =workbench.editorAssociations=.
+- =Ctrl+S=: salva, como em qualquer editor.
+- =Ctrl+Z= / =Ctrl+Shift+Z=: desfazer/refazer do documento; o diagrama é
+  reimportado a cada passo.
+
+Erros de importação ou de serialização do bpmn-js aparecem como notificação,
+prefixados com o nome do arquivo.
+
+
+* Solução de problemas
+
+** Os comandos =BPMN:= não aparecem na paleta
+
+Verifique o log do backend logo após o restart:
+
+#+begin_src sh
+docker logs --since 2m fzl-theia | grep -iE "plugin|deploy|unpack"
+#+end_src
+
+- =Only user plugins will be handled by file handlers, please unpack ...=: há
+  um =.vsix= solto em =fzl-theia-plugins-dist/=. Rode
+  =bin/theia/build-plugins.sh=, que instala o diretório descompactado.
+- Nenhuma menção ao plugin: confira se
+  =src-projects/fzl-theia-plugins-dist/theia-plugin-bpmn-editor/package.json=
+  existe no host — é esse diretório que vira =/home/custom-plugins= no
+  contêiner.
+
+** O arquivo abre no editor da Miragon
+
+Comportamento esperado; ver [[*Convivência com o Miragon BPMN Modeler][Convivência com o Miragon BPMN Modeler]].
+
+** O editor abre vazio ou reclama do XML
+
+=unparsable content ... missing start tag= vem do próprio bpmn-js: o arquivo não
+é um BPMN 2.0 válido. =no diagram to display= significa XML válido, porém sem
+=BPMNDiagram= / =BPMNPlane= (o trecho =bpmndi:= com as coordenadas). Abrir o
+arquivo como texto (=Open With...= → =Text Editor=) ajuda a confirmar.
+
+** =vsce= falha ao empacotar
+
+O empacotamento roda =vscode:prepublish= (=npm run typecheck && npm run build --
+--minify=). Um erro de tipos aborta o =.vsix=; a saída do =tsc= aparece logo
+acima da falha. O aviso =LICENSE ... not found= é apenas aviso e não impede o
+empacotamento.
+
+
+* Próximas evoluções
+
+1. Painel de propriedades com =bpmn-js-properties-panel=, incluindo as
+   extensões do Flowable (=flowable:*=) usadas pelos processos em
+   =applications/=.
+2. Exportação SVG/PNG.
+3. Validação (bpmnlint) integrada ao painel /Problems/.
+4. Implantar o processo direto no =flowable-ui= a partir do editor, reusando o
+   fluxo REST descrito na skill =flowable-process-authoring=.
+5. Edição colaborativa: hoje o editor assume um documento por vez e reimporta o
+   diagrama inteiro a cada alteração externa.

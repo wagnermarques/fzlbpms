@@ -591,11 +591,13 @@ services:
   # remote shell on fzl-network, so it is deliberately NOT open to the realm
   # at large, only to holders of the 'theia-user' role.
   #
-  # Custom-plugin workflow: write a plugin under
+  # Custom-plugin workflow: write a VS Code plugin under
   # src-projects/fzl-theia-plugins/<name> (visible inside the IDE itself, see
-  # the volume below), run bin/theia/build-plugins.sh to package it to a
-  # .vsix in src-projects/fzl-theia-plugins-dist/, then
+  # the volume below), run bin/theia/build-plugins.sh to package it and unpack
+  # it into src-projects/fzl-theia-plugins-dist/<name>/, then
   # `docker compose restart fzl-theia` to load it — no image rebuild needed.
+  # Note it must be a VS Code plugin, not a Theia extension: only the former
+  # can be deployed into a running application.
   fzl-theia:
     build:
       context: ./containers/fzl-theia
@@ -622,8 +624,10 @@ services:
       # workspace bind mount above (Docker mounts nest correctly) so they
       # show up directly in Theia's own file explorer for editing.
       - ./src-projects/fzl-theia-plugins:/home/workspace/fzl-theia-plugins:rw
-      # Built .vsix output (see bin/theia/build-plugins.sh) — this is the
-      # second THEIA_DEFAULT_PLUGINS local-dir source (see Dockerfile).
+      # Unpacked plugin output (see bin/theia/build-plugins.sh) — this is the
+      # second THEIA_DEFAULT_PLUGINS local-dir source (see Dockerfile). One
+      # directory per plugin: Theia does not unpack .vsix files from a system
+      # plugin source, only from a user install.
       # Restart the container to pick up anything new here; no rebuild needed.
       - ./src-projects/fzl-theia-plugins-dist:/home/custom-plugins:rw
       - theia_user_data:/home/theia/.theia

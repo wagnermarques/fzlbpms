@@ -1,0 +1,12 @@
+# Everything the .vsix does not need at runtime. dist/ and media/ are the
+# esbuild output (see build.mjs) and are the only code that ships.
+src/**
+node_modules/**
+build.mjs
+tsconfig.json
+package-lock.json
+yarn.lock
+.gitignore
+.vscodeignore
+**/*.map
+**/*.ts

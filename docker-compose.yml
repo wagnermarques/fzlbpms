@@ -96,6 +96,13 @@ services:
       MOODLE_ADMIN_EMAIL: ${MOODLE_ADMIN_EMAIL:?}
       MOODLE_FULLNAME: ${MOODLE_FULLNAME:-fzlbpms Moodle}
       MOODLE_SHORTNAME: ${MOODLE_SHORTNAME:-fzlbpms}
+      # Extra plugins bundled from a GitHub Releases page (one .zip per plugin).
+      # The installer reads each zip's version.php to place it in the right
+      # Moodle dir and registers it via install.php/upgrade.php. Set
+      # MOODLE_PLUGINS_ENABLED=0 to skip; MOODLE_PLUGINS_RELEASE can pin a tag.
+      MOODLE_PLUGINS_ENABLED: ${MOODLE_PLUGINS_ENABLED:-1}
+      MOODLE_PLUGINS_REPO: ${MOODLE_PLUGINS_REPO:-wagnermarques/fzlbpms-moodle-plugins}
+      MOODLE_PLUGINS_RELEASE: ${MOODLE_PLUGINS_RELEASE:-latest}
     networks:
       - fzl-network
     restart: "no"

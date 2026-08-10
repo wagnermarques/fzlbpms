@@ -46,6 +46,16 @@ MOODLE_DIR="${MOODLE_DIR:-/var/www/html/moodle}"
 MOODLEDATA_DIR="${MOODLEDATA_DIR:-/moodledata}"
 WEB_USER="${WEB_USER:-www-data}"
 
+# --- Extra plugins from a GitHub Releases page ------------------------------
+# Bundle third-party Moodle plugins straight from a GitHub repo's release
+# assets (one .zip per plugin). Each zip's version.php `$plugin->component`
+# decides which Moodle directory it goes into, so this is generic across plugin
+# types. Set MOODLE_PLUGINS_ENABLED=0 to skip entirely.
+MOODLE_PLUGINS_ENABLED="${MOODLE_PLUGINS_ENABLED:-1}"
+MOODLE_PLUGINS_REPO="${MOODLE_PLUGINS_REPO:-wagnermarques/fzlbpms-moodle-plugins}"
+MOODLE_PLUGINS_RELEASE="${MOODLE_PLUGINS_RELEASE:-latest}"   # 'latest' or a tag
+PLUGINS_CHANGED=0                                            # set by install_plugins
+
 log() { echo "[moodle-installer] $*"; }
 
 # Derive the download.moodle.org "stable" directory from the version.
@@ -104,7 +114,8 @@ create_database() {
 # Step 2: download + extract the stable tarball (only if not already present).
 # -----------------------------------------------------------------------------
 download_moodle() {
-    if [ -f "${MOODLE_DIR}/version.php" ]; then
+    # Moodle 5.0+ keeps version.php under public/; earlier releases at dirroot.
+    if [ -f "${MOODLE_DIR}/version.php" ] || [ -f "${MOODLE_DIR}/public/version.php" ]; then
         log "Moodle source already present at ${MOODLE_DIR} (skipping download)."
         return
     fi
@@ -118,6 +129,144 @@ download_moodle() {
     tar -xzf "$tmp" -C "$(dirname "$MOODLE_DIR")"
     rm -f "$tmp"
     log "Moodle source extracted."
+}
+
+# -----------------------------------------------------------------------------
+# Step 2b: bundle extra plugins from GitHub Releases (before install/upgrade so
+# their schema is created by Moodle itself). Idempotent and version-aware:
+# a plugin is (re)extracted only when missing or when the release ships a newer
+# $plugin->version than what's on disk.
+# -----------------------------------------------------------------------------
+
+# Moodle 5.0+ serves from public/; earlier versions from the dirroot. Plugin
+# directories (blocks/, mod/, ...) live under whichever is the code root.
+moodle_code_root() {
+    if [ -d "${MOODLE_DIR}/public" ]; then echo "${MOODLE_DIR}/public"; else echo "${MOODLE_DIR}"; fi
+}
+
+# Map a plugin component (e.g. block_user_category_courses) to its Moodle
+# subdirectory, relative to the code root. Empty = unknown type (skip).
+plugin_subdir_for_component() {
+    case "${1%%_*}" in
+        mod)          echo "mod" ;;
+        block)        echo "blocks" ;;
+        local)        echo "local" ;;
+        theme)        echo "theme" ;;
+        auth)         echo "auth" ;;
+        enrol)        echo "enrol" ;;
+        filter)       echo "filter" ;;
+        format)       echo "course/format" ;;
+        report)       echo "report" ;;
+        coursereport) echo "course/report" ;;
+        tool)         echo "admin/tool" ;;
+        qtype)        echo "question/type" ;;
+        qbehaviour)   echo "question/behaviour" ;;
+        qformat)      echo "question/format" ;;
+        repository)   echo "repository" ;;
+        portfolio)    echo "portfolio" ;;
+        availability) echo "availability/condition" ;;
+        customfield)  echo "customfield/field" ;;
+        profilefield) echo "user/profile/field" ;;
+        datafield)    echo "mod/data/field" ;;
+        datapreset)   echo "mod/data/preset" ;;
+        webservice)   echo "webservice" ;;
+        editor)       echo "lib/editor" ;;
+        antivirus)    echo "lib/antivirus" ;;
+        media)        echo "media/player" ;;
+        cachestore)   echo "cache/stores" ;;
+        cachelock)    echo "cache/locks" ;;
+        gradereport)  echo "grade/report" ;;
+        gradeexport)  echo "grade/export" ;;
+        gradingform)  echo "grade/grading/form" ;;
+        dataformat)   echo "dataformat" ;;
+        message)      echo "message/output" ;;
+        *)            echo "" ;;
+    esac
+}
+
+# Pull a key's integer/string value out of a plugin version.php stream on stdin.
+# $1 = key (component|version); prints the first match's value.
+version_php_value() {
+    case "$1" in
+        component) grep -oE "component[[:space:]]*=[[:space:]]*'[^']+'" | head -1 | sed -E "s/.*'([^']+)'.*/\1/" ;;
+        version)   grep -oE "version[[:space:]]*=[[:space:]]*[0-9]+"    | head -1 | grep -oE '[0-9]+' ;;
+    esac
+}
+
+install_plugins() {
+    [ "$MOODLE_PLUGINS_ENABLED" = "1" ] || { log "Plugin bundling disabled (MOODLE_PLUGINS_ENABLED=0)."; return 0; }
+
+    local code_root; code_root="$(moodle_code_root)"
+    local api_url
+    if [ "$MOODLE_PLUGINS_RELEASE" = "latest" ]; then
+        api_url="https://api.github.com/repos/${MOODLE_PLUGINS_REPO}/releases/latest"
+    else
+        api_url="https://api.github.com/repos/${MOODLE_PLUGINS_REPO}/releases/tags/${MOODLE_PLUGINS_RELEASE}"
+    fi
+
+    log "Fetching plugin release '${MOODLE_PLUGINS_RELEASE}' from ${MOODLE_PLUGINS_REPO} ..."
+    # GitHub's API needs a User-Agent; PHP parses the JSON robustly (no jq).
+    local urls
+    urls="$(API_URL="$api_url" php -r '
+        $ctx = stream_context_create(["http" => [
+            "header"  => "User-Agent: fzlbpms-moodle-installer\r\nAccept: application/vnd.github+json\r\n",
+            "timeout" => 30,
+        ]]);
+        $json = @file_get_contents(getenv("API_URL"), false, $ctx);
+        if ($json === false) { fwrite(STDERR, "GitHub API request failed\n"); exit(1); }
+        $data = json_decode($json, true);
+        if (!isset($data["assets"])) { fwrite(STDERR, "no assets in release\n"); exit(1); }
+        foreach ($data["assets"] as $a) {
+            if (str_ends_with(strtolower($a["name"]), ".zip")) echo $a["browser_download_url"], "\n";
+        }
+    ')" || { log "WARNING: could not fetch plugin release — skipping plugin bundling."; return 0; }
+
+    if [ -z "$urls" ]; then log "No .zip plugin assets in release; nothing to bundle."; return 0; fi
+
+    local tmpd; tmpd="$(mktemp -d)"
+    # here-string (not a pipe) so PLUGINS_CHANGED persists in this shell.
+    while IFS= read -r url; do
+        [ -n "$url" ] || continue
+        local zip="${tmpd}/$(basename "$url")"
+        log "Downloading $(basename "$url") ..."
+        if ! curl -fSL --retry 3 -o "$zip" "$url"; then
+            log "WARNING: download failed for $(basename "$url"); skipping."; continue
+        fi
+
+        local component; component="$(unzip -p "$zip" '*/version.php' 2>/dev/null | version_php_value component)"
+        if [ -z "$component" ]; then log "WARNING: no \$plugin->component in $(basename "$zip"); skipping."; continue; fi
+
+        local subdir; subdir="$(plugin_subdir_for_component "$component")"
+        if [ -z "$subdir" ]; then log "WARNING: unknown plugin type for '${component}'; skipping."; continue; fi
+
+        local name="${component#*_}"
+        local dest="${code_root}/${subdir}/${name}"
+        local new_ver; new_ver="$(unzip -p "$zip" '*/version.php' 2>/dev/null | version_php_value version)"
+
+        if [ -f "${dest}/version.php" ]; then
+            local cur_ver; cur_ver="$(version_php_value version < "${dest}/version.php")"
+            if [ -n "$new_ver" ] && [ -n "$cur_ver" ] && [ "$new_ver" -le "$cur_ver" ]; then
+                log "Plugin ${component} up to date (on disk ${cur_ver} >= release ${new_ver}); skipping."
+                continue
+            fi
+            log "Updating plugin ${component} (${cur_ver:-?} -> ${new_ver:-?}) ..."
+            rm -rf "$dest"
+        else
+            log "Installing plugin ${component} -> ${subdir}/${name} ..."
+        fi
+
+        # The zip's top folder may not match the required dir name, so extract to
+        # a scratch dir and move its single top-level folder into place.
+        mkdir -p "${code_root}/${subdir}"
+        local xdir="${tmpd}/x_${name}"; rm -rf "$xdir"; mkdir -p "$xdir"
+        unzip -q "$zip" -d "$xdir"
+        local top; top="$(find "$xdir" -mindepth 1 -maxdepth 1 -type d | head -1)"
+        if [ -z "$top" ]; then log "WARNING: empty archive for ${component}; skipping."; continue; fi
+        mv "$top" "$dest"
+        PLUGINS_CHANGED=1
+    done <<< "$urls"
+
+    rm -rf "$tmpd"
 }
 
 # -----------------------------------------------------------------------------
@@ -185,6 +334,15 @@ install_moodle() {
     fi
 }
 
+# On an ALREADY-installed Moodle, newly bundled/updated plugins need an explicit
+# upgrade to register their schema. (A fresh install gets this for free via
+# install.php, so this only runs when config.php pre-existed.)
+upgrade_plugins() {
+    local cli; cli="$(cli_path)"
+    log "Registering new/updated plugins via ${cli}/upgrade.php ..."
+    su -s /bin/bash -c "cd '${MOODLE_DIR}' && php ${cli}/upgrade.php --non-interactive" "$WEB_USER"
+}
+
 purge_caches() {
     local cli; cli="$(cli_path)"
     if [ -f "${MOODLE_DIR}/${cli}/purge_caches.php" ]; then
@@ -196,8 +354,19 @@ main() {
     log "=== Moodle ${MOODLE_VERSION} provisioning started ==="
     create_database
     download_moodle
+
+    # Was Moodle already installed before this run? Decides how plugins register.
+    local was_installed=0
+    [ -f "${MOODLE_DIR}/config.php" ] && was_installed=1
+
+    install_plugins        # drop plugin code into the tree (before install/upgrade)
     fix_permissions
-    install_moodle
+    install_moodle         # fresh install: also installs the bundled plugins
+
+    if [ "$was_installed" = "1" ] && [ "$PLUGINS_CHANGED" = "1" ]; then
+        upgrade_plugins    # existing install: register the newly added/updated ones
+    fi
+
     purge_caches
     log "=== Moodle provisioning complete. Access it at ${MOODLE_WWWROOT} ==="
 }

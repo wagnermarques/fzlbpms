@@ -64,5 +64,11 @@ export class AppsHomeView {
       description: 'Web console for Apache Karaf (OSGi container), managing bundles and services.',
       credentials: { user: 'karaf', pass: 'karaf' },
     },
+    {
+      name: 'Hawtio',
+      url: '/hawtio/',
+      description: 'Management console for Apache Camel routes, JMX mbeans, Jolokia, and OSGi runtime diagnostics.',
+      credentials: { user: 'karaf', pass: 'karaf' },
+    },
   ]);
 }

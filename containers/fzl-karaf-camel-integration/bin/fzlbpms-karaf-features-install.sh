@@ -1,17 +1,26 @@
 #!/bin/bash
 
-# it's requires that karaf container is running with fzl-apache-karaf container name
-# change to this script dir to runs it
+# NOTE: http, webconsole, hawtio and the camel features are BOOT features now
+# (custom_karaf_etc/etc-from-4.4.7/org.apache.karaf.features.cfg) — Karaf
+# installs them on every start. This script is only for trying an extra
+# feature by hand before making it permanent there.
+#
+# The credential is read from the container's own environment (FZL_KARAF_USER /
+# FZL_KARAF_PASSWORD, passed from .env by docker-compose.yml), so no password
+# is written here. -t is required: without a TTY bin/client swallows all output.
 
-KARAF_CONSOLE="docker exec -it fzl-apache-karaf /opt/karaf/bin/client -u karaf -p karaf "system:property -p admin.password Admin123""
-$KARAF_CONSOLE feature:install http
-$KARAF_CONSOLE feature:install webconsole
-$KARAF_CONSOLE feature:install camel
-$KARAF_CONSOLE feature:install camel-core
-$KARAF_CONSOLE feature:install camel-blueprint
-$KARAF_CONSOLE feature:install camel-spring
-$KARAF_CONSOLE feature:install camel-activemq
-$KARAF_CONSOLE feature:install camel-exec
+karaf_run() {
+    docker exec -t fzl-karaf-camel-integration sh -c \
+        "/opt/karaf/bin/client -u \"\$FZL_KARAF_USER\" -p \"\$FZL_KARAF_PASSWORD\" '$1'"
+}
+karaf_run feature:install http
+karaf_run feature:install webconsole
+karaf_run feature:install camel
+karaf_run feature:install camel-core
+karaf_run feature:install camel-blueprint
+karaf_run feature:install camel-spring
+karaf_run feature:install camel-activemq
+karaf_run feature:install camel-exec
 
 #camel-git                         
 #camel-github                     

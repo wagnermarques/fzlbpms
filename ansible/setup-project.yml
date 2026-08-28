@@ -261,7 +261,67 @@
         state: present
 
     # ------------------------------------------------------------------
-    # 8. Local HTTPS & SSL Certificates (mkcert)
+    # 8. Generated secrets in .env
+    #
+    # docker-compose.yml consumes FZL_KARAF_PASSWORD with "${...:?}", so the
+    # stack refuses to start rather than fall back to a default password —
+    # correct, but it means a fresh clone stops with a compose error until
+    # someone invents a password by hand. Generate one here instead, once,
+    # and only when there isn't one already.
+    #
+    # The Karaf JAAS realm (etc/users.properties) is written from this value
+    # at container start, and nginx builds the Authorization header it
+    # presents to /system/console and /hawtio from the same variable — so
+    # this single line is the whole credential.
+    # ------------------------------------------------------------------
+    - name: Ensure .env exists (seeded from .env.template)
+      become: false
+      ansible.builtin.copy:
+        src: "{{ fzlbpms_repo_root }}/.env.template"
+        dest: "{{ fzlbpms_repo_root }}/.env"
+        remote_src: true
+        mode: "0600"
+        force: false
+      tags: [secrets]
+
+    - name: Check whether FZL_KARAF_PASSWORD already has a value
+      become: false
+      ansible.builtin.command:
+        cmd: grep -qE '^FZL_KARAF_PASSWORD=.+' {{ fzlbpms_repo_root }}/.env
+      register: fzlbpms_karaf_pw
+      changed_when: false
+      failed_when: false
+      tags: [secrets]
+
+    # no_log: the generated value must not reach the Ansible output, and
+    # lineinfile would otherwise echo the whole line it wrote.
+    # Alphanumeric on purpose: this value is substituted into a .properties
+    # file, a shell heredoc and a base64 Basic header, and every escaping
+    # class it could carry has to survive all three.
+    - name: Generate a random FZL_KARAF_PASSWORD
+      become: false
+      ansible.builtin.lineinfile:
+        path: "{{ fzlbpms_repo_root }}/.env"
+        regexp: '^FZL_KARAF_PASSWORD='
+        line: "FZL_KARAF_PASSWORD={{ lookup('password', '/dev/null length=28 chars=ascii_letters,digits') }}"
+        mode: "0600"
+      no_log: true
+      when: fzlbpms_karaf_pw.rc != 0
+      register: fzlbpms_karaf_pw_written
+      tags: [secrets]
+
+    - name: Report the Karaf credential state
+      ansible.builtin.debug:
+        msg: >-
+          {{ "Generated a random FZL_KARAF_PASSWORD in .env — it is the login for the
+          Karaf SSH console, and nginx presents it to /system/console and /hawtio on
+          your behalf after Keycloak sign-in, so you never have to type it."
+          if (fzlbpms_karaf_pw_written is changed)
+          else "FZL_KARAF_PASSWORD already set in .env — left untouched." }}
+      tags: [secrets]
+
+    # ------------------------------------------------------------------
+    # 9. Local HTTPS & SSL Certificates (mkcert)
     #
     # The whole of it lives in tasks/local-https.yml. Re-issue certificates
     # without redoing the rest of the host setup:
@@ -284,7 +344,7 @@
         - https
 
     # ------------------------------------------------------------------
-    # 9. Verification & Summary
+    # 10. Verification & Summary
     # ------------------------------------------------------------------
     - name: Verify Docker tools are accessible
       ansible.builtin.command: "{{ item }}"

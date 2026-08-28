@@ -29,6 +29,15 @@ services:
       # see docker-entrypoint.d/10-install-mkcert-certs.sh for how a missing
       # or empty dir here is handled safely.
       - ./containers/fzl-nginx/certs:/run/mkcert-certs:ro
+    environment:
+      # Karaf's service credential, presented by nginx towards
+      # /system/console and /hawtio once oauth2-proxy has established a
+      # Keycloak session — see containers/fzl-nginx/docker-entrypoint.d/
+      # 11-karaf-basic-auth.sh. Must match a user in the Karaf JAAS realm
+      # (containers/fzl-karaf-camel-integration/custom_karaf_etc/
+      # etc-from-4.4.7/users.properties). Values live in .env (gitignored).
+      FZL_KARAF_USER: "${FZL_KARAF_USER:-}"
+      FZL_KARAF_PASSWORD: "${FZL_KARAF_PASSWORD:-}"
     networks:
       fzl-network:
         # Lets other containers (Moodle, Flowable) reach this same nginx —
@@ -210,6 +219,13 @@ services:
       - "${FZL_KARAF_REST_PORT:?}:9090"
       - "${FZL_KARAF_MOODLE_REST_PORT:-9091}:9091"
     environment:
+      # Karaf's own JAAS realm — entrypoint.sh writes etc/users.properties from
+      # these at container start, so the credential never lives in git. nginx
+      # reads the SAME two variables to build the Authorization header it
+      # presents towards /system/console and /hawtio, so they cannot drift.
+      # ":?" on purpose: fail fast rather than boot with a default password.
+      FZL_KARAF_USER: "${FZL_KARAF_USER:?}"
+      FZL_KARAF_PASSWORD: "${FZL_KARAF_PASSWORD:?}"
       KC_HOST: fzl-keycloak
       KC_HTTP_RELATIVE_PATH: /auth
       KC_ADMIN_USER: ${FZL_KEYCLOAK_ADMIN_USER:?}

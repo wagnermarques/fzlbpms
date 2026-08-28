@@ -29,6 +29,25 @@ this directory, so pass it explicitly from anywhere else):
 ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml -K
 ```
 
+### Generated secrets
+
+`docker-compose.yml` reads `FZL_KARAF_PASSWORD` as `${FZL_KARAF_PASSWORD:?}`, so
+the stack refuses to start rather than fall back to a default password. On a
+fresh clone the playbook seeds `.env` from `.env.template` and generates a
+random 28-character value there, once — it never overwrites one that is already
+set. That single line is the whole Karaf credential: the container writes its
+JAAS realm (SSH console, JMX, and the HTTP Basic realm behind the web console
+and Hawtio) from it at start, and nginx builds the `Authorization` header it
+presents to `/system/console` and `/hawtio` from the same variable, so the two
+sides cannot drift apart.
+
+```bash
+ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags secrets
+```
+
+To rotate: put a new value in `.env`, then
+`docker compose up -d --force-recreate fzl-karaf-camel-integration fzl-nginx`.
+
 ### Certificates only
 
 Re-issuing / re-trusting the local HTTPS certificate is tagged, so you can do

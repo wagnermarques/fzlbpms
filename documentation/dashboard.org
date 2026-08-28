@@ -27,7 +27,10 @@ docker exec -it fzl-nginx ls -la /var/www/html
 
 docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/status
 
-docker exec -it fzl-karaf-camel-integration /opt/karaf/bin/client -u karaf -p admin123
+# A credencial vem do proprio container (FZL_KARAF_USER / FZL_KARAF_PASSWORD,
+# vindas do .env) - nada de senha escrita aqui. O -t e obrigatorio: sem TTY
+# o bin/client engole toda a saida.
+docker exec -t fzl-karaf-camel-integration sh -c '/opt/karaf/bin/client -u "$FZL_KARAF_USER" -p "$FZL_KARAF_PASSWORD"'
 
 docker exec -it fzl-karaf-camel-integration tail -f /opt/karaf/data/log/karaf.log
 

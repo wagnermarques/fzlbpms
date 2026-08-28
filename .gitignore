@@ -234,3 +234,9 @@ src-projects/moodledata
 credentials
 bin/azure
 /.emacs-revinfor/
+
+# Karaf's JAAS realm — generated at container start by
+# containers/fzl-karaf-camel-integration/entrypoint.sh from FZL_KARAF_USER /
+# FZL_KARAF_PASSWORD in .env. Never commit it: it guards the SSH console, JMX
+# and the web console. See users.properties.template alongside it.
+containers/fzl-karaf-camel-integration/custom_karaf_etc/etc-from-4.4.7/users.properties

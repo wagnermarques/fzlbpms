@@ -4,6 +4,45 @@ set -e # Encerra o script se um comando falhar
 echo "==== INSPECIONANDO PERMISS�ES ANTES DO CHOWN ===="
 ls -la /opt/karaf
 
+# ---------------------------------------------------------------------------
+# Karaf JAAS realm (etc/users.properties) — generated here, never committed.
+#
+# This one file guards the SSH console (8101), JMX/RMI (1099, 44444) and the
+# HTTP Basic realm in front of the Felix web console and Hawtio (8181). It
+# used to ship in git with a default password, which meant rotating the
+# credential required a commit — and the old value stayed in the history of a
+# public repository forever.
+#
+# Now it is written at container start from FZL_KARAF_USER / FZL_KARAF_PASSWORD,
+# which docker-compose.yml passes from .env (gitignored), exactly like the 15
+# other secrets this service already consumes. nginx reads the SAME two
+# variables to build the Authorization header it presents towards
+# /system/console and /hawtio (containers/fzl-nginx/docker-entrypoint.d/
+# 11-karaf-basic-auth.sh), so the two can never drift apart.
+#
+# To rotate: change FZL_KARAF_PASSWORD in .env, then
+#   docker compose up -d --force-recreate fzl-karaf-camel-integration fzl-nginx
+#
+# Runs as root, before the gosu below, so it can write into $KARAF_HOME/etc;
+# the chown that follows hands the file to appuser.
+# ---------------------------------------------------------------------------
+echo "==== GENERATING KARAF JAAS REALM (etc/users.properties) ===="
+if [ -n "${FZL_KARAF_USER:-}" ] && [ -n "${FZL_KARAF_PASSWORD:-}" ]; then
+  cat > "$KARAF_HOME/etc/users.properties" <<USERS_EOF
+# GENERATED AT CONTAINER START by entrypoint.sh — do not edit, do not commit.
+# Source of truth: FZL_KARAF_USER / FZL_KARAF_PASSWORD in .env
+${FZL_KARAF_USER} = ${FZL_KARAF_PASSWORD},_g_:admingroup
+_g_\\:admingroup = group,admin,manager,viewer,systembundles,ssh
+USERS_EOF
+  chmod 600 "$KARAF_HOME/etc/users.properties"
+  echo "  Wrote etc/users.properties for user '${FZL_KARAF_USER}'."
+else
+  echo "  FATAL: FZL_KARAF_USER / FZL_KARAF_PASSWORD are unset."
+  echo "  Set them in .env — see .env.template. Refusing to start with no"
+  echo "  credential rather than falling back to a default one."
+  exit 1
+fi
+
 echo "==== EXECUTANDO CHOWN EM $KARAF_HOME ===="
 chown -R appuser:appuser "$KARAF_HOME"
 

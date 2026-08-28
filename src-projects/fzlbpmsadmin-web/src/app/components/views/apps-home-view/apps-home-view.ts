@@ -70,5 +70,10 @@ export class AppsHomeView {
       description: 'Management console for Apache Camel routes, JMX mbeans, Jolokia, and OSGi runtime diagnostics.',
       credentials: { user: 'karaf', pass: 'karaf' },
     },
+    {
+      name: 'Theia IDE',
+      url: '/theia/',
+      description: 'Cloud and desktop IDE for code editing, terminal access, and development workspace.',
+    },
   ]);
 }

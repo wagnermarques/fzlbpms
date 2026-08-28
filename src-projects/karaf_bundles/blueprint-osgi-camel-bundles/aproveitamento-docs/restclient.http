@@ -1,0 +1,60 @@
+## aproveitamento-docs -- Camel / Jetty: http://localhost:9092
+##
+## Emacs: restclient-mode  (M-x restclient-mode, C-c C-c to execute)
+## The POST endpoint returns binary ZIP content. In restclient-mode, execute the
+## request and save the response buffer as a .zip file if you want a local copy.
+## The server also persists the generated DOCX files in the configured output
+## directory and returns that path in the X-Generated-Output-Dir header.
+
+# ---------------------------------------------------------------------------
+# Variables
+# ---------------------------------------------------------------------------
+
+:base-url               = http://localhost:9092
+:student-name           = Fábio Assato Rossi
+:student-rm             = 26375
+:teacher-president      = Wagner França Marques
+:teacher-member-1       = Ralf Gerônimo
+:teacher-member-2       = João Paulo Frias
+:expedient-number       = 2026-001
+:school-name            = ZONA LESTE
+:program-name           = Habilitação Profissional de Técnico em Desenvolvimento de Sistemas
+:course-name            = Curso Técnico de Desenvolvimento de Sistemas Noturno
+:portaria-date          = 15/08/2022
+:parecer-page-reference = 01
+:decision               = deferido
+:justification          = há compatibilidade entre as competências demonstradas na documentação e o componente curricular solicitado.
+
+# ---------------------------------------------------------------------------
+# Components catalog
+# ---------------------------------------------------------------------------
+
+GET :base-url/fzlbpms/aproveitamento/components
+Accept: application/json
+
+# ---------------------------------------------------------------------------
+# Generate ZIP with the two DOCX documents
+# ---------------------------------------------------------------------------
+
+POST :base-url/fzlbpms/aproveitamento/generate
+Content-Type: application/json
+Accept: application/zip
+
+{
+  "studentName": ":student-name",
+  "studentRm": ":student-rm",
+  "teacherPresident": ":teacher-president",
+  "teacherMember1": ":teacher-member-1",
+  "teacherMember2": ":teacher-member-2",
+  "componentNames": [
+    "Inglês Instrumental"
+  ],
+  "expedientNumber": ":expedient-number",
+  "schoolName": ":school-name",
+  "programName": ":program-name",
+  "courseName": ":course-name",
+  "portariaDate": ":portaria-date",
+  "parecerPageReference": ":parecer-page-reference",
+  "decision": ":decision",
+  "justification": ":justification"
+}

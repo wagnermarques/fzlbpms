@@ -1,0 +1,74 @@
+#+TITLE: aproveitamento-docs
+#+AUTHOR: GitHub Copilot
+
+* Overview
+
+The =aproveitamento-docs= bundle exposes a small Camel/Jetty REST API that:
+
+1. lists the available =Componentes Curriculares=;
+2. receives one JSON payload with student, teachers and decision data;
+3. generates the two final DOCX documents;
+4. returns a =.zip= containing both generated files.
+
+The bundle does not store the original templates in the repository. Instead, it
+reads the two DOCX files from configured external paths.
+
+* Endpoints
+
+- =GET /fzlbpms/aproveitamento/components=
+- =POST /fzlbpms/aproveitamento/generate=
+
+The Camel Jetty listener is configured on port =9092=.
+
+* Build
+
+#+begin_src bash
+cd src-projects/karaf_bundles/blueprint-osgi-camel-bundles/aproveitamento-docs
+mvn test
+mvn package
+#+end_src
+
+* Deploy in Karaf
+
+#+begin_src text
+osgi:install -s mvn:fzlbpms/aproveitamento-docs/1.0-SNAPSHOT
+#+end_src
+
+* Required configuration
+
+Set either the JVM system properties or the corresponding environment
+variables.
+
+| Purpose | System property | Environment variable |
+|---------+-----------------+----------------------|
+| Parecer template path | =fzlbpms.aproveitamento.template.parecer= | =FZLBPMS_APROVEITAMENTO_TEMPLATE_PARECER= |
+| Despacho template path | =fzlbpms.aproveitamento.template.despacho= | =FZLBPMS_APROVEITAMENTO_TEMPLATE_DESPACHO= |
+
+Example using the current workspace files:
+
+#+begin_src bash
+export FZLBPMS_APROVEITAMENTO_TEMPLATE_PARECER="/home/wgn/mnt/ext4/Projects-Srcs/Projects-Srcs-FzlSoft/fzlbpms/workspaces/etec-coord-workspace/documentos-templates/doc_aproveitamento_disciciplina/02_Doc_13_1_anexo_I_Parecer_da_Comissão_FabioAssatoRossi_RM26375.docx"
+export FZLBPMS_APROVEITAMENTO_TEMPLATE_DESPACHO="/home/wgn/mnt/ext4/Projects-Srcs/Projects-Srcs-FzlSoft/fzlbpms/workspaces/etec-coord-workspace/documentos-templates/doc_aproveitamento_disciciplina/06 Doc 13.2_anexo II - Despacho-FabioAssatoRossi-26375.docx"
+#+end_src
+
+* Optional configuration
+
+| Purpose | System property | Environment variable | Default |
+|---------+-----------------+----------------------+---------|
+| Components JSON file | =fzlbpms.aproveitamento.components.path= | =FZLBPMS_APROVEITAMENTO_COMPONENTS_PATH= | bundled default list |
+| Output directory | =fzlbpms.aproveitamento.output.dir= | =FZLBPMS_APROVEITAMENTO_OUTPUT_DIR= | JVM temp dir =/fzlbpms-aproveitamento-docs= |
+
+* Output
+
+The =POST /generate= response has:
+
+- content type =application/zip=
+- header =Content-Disposition: attachment; filename="..."=
+- header =X-Generated-Output-Dir: ...=
+
+The same two DOCX files are also written to the configured output directory.
+
+* Companion files
+
+- =API.org= — request/response details and payload contract
+- =restclient.http= — ready-to-run HTTP requests

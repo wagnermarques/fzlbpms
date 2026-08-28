@@ -45,13 +45,36 @@ if ! command -v mkcert >/dev/null 2>&1; then
     exit 0
 fi
 
-log "Ensuring mkcert's local CA is installed and trusted (mkcert -install)..."
-# system,nss only: the containers get the CA via their own bind mounts (see
-# header), so touching host JVM keystores (which can require extra
-# privileges) is pointless here. When ansible/fzlbpms-setup.yml has already
-# pre-trusted the CA in both stores, this is a no-op that never asks for
-# sudo — which is what lets it run non-interactively under Ansible.
-TRUST_STORES=system,nss mkcert -install
+CAROOT="$(mkcert -CAROOT)"
+
+if [ ! -f "$CAROOT/rootCA.pem" ]; then
+    log "Creating mkcert local root CA..."
+    mkcert -install </dev/null 2>/dev/null || true
+fi
+
+# mkcert automatically covers ~/.mozilla/firefox/ and default NSS stores,
+# but Firefox forks (Zen Browser at ~/.config/zen/) and Chromium forks (Brave)
+# benefit from direct registration in their cert databases:
+if command -v certutil >/dev/null 2>&1; then
+    # Ensure Chromium / Brave default NSS DB has the CA
+    mkdir -p "$HOME/.pki/nssdb"
+    if [ ! -f "$HOME/.pki/nssdb/cert9.db" ]; then
+        certutil -d sql:"$HOME/.pki/nssdb" -N --empty-password -f <(echo "") 2>/dev/null || true
+    fi
+    certutil -d sql:"$HOME/.pki/nssdb" -A -t "C,," -n "mkcert development CA" -i "$CAROOT/rootCA.pem" -f <(echo "") 2>/dev/null || true
+
+    # Register in all Zen Browser profiles
+    for zpath in "$HOME/.config/zen" "$HOME/.zen"; do
+        if [ -d "$zpath" ]; then
+            for prof in "$zpath"/*/; do
+                if [ -f "${prof}cert9.db" ] || [ -f "${prof}cert8.db" ]; then
+                    log "Trusting mkcert CA in Zen profile: $(basename "$prof")"
+                    certutil -d sql:"$prof" -A -t "C,," -n "mkcert development CA" -i "$CAROOT/rootCA.pem" -f <(echo "") 2>/dev/null || true
+                fi
+            done
+        fi
+    done
+fi
 
 NGINX_CERTS_DIR="containers/fzl-nginx/certs"
 PHP_CERTS_DIR="containers/fzl-php8.3-fpm/certs"

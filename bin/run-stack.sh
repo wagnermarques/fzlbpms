@@ -151,6 +151,14 @@ else
         "$PROJECT_DIR/bin/docker-dns-preflight.sh" || true
     fi
 
+    # Check if fzlbpms.local is mapped in /etc/hosts (managed by ansible/setup-project.yml)
+    if [ "$DRY_RUN" != "1" ]; then
+        if ! grep -qE '\bfzlbpms\.local\b' /etc/hosts 2>/dev/null; then
+            echo "NOTE: 'fzlbpms.local' is not in /etc/hosts."
+            echo "      Run 'cd ansible && ansible-playbook setup-project.yml -K' to configure host & SSL certs."
+        fi
+    fi
+
     # Rebuild by default: 'docker compose up' never rebuilds an existing image
     # on its own, so editing a Dockerfile/entrypoint/conf silently keeps the
     # OLD image running — which has repeatedly shipped stale nginx/karaf images

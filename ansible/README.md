@@ -1,42 +1,62 @@
-# Ansible — Rust / Tauri toolchain setup
+# Ansible Playbooks — fzlbpms
 
-Installs everything needed to build and run the **fzlbpmsadmin** Tauri v2
-desktop app (`src-projects/fzlbpmsadmin`): the system libraries
-(webkit2gtk 4.1, GTK3, appindicator, OpenSSL headers, …) and the Rust
-toolchain via rustup.
+Automated host environment setup and developer toolchain provisioning for the **fzlbpms** platform.
 
-Supported targets: **Debian 12+**, **Ubuntu 22.04+**, **Fedora**, **Alpine 3.19+**.
-(Older Debian/Ubuntu only ship webkit2gtk 4.0, which Tauri v2 cannot use.)
+Supported targets: **Fedora**, **Debian 12+**, **Ubuntu 22.04+**, **Alpine 3.19+**.
 
-## Usage
+---
+
+## 1. Project Onboarding (`setup-project.yml`)
+
+The primary playbook to configure everything required to run the stack smoothly and securely:
+- **Docker Engine + Compose v2** (Official repositories & group permissions).
+- **Storage Driver Optimization** (`btrfs` native driver for Fedora Workstation).
+- **SELinux Permissions** (Applies `container_file_t` to bind-mounted source folders).
+- **Local Domain Resolution** (Maps `127.0.0.1 fzlbpms.local` in `/etc/hosts`).
+- **Local HTTPS & SSL Trust** (Installs `mkcert`, trusts the root CA in system/browser NSS stores, and stages certificates for Keycloak/Nginx/OAuth2 containers).
+
+### Usage
 
 ```bash
 cd ansible
-
-# this machine (localhost is the default inventory entry)
-ansible-playbook tauri-rust-setup.yml -K        # -K asks for the sudo password
-
-# remote hosts: uncomment/add them in inventory.ini first
-ansible-playbook tauri-rust-setup.yml -K -l debian-vm
+ansible-playbook setup-project.yml -K        # -K prompts for sudo password
 ```
 
-After the first run, open a new shell (or `source ~/.cargo/env`) so `cargo`
-is on your PATH, then:
+After the playbook completes:
+```bash
+# 1. Refresh group if Docker was newly installed
+newgrp docker
+
+# 2. Start the project stack
+cd ..
+./bin/run-stack.sh basic
+
+# 3. Open in your browser
+https://fzlbpms.local/fzlbpmsadmin/
+```
+
+---
+
+## 2. Desktop App Toolchain (`tauri-rust-setup.yml`)
+
+Installs the Rust toolchain (via `rustup`) and system libraries (`webkit2gtk 4.1`, `GTK3`, `OpenSSL` headers) required to build and run the **fzlbpmsadmin** Tauri v2 desktop app (`src-projects/fzlbpmsadmin`).
+
+### Usage
 
 ```bash
-cd ../src-projects/fzlbpmsadmin/angular-ui
-npm run tauri:dev   # or: npx tauri dev
+cd ansible
+ansible-playbook tauri-rust-setup.yml -K
 ```
 
-## Notes
+Then run the desktop app:
+```bash
+cd ../src-projects/fzlbpmsadmin/angular-ui
+npm run tauri:dev
+```
 
-- **Alpine**: needs the `community` repository enabled in
-  `/etc/apk/repositories`, and `python3` installed for Ansible to manage it.
-  The `apk` module comes from the `community.general` collection
-  (`ansible-galaxy collection install community.general` if missing).
-- **Rust** is installed per-user with rustup (stable toolchain), not from the
-  distro packages, so every machine gets the same compiler version.
-- The **Tauri CLI is not installed here** on purpose — it lives in the
-  project as the `@tauri-apps/cli` npm devDependency, so `npm install` in
-  `angular-ui` provides it.
-- The playbook is idempotent: re-running it only updates the toolchain.
+---
+
+## Notes & Idempotency
+
+- All playbooks in this directory are fully **idempotent**. You can safely re-run them at any time to verify or repair host configuration.
+- Local configuration is targeted via `inventory.ini` (`localhost ansible_connection=local`).

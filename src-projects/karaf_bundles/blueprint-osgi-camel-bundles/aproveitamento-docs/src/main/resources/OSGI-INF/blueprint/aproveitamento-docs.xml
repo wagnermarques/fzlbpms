@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="aproveitamentoDocumentService"
+		class="fzlbpms.aproveitamento.docs.AproveitamentoDocumentService" />
+
+	<bean id="componentsCatalogBean"
+		class="fzlbpms.aproveitamento.docs.ComponentsCatalogBean">
+		<property name="service" ref="aproveitamentoDocumentService" />
+	</bean>
+
+	<bean id="generateDocumentsProcessor"
+		class="fzlbpms.aproveitamento.docs.GenerateDocumentsProcessor">
+		<property name="service" ref="aproveitamentoDocumentService" />
+	</bean>
+
+	<camelContext id="aproveitamentoDocsContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<restConfiguration component="jetty"
+			port="9092"
+			bindingMode="off"
+			enableCORS="true" />
+
+		<rest path="/fzlbpms/aproveitamento">
+			<get path="/components">
+				<to uri="direct:list-components" />
+			</get>
+			<post path="/generate" consumes="application/json">
+				<to uri="direct:generate-documents" />
+			</post>
+		</rest>
+
+		<route id="list-aproveitamento-components">
+			<from uri="direct:list-components" />
+			<setBody>
+				<method ref="componentsCatalogBean" method="getComponentsJson" />
+			</setBody>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+		</route>
+
+		<route id="generate-aproveitamento-documents">
+			<from uri="direct:generate-documents" />
+
+			<setProperty name="studentName">
+				<jsonpath>$.studentName</jsonpath>
+			</setProperty>
+			<setProperty name="studentRm">
+				<jsonpath suppressExceptions="true">$.studentRm</jsonpath>
+			</setProperty>
+			<setProperty name="teacherPresident">
+				<jsonpath>$.teacherPresident</jsonpath>
+			</setProperty>
+			<setProperty name="teacherMember1">
+				<jsonpath>$.teacherMember1</jsonpath>
+			</setProperty>
+			<setProperty name="teacherMember2">
+				<jsonpath>$.teacherMember2</jsonpath>
+			</setProperty>
+			<setProperty name="componentNames">
+				<jsonpath>$.componentNames</jsonpath>
+			</setProperty>
+			<setProperty name="expedientNumber">
+				<jsonpath suppressExceptions="true">$.expedientNumber</jsonpath>
+			</setProperty>
+			<setProperty name="schoolName">
+				<jsonpath suppressExceptions="true">$.schoolName</jsonpath>
+			</setProperty>
+			<setProperty name="programName">
+				<jsonpath suppressExceptions="true">$.programName</jsonpath>
+			</setProperty>
+			<setProperty name="courseName">
+				<jsonpath suppressExceptions="true">$.courseName</jsonpath>
+			</setProperty>
+			<setProperty name="portariaDate">
+				<jsonpath suppressExceptions="true">$.portariaDate</jsonpath>
+			</setProperty>
+			<setProperty name="parecerPageReference">
+				<jsonpath suppressExceptions="true">$.parecerPageReference</jsonpath>
+			</setProperty>
+			<setProperty name="decision">
+				<jsonpath suppressExceptions="true">$.decision</jsonpath>
+			</setProperty>
+			<setProperty name="justification">
+				<jsonpath suppressExceptions="true">$.justification</jsonpath>
+			</setProperty>
+
+			<process ref="generateDocumentsProcessor" />
+		</route>
+	</camelContext>
+</blueprint>

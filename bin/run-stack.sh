@@ -127,11 +127,12 @@ if [ "$MODE" = "down" ]; then
     CMD=(docker compose stop "${SERVICES[@]}")
 else
     # A bind mount whose source FILE does not exist yet makes Docker create it
-    # as a root-owned *directory* — which then blocks bin/setup-local-https.sh
-    # from writing the real CA there (it can't overwrite a directory, and root
-    # owns it). Unlike the other services, oauth2-proxy and theia mount the
-    # mkcert CA as a single file, so guarantee those sources exist as (empty)
-    # files first; setup-local-https.sh fills them with the real CA later.
+    # as a root-owned *directory* — which then blocks the cert staging in
+    # ansible/tasks/local-https.yml from writing the real CA there (it can't
+    # overwrite a directory, and root owns it). Unlike the other services,
+    # oauth2-proxy and theia mount the mkcert CA as a single file, so guarantee
+    # those sources exist as (empty) files first; the playbook fills them with
+    # the real CA later (--tags certs).
     if [ "$DRY_RUN" != "1" ]; then
         for cert in \
             "$PROJECT_DIR/containers/fzl-oauth2-proxy/certs/mkcert-ca.crt" \

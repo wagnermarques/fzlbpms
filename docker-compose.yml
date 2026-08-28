@@ -25,7 +25,7 @@ services:
       # from the running container's own processes, even though it's listed
       # correctly in /proc/mounts. See containers/fzl-php8.3-fpm/docker-entrypoint.sh.
       - ./src-projects/moodledata:/moodledata:rw
-      # Populated by bin/setup-local-https.sh / ansible/fzlbpms-setup.yml —
+      # Populated by ansible/setup-project.yml (--tags certs) —
       # see docker-entrypoint.d/10-install-mkcert-certs.sh for how a missing
       # or empty dir here is handled safely.
       - ./containers/fzl-nginx/certs:/run/mkcert-certs:ro
@@ -34,7 +34,7 @@ services:
         # Lets other containers (Moodle, Flowable) reach this same nginx —
         # and therefore Keycloak — via https://fzlbpms.local, matching what
         # a browser resolves via the /etc/hosts entry on the dev machine.
-        # See bin/switch-domain.sh and ansible/fzlbpms-setup.yml.
+        # See bin/switch-domain.sh and ansible/setup-project.yml.
         aliases:
           - fzlbpms.local
 
@@ -56,8 +56,8 @@ services:
     volumes:
       - ./src-projects/var_www/html:/var/www/html
       - ./src-projects/moodledata:/moodledata
-      # Trusted by docker-entrypoint.sh at container start if present — see
-      # bin/setup-local-https.sh. Needed for curl/Guzzle calls to
+      # Trusted by docker-entrypoint.sh at container start if present —
+      # populated by ansible/setup-project.yml (--tags certs). Needed for curl/Guzzle calls to
       # https://fzlbpms.local (Moodle's OAuth2 discovery/token exchange).
       - ./containers/fzl-php8.3-fpm/certs:/usr/local/share/ca-certificates/mkcert:ro
     networks:
@@ -520,7 +520,7 @@ services:
         "flowable.common.app.security.oauth2.last-name-attribute":"family_name",
         "flowable.common.app.security.oauth2.email-attribute":"email"}
     volumes:
-      # Populated by bin/setup-local-https.sh / ansible/fzlbpms-setup.yml.
+      # Populated by ansible/setup-project.yml (--tags certs).
       # The 'flowable' user can't write the JVM's own cacerts (root-owned),
       # so the entrypoint below builds a writable copy instead — see there
       # for why. Needed for this container's own OIDC discovery/token-
@@ -545,7 +545,7 @@ services:
             echo "[entrypoint] WARNING - failed to import the mkcert CA; https://fzlbpms.local calls will fail TLS verification."
           fi
         else
-          echo "[entrypoint] No mkcert CA at /run/mkcert-certs - https://fzlbpms.local calls will fail TLS verification. Run bin/setup-local-https.sh to fix."
+          echo "[entrypoint] No mkcert CA at /run/mkcert-certs - https://fzlbpms.local calls will fail TLS verification. Run: ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K"
         fi
         exec /flowable-entrypoint.sh
     extra_hosts:
@@ -672,7 +672,7 @@ services:
     volumes:
       # OIDC discovery runs against https://fzlbpms.local/auth/... — without
       # the mkcert CA that call fails TLS verification and the proxy never
-      # becomes ready. Populated by bin/setup-local-https.sh.
+      # becomes ready. Populated by ansible/setup-project.yml (--tags certs).
       #
       # Mounted as a FILE inside /etc/ssl/certs, not as a directory: this is a
       # distroless Go binary, and Go's root-CA loader scans /etc/ssl/certs for

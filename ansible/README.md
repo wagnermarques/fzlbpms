@@ -13,13 +13,44 @@ The primary playbook to configure everything required to run the stack smoothly 
 - **Storage Driver Optimization** (`btrfs` native driver for Fedora Workstation).
 - **SELinux Permissions** (Applies `container_file_t` to bind-mounted source folders).
 - **Local Domain Resolution** (Maps `127.0.0.1 fzlbpms.local` in `/etc/hosts`).
-- **Local HTTPS & SSL Trust** (Installs `mkcert`, trusts the root CA in system/browser NSS stores, and stages certificates for Keycloak/Nginx/OAuth2 containers).
+- **Local HTTPS & SSL Trust** (`tasks/local-https.yml`) — installs `mkcert`, trusts the root CA in the system store *and* in every browser certificate database it can find, issues the `fzlbpms.local` certificate, stages it plus the CA for the nginx/Moodle/Flowable/Karaf/oauth2-proxy/Theia containers, and restarts the ones that are running so they actually load it.
 
 ### Usage
 
 ```bash
 cd ansible
 ansible-playbook setup-project.yml -K        # -K prompts for sudo password
+```
+
+Or from the repo root (the `inventory.ini` path in `ansible.cfg` is relative to
+this directory, so pass it explicitly from anywhere else):
+
+```bash
+ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml -K
+```
+
+### Certificates only
+
+Re-issuing / re-trusting the local HTTPS certificate is tagged, so you can do
+just that part without redoing the Docker and SELinux setup:
+
+```bash
+ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K
+```
+
+It is conditional, not unconditional: `mkcert` is only invoked when the staged
+certificate is missing, signed by a different CA than the one currently
+trusted, expiring within 30 days, or missing its `fzlbpms.local` SAN. When it
+does re-issue, the running containers that consume the certificate or the CA
+are restarted automatically — `docker compose up -d` will not do it for you,
+because their config has not changed and each of them installs the certificate
+from its *entrypoint*, i.e. only at container start.
+
+Force a fresh certificate anyway:
+
+```bash
+ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml \
+    --tags certs -e fzlbpms_https_force_reissue=true -K
 ```
 
 After the playbook completes:
@@ -59,4 +90,5 @@ npm run tauri:dev
 ## Notes & Idempotency
 
 - All playbooks in this directory are fully **idempotent**. You can safely re-run them at any time to verify or repair host configuration.
+- `tasks/local-https.yml` is the single implementation of local HTTPS, included by `setup-project.yml`. There is no companion shell script — it replaced `bin/setup-local-https.sh`.
 - Local configuration is targeted via `inventory.ini` (`localhost ansible_connection=local`).

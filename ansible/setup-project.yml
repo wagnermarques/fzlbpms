@@ -21,7 +21,7 @@
   hosts: docker_hosts
   become: false
   vars:
-    docker_login_user: "{{ ansible_env.SUDO_USER | default(ansible_env.USER) }}"
+    docker_login_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER) }}"
     fzlbpms_repo_root: "{{ (playbook_dir + '/..') | realpath }}"
 
     docker_packages:
@@ -262,90 +262,26 @@
 
     # ------------------------------------------------------------------
     # 8. Local HTTPS & SSL Certificates (mkcert)
+    #
+    # The whole of it lives in tasks/local-https.yml. Re-issue certificates
+    # without redoing the rest of the host setup:
+    #
+    #   ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml \
+    #       --tags certs -K
     # ------------------------------------------------------------------
-    - name: Install mkcert and nss-tools (Fedora)
-      become: true
-      ansible.builtin.dnf:
-        name:
-          - mkcert
-          - nss-tools
-        state: present
-      when: ansible_facts.os_family == "RedHat"
-
-    - name: Install mkcert and libnss3-tools (Debian/Ubuntu)
-      become: true
-      ansible.builtin.apt:
-        name:
-          - mkcert
-          - libnss3-tools
-        state: present
-      when: ansible_facts.os_family == "Debian"
-
-    - name: Trust mkcert CA in user's browser/NSS store
-      become: false
-      ansible.builtin.command: mkcert -install
-      environment:
-        TRUST_STORES: nss
-      register: mkcert_nss
-      changed_when: (mkcert_nss.stdout + mkcert_nss.stderr) is search('now installed')
-      when: ansible_facts.os_family in ["Debian", "RedHat"]
-
-    - name: Locate mkcert CA root directory
-      become: false
-      ansible.builtin.command: mkcert -CAROOT
-      register: mkcert_caroot
-      changed_when: false
-      when: ansible_facts.os_family in ["Debian", "RedHat"]
-
-    - name: Trust mkcert CA in system trust store (Fedora)
-      become: true
-      ansible.builtin.copy:
-        src: "{{ mkcert_caroot.stdout | trim }}/rootCA.pem"
-        dest: /etc/pki/ca-trust/source/anchors/mkcert-{{ docker_login_user }}-rootCA.pem
-        remote_src: true
-        mode: "0644"
-      register: mkcert_system_anchor_fedora
-      when: ansible_facts.os_family == "RedHat"
-
-    - name: Update system CA trust bundle (Fedora)
-      become: true
-      ansible.builtin.command: update-ca-trust
-      when:
-        - ansible_facts.os_family == "RedHat"
-        - mkcert_system_anchor_fedora is changed
-
-    - name: Trust mkcert CA in system trust store (Debian/Ubuntu)
-      become: true
-      ansible.builtin.copy:
-        src: "{{ mkcert_caroot.stdout | trim }}/rootCA.pem"
-        dest: /usr/local/share/ca-certificates/mkcert-{{ docker_login_user }}-rootCA.crt
-        remote_src: true
-        mode: "0644"
-      register: mkcert_system_anchor_debian
-      when: ansible_facts.os_family == "Debian"
-
-    - name: Update system CA certificates (Debian/Ubuntu)
-      become: true
-      ansible.builtin.command: update-ca-certificates
-      when:
-        - ansible_facts.os_family == "Debian"
-        - mkcert_system_anchor_debian is changed
-
-    - name: Generate and stage fzlbpms.local certificates across container dirs
-      become: false
-      ansible.builtin.command: ./bin/setup-local-https.sh
-      args:
-        chdir: "{{ fzlbpms_repo_root }}"
-      register: local_https_setup
-      changed_when: "'Done.' in local_https_setup.stdout"
-      when: ansible_facts.os_family in ["Debian", "RedHat"]
-
-    - name: Show setup-local-https.sh output
-      ansible.builtin.debug:
-        msg: "{{ local_https_setup.stdout_lines }}"
-      when:
-        - local_https_setup is defined
-        - local_https_setup.stdout_lines is defined
+    # `apply:` is what pushes the tags onto the included tasks — tags on a
+    # dynamic include_tasks otherwise gate only the include statement itself,
+    # and `--tags certs` would run the include and then filter everything in it.
+    - name: Set up local HTTPS for fzlbpms.local
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/local-https.yml"
+        apply:
+          tags:
+            - certs
+            - https
+      tags:
+        - certs
+        - https
 
     # ------------------------------------------------------------------
     # 9. Verification & Summary
@@ -363,6 +299,19 @@
       ansible.builtin.debug:
         msg: "{{ versions.results | map(attribute='stdout') | list }}"
 
+    # Being in /etc/group is not the same as the running shell having the
+    # group: the terminal that launched this playbook kept the group list it
+    # was created with. `sg docker` starts a process that does have it, which
+    # is what distinguishes "not set up" from "set up, shell just needs
+    # refreshing" — and turns the generic reminder below into a precise one.
+    - name: Verify {{ docker_login_user }} can already run docker via the docker group
+      become: false
+      ansible.builtin.command: sg docker -c "docker info"
+      register: sg_docker_check
+      changed_when: false
+      failed_when: false
+      when: ansible_facts.os_family != "Alpine"   # sg may be absent there
+
     - name: Summary notice
       ansible.builtin.debug:
         msg:
@@ -372,8 +321,17 @@
           - "  - /etc/hosts: 127.0.0.1 fzlbpms.local configured"
           - "  - SSL Certs: mkcert trusted on host and staged for containers"
           - "=================================================================="
-          - "Next steps:"
-          - "  1. If running for the first time, refresh group: `newgrp docker`"
-          - "  2. Start the stack: `./bin/run-stack.sh basic`"
-          - "  3. Open: `https://fzlbpms.local/fzlbpmsadmin/`"
+          - "{{ docker_group_note }}"
           - "=================================================================="
+          - "Next steps:"
+          - "  1. Start the stack: `./bin/run-stack.sh basic`"
+          - "  2. Open: `https://fzlbpms.local/fzlbpmsadmin/`"
+          - "=================================================================="
+      vars:
+        docker_group_note: >-
+          {{ "Docker group: OK — " ~ docker_login_user ~ " can run docker without sudo."
+             if (sg_docker_check.rc | default(1)) == 0
+             else "Docker group: the grant is in /etc/group, but THIS terminal still has
+                   the group list it was created with, so plain `docker` / `docker compose`
+                   will fail here with \"permission denied\". Open a new terminal, or run
+                   `newgrp docker` in this one, before the next step." }}

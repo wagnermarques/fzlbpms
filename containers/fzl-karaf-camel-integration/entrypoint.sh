@@ -19,7 +19,7 @@ ls -la /opt/karaf
 # (Moodle web services) with TLS verification. Runs as root (we're still
 # root here, before gosu) so it can write the JDK's cacerts directly. The CA
 # is bind-mounted from containers/fzl-karaf-camel-integration/certs, staged
-# by bin/setup-local-https.sh. Safe no-op when absent.
+# by ansible/setup-project.yml (--tags certs). Safe no-op when absent.
 MKCERT_CA="/run/mkcert-certs/mkcert-ca.pem"
 if [ -f "$MKCERT_CA" ]; then
   echo "==== TRUSTING LOCAL mkcert CA IN THE JVM ===="
@@ -31,7 +31,7 @@ if [ -f "$MKCERT_CA" ]; then
     echo "  mkcert CA already present (or import skipped)."
   fi
 else
-  echo "==== No mkcert CA at $MKCERT_CA — https://fzlbpms.local calls will fail TLS verification. Run bin/setup-local-https.sh. ===="
+  echo "==== No mkcert CA at $MKCERT_CA — https://fzlbpms.local calls will fail TLS verification. Run: ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K ===="
 fi
 
 echo "==== DEPLOYING BLUEPRINT XML BUNDLES ===="

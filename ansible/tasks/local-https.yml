@@ -1,0 +1,504 @@
+---
+# =============================================================================
+# local-https.yml — issues a browser-trusted TLS certificate for
+# https://{{ fzlbpms_https_domain }} with mkcert, stages it (plus mkcert's root
+# CA) where docker-compose.yml expects it, and restarts the containers that
+# consume it.
+#
+# This is the single implementation of "local HTTPS" for the project.
+# It replaces the former bin/setup-local-https.sh, and is included by
+# ansible/setup-project.yml.
+#
+# Run just this part, without the rest of the host setup:
+#   ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K
+#
+# Force a fresh certificate even when the current one still validates:
+#   ... --tags certs -e fzlbpms_https_force_reissue=true
+#
+# Re-stage certificates with no root at all, on a host where mkcert is already
+# installed and its CA already trusted system-wide (no -K needed):
+#   ... --tags certs --skip-tags privileged
+#
+# Required vars (both playbooks define them at play level):
+#   fzlbpms_repo_root  — absolute path to the repo checkout
+#   docker_login_user  — the human user the CA/certs belong to
+#
+# Where each artifact lands and who reads it:
+#   containers/fzl-nginx/certs/<domain>.pem + -key.pem
+#     -> nginx's TLS listener. /etc/nginx/certs is NOT bind-mounted; the image's
+#        docker-entrypoint.d/10-install-mkcert-certs.sh copies these in at
+#        container start, over the self-signed fallback baked into the image.
+#        That copy is why a regenerated certificate needs a container restart.
+#   containers/fzl-php8.3-fpm/certs/mkcert-ca.crt
+#     -> fzl-php8.3-fpm + fzl-moodle-oauth2-configurator run
+#        update-ca-certificates at start, so Moodle's PHP backend can call
+#        https://<domain> (OAuth2 discovery / token exchange) directly.
+#   containers/fzl-flowable-ui/certs/mkcert-ca.pem
+#     -> imported into a writable copy of the JVM truststore at container start
+#        (see the entrypoint in docker-compose.yml), for Flowable's OIDC client.
+#   containers/fzl-karaf-camel-integration/certs/mkcert-ca.pem
+#     -> same idea for the Camel routes that call Moodle over https.
+#   containers/fzl-oauth2-proxy/certs/mkcert-ca.crt
+#     -> oauth2-proxy runs OIDC discovery against https://<domain>/auth/ on
+#        startup; without this CA the proxy never becomes ready and /theia/
+#        returns 500 for everyone.
+#   containers/fzl-theia/certs/mkcert-ca.crt
+#     -> lets terminals inside the IDE curl https://<domain> without -k.
+#
+# Degrades gracefully: with mkcert absent, everything below is skipped and the
+# stack still starts on nginx's self-signed fallback (browser warning only).
+# =============================================================================
+
+- name: Define the local-HTTPS layout
+  ansible.builtin.set_fact:
+    fzlbpms_https_domain: "{{ fzlbpms_https_domain | default('fzlbpms.local') }}"
+    fzlbpms_nginx_certs_dir: "{{ fzlbpms_repo_root }}/containers/fzl-nginx/certs"
+    # Every place the root CA has to be staged, relative to the repo root.
+    fzlbpms_ca_targets:
+      - containers/fzl-php8.3-fpm/certs/mkcert-ca.crt
+      - containers/fzl-flowable-ui/certs/mkcert-ca.pem
+      - containers/fzl-karaf-camel-integration/certs/mkcert-ca.pem
+      - containers/fzl-oauth2-proxy/certs/mkcert-ca.crt
+      - containers/fzl-theia/certs/mkcert-ca.crt
+    # Compose services to restart after the certificate or the CA changes.
+    # Their container_name in docker-compose.yml matches the service name, so
+    # the same list works for both `docker ps --filter name=` and
+    # `docker compose restart`.
+    #
+    # ORDER MATTERS, and `docker compose restart` provides none of its own —
+    # it stops and starts everything you name in parallel, and fzl-nginx has
+    # no depends_on that would give `up -d` anything to order by either.
+    # There is a dependency in both directions here:
+    #
+    #   * nginx resolves every proxy_pass upstream once, at configuration load
+    #     time. Coming back while fzl-php8.3-fpm is down kills it outright
+    #     with "host not found in upstream" — it does not retry.
+    #   * fzl-flowable-ui and fzl-oauth2-proxy both run OIDC discovery against
+    #     https://<domain>/auth/ the moment they start, and exit (Flowable) or
+    #     crash-loop (oauth2-proxy) when nginx is not answering yet.
+    #
+    # So: upstreams that never call back into nginx at boot go first, nginx
+    # second, and the two OIDC clients last. Their containers stay up while
+    # nginx restarts, which is all nginx needs to resolve them.
+    fzlbpms_cert_upstreams:
+      - fzl-php8.3-fpm
+      - fzl-karaf-camel-integration
+      - fzl-theia
+    fzlbpms_cert_oidc_clients:
+      - fzl-flowable-ui
+      - fzl-oauth2-proxy
+    # Spelled out rather than a concatenation: a single set_fact cannot
+    # reference a fact it is defining in the same task.
+    fzlbpms_cert_services:
+      - fzl-php8.3-fpm
+      - fzl-karaf-camel-integration
+      - fzl-theia
+      - fzl-nginx
+      - fzl-flowable-ui
+      - fzl-oauth2-proxy
+    # Browser certificate databases mkcert's own -install does not reach.
+    # mkcert only looks at ~/.mozilla/firefox and ~/snap/...; Fedora's Firefox
+    # with an XDG profile layout (~/.config/mozilla/firefox), LibreWolf, Zen
+    # and the Flatpak sandbox all live elsewhere.
+    fzlbpms_nss_search_paths:
+      - "{{ ansible_facts.env.HOME }}/.mozilla/firefox"
+      - "{{ ansible_facts.env.HOME }}/.config/mozilla/firefox"
+      - "{{ ansible_facts.env.HOME }}/.var/app/org.mozilla.firefox/.mozilla/firefox"
+      - "{{ ansible_facts.env.HOME }}/snap/firefox/common/.mozilla/firefox"
+      - "{{ ansible_facts.env.HOME }}/.librewolf"
+      - "{{ ansible_facts.env.HOME }}/.config/librewolf"
+      - "{{ ansible_facts.env.HOME }}/.zen"
+      - "{{ ansible_facts.env.HOME }}/.config/zen"
+      - "{{ ansible_facts.env.HOME }}/.pki/nssdb"
+      - "{{ ansible_facts.env.HOME }}/.local/share/pki/nssdb"
+
+# ---------------------------------------------------------------------------
+# 1. mkcert + NSS tooling
+# ---------------------------------------------------------------------------
+- name: Install mkcert and nss-tools (Fedora)
+  become: true
+  ansible.builtin.dnf:
+    name:
+      - mkcert
+      - nss-tools
+    state: present
+  when: ansible_facts.os_family == "RedHat"
+  tags: [privileged]
+
+- name: Install mkcert and libnss3-tools (Debian/Ubuntu)
+  become: true
+  ansible.builtin.apt:
+    name:
+      - mkcert
+      - libnss3-tools
+    state: present
+  when: ansible_facts.os_family == "Debian"
+  tags: [privileged]
+
+- name: Check that mkcert is available
+  become: false
+  ansible.builtin.command: command -v mkcert
+  register: fzlbpms_mkcert_bin
+  changed_when: false
+  failed_when: false
+
+- name: Warn and skip local HTTPS when mkcert is unavailable
+  ansible.builtin.debug:
+    msg: >-
+      mkcert is not installed and could not be installed automatically on
+      {{ ansible_facts.distribution }} — skipping local HTTPS. The stack still
+      starts, using nginx's self-signed fallback certificate (browser warning),
+      and server-side calls to https://{{ fzlbpms_https_domain }} will fail TLS
+      verification until mkcert is installed and this playbook is re-run.
+  when: fzlbpms_mkcert_bin.rc != 0
+
+# Everything below needs mkcert.
+- name: Configure local HTTPS
+  when: fzlbpms_mkcert_bin.rc == 0
+  block:
+    # mkcert -install normally installs its CA into BOTH the system trust store
+    # (via an internal `sudo tee`, which cannot prompt for a password under
+    # Ansible) and the user's browser/NSS store (no sudo). Split the two: the
+    # NSS half runs as the real user, the system half is done with become
+    # below — after which mkcert finds everything trusted and never sudoes.
+    - name: Create the mkcert CA and trust it in {{ docker_login_user }}'s default NSS stores
+      become: false
+      ansible.builtin.command: mkcert -install
+      environment:
+        TRUST_STORES: nss
+      register: fzlbpms_mkcert_nss
+      changed_when: (fzlbpms_mkcert_nss.stdout + fzlbpms_mkcert_nss.stderr) is search('now installed')
+
+    - name: Locate the mkcert CA root directory
+      become: false
+      ansible.builtin.command: mkcert -CAROOT
+      register: fzlbpms_mkcert_caroot
+      changed_when: false
+
+    - name: Record the mkcert root CA path
+      ansible.builtin.set_fact:
+        fzlbpms_root_ca: "{{ fzlbpms_mkcert_caroot.stdout | trim }}/rootCA.pem"
+
+    # -----------------------------------------------------------------------
+    # 2. System trust store
+    # -----------------------------------------------------------------------
+    - name: Trust the mkcert CA in the system trust store (Fedora)
+      become: true
+      ansible.builtin.copy:
+        src: "{{ fzlbpms_root_ca }}"
+        dest: /etc/pki/ca-trust/source/anchors/mkcert-{{ docker_login_user }}-rootCA.pem
+        remote_src: true
+        mode: "0644"
+      register: fzlbpms_system_anchor_fedora
+      when: ansible_facts.os_family == "RedHat"
+      tags: [privileged]
+
+    - name: Rebuild the system CA bundle (Fedora)
+      become: true
+      ansible.builtin.command: update-ca-trust
+      changed_when: true
+      when:
+        - ansible_facts.os_family == "RedHat"
+        - fzlbpms_system_anchor_fedora is defined
+        - fzlbpms_system_anchor_fedora is changed
+      tags: [privileged]
+
+    - name: Trust the mkcert CA in the system trust store (Debian/Ubuntu)
+      become: true
+      ansible.builtin.copy:
+        src: "{{ fzlbpms_root_ca }}"
+        dest: /usr/local/share/ca-certificates/mkcert-{{ docker_login_user }}-rootCA.crt
+        remote_src: true
+        mode: "0644"
+      register: fzlbpms_system_anchor_debian
+      when: ansible_facts.os_family == "Debian"
+      tags: [privileged]
+
+    - name: Rebuild the system CA bundle (Debian/Ubuntu)
+      become: true
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true
+      when:
+        - ansible_facts.os_family == "Debian"
+        - fzlbpms_system_anchor_debian is defined
+        - fzlbpms_system_anchor_debian is changed
+      tags: [privileged]
+
+    # -----------------------------------------------------------------------
+    # 3. Browser NSS databases mkcert -install does not reach
+    # -----------------------------------------------------------------------
+    - name: Ensure a Chromium/Brave NSS database exists
+      become: false
+      ansible.builtin.command:
+        cmd: certutil -d sql:{{ ansible_facts.env.HOME }}/.pki/nssdb -N --empty-password
+        creates: "{{ ansible_facts.env.HOME }}/.pki/nssdb/cert9.db"
+
+    - name: Find every browser certificate database belonging to {{ docker_login_user }}
+      become: false
+      ansible.builtin.find:
+        paths: "{{ fzlbpms_nss_search_paths }}"
+        patterns: cert9.db
+        recurse: true
+        depth: 4
+        file_type: file
+      register: fzlbpms_nss_dbs
+
+    # Two things make this trickier than "add the CA if missing":
+    #
+    #  * mkcert -install stores the CA under the nickname
+    #    "mkcert development CA <decimal-serial>", so a lookup by any fixed
+    #    nickname finds nothing and would report "missing" forever. The
+    #    comparison below is therefore by FINGERPRINT, across every nickname
+    #    in the database.
+    #  * certutil cannot replace a certificate in place, and deleting by a
+    #    single nickname would leave a rotated-out CA behind. Two mkcert CAs
+    #    share the same subject (CN=mkcert <user>@<host>), so a leftover one
+    #    is found by name, verified with the wrong key, and the browser
+    #    reports an INVALID SIGNATURE rather than an unknown issuer. Every
+    #    "mkcert development CA*" entry is dropped before the current one is
+    #    added.
+    #
+    # Split in two tasks because `changed_when` cannot see a looped task's own
+    # stdout: the comparison reports nothing, the write reports "changed".
+    - name: Compare the mkcert CA against what each browser database trusts
+      become: false
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -uo pipefail
+          db="{{ item | dirname }}"
+          want=$(openssl x509 -in "{{ fzlbpms_root_ca }}" -noout -fingerprint -sha256)
+          while IFS= read -r nick; do
+              [ -n "$nick" ] || continue
+              have=$(certutil -d "sql:$db" -L -n "$nick" -a 2>/dev/null \
+                     | openssl x509 -noout -fingerprint -sha256 2>/dev/null || true)
+              if [ "$want" = "$have" ]; then
+                  echo current
+                  exit 0
+              fi
+          done < <(certutil -d "sql:$db" -L 2>/dev/null \
+                   | sed -E '1,2d; /^[[:space:]]*$/d; s/[[:space:]]+[A-Za-z]*,[A-Za-z]*,[A-Za-z]*[[:space:]]*$//')
+          echo stale
+      loop: "{{ fzlbpms_nss_dbs.files | map(attribute='path') | list }}"
+      loop_control:
+        label: "{{ item | dirname }}"
+      register: fzlbpms_nss_state
+      changed_when: false
+
+    - name: Trust the mkcert CA in the browser databases that are out of date
+      become: false
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -uo pipefail
+          db="{{ item.item | dirname }}"
+          pw=$(mktemp); : > "$pw"
+          # Drop every mkcert CA already there, whatever nickname it carries.
+          while IFS= read -r nick; do
+              case "$nick" in
+                  "mkcert development CA"*) certutil -d "sql:$db" -D -n "$nick" >/dev/null 2>&1 || true ;;
+              esac
+          done < <(certutil -d "sql:$db" -L 2>/dev/null \
+                   | sed -E '1,2d; /^[[:space:]]*$/d; s/[[:space:]]+[A-Za-z]*,[A-Za-z]*,[A-Za-z]*[[:space:]]*$//')
+          certutil -d "sql:$db" -A -t "C,," -n "mkcert development CA" \
+                   -i "{{ fzlbpms_root_ca }}" -f "$pw"
+          rc=$?
+          rm -f "$pw"
+          exit $rc
+      loop: "{{ fzlbpms_nss_state.results }}"
+      loop_control:
+        label: "{{ item.item | dirname }}"
+      when: item.stdout == "stale"
+      # A database locked by a running browser, or sealed behind a master
+      # password, must not abort the rest of the setup.
+      failed_when: false
+      register: fzlbpms_nss_trust
+
+    - name: Report browser databases that could not be updated
+      ansible.builtin.debug:
+        msg: >-
+          Could not write the mkcert CA into
+          {{ fzlbpms_nss_trust.results | selectattr('rc', 'defined')
+             | selectattr('rc', 'ne', 0) | map(attribute='item')
+             | map(attribute='item') | map('dirname') | list | join(', ') }}
+          — close the browser (its certificate database is locked while it is
+          running) and re-run with --tags certs.
+      when: >-
+        fzlbpms_nss_trust.results | selectattr('rc', 'defined')
+        | selectattr('rc', 'ne', 0) | list | length > 0
+
+    # -----------------------------------------------------------------------
+    # 4. Issue and stage the certificate
+    # -----------------------------------------------------------------------
+    - name: Ensure the per-container certificate directories exist
+      become: false
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ [fzlbpms_nginx_certs_dir]
+                + (fzlbpms_ca_targets | map('regex_replace', '^', fzlbpms_repo_root + '/')
+                   | map('dirname') | list) }}"
+
+    # mkcert issues a brand-new certificate on every invocation, so calling it
+    # unconditionally would report "changed" forever and restart containers on
+    # every run. Re-issue only when the staged certificate is actually unusable.
+    - name: Check whether the staged {{ fzlbpms_https_domain }} certificate is still usable
+      become: false
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -uo pipefail
+          cert="{{ fzlbpms_nginx_certs_dir }}/{{ fzlbpms_https_domain }}.pem"
+          key="{{ fzlbpms_nginx_certs_dir }}/{{ fzlbpms_https_domain }}-key.pem"
+          ca="{{ fzlbpms_root_ca }}"
+          [ -s "$cert" ] && [ -s "$key" ] || { echo "REISSUE not-staged-yet"; exit 0; }
+          openssl verify -CAfile "$ca" "$cert" >/dev/null 2>&1 \
+              || { echo "REISSUE signed-by-a-different-ca"; exit 0; }
+          openssl x509 -in "$cert" -noout -checkend 2592000 >/dev/null 2>&1 \
+              || { echo "REISSUE expires-within-30-days"; exit 0; }
+          openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null \
+              | grep -q "DNS:{{ fzlbpms_https_domain }}" \
+              || { echo "REISSUE missing-san"; exit 0; }
+          echo "OK"
+      register: fzlbpms_cert_check
+      changed_when: false
+
+    - name: Issue the {{ fzlbpms_https_domain }} certificate with mkcert
+      become: false
+      ansible.builtin.command:
+        cmd: >-
+          mkcert
+          -cert-file {{ fzlbpms_nginx_certs_dir }}/{{ fzlbpms_https_domain }}.pem
+          -key-file {{ fzlbpms_nginx_certs_dir }}/{{ fzlbpms_https_domain }}-key.pem
+          {{ fzlbpms_https_domain }}
+      register: fzlbpms_cert_issued
+      when: >-
+        fzlbpms_cert_check.stdout is search('REISSUE')
+        or (fzlbpms_https_force_reissue | default(false) | bool)
+
+    - name: Stat the mkcert root CA
+      become: false
+      ansible.builtin.stat:
+        path: "{{ fzlbpms_root_ca }}"
+        checksum_algorithm: sha256
+      register: fzlbpms_root_ca_stat
+
+    - name: Stat the staged copies of the root CA
+      become: false
+      ansible.builtin.stat:
+        path: "{{ fzlbpms_repo_root }}/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ fzlbpms_ca_targets }}"
+      register: fzlbpms_staged_ca_stat
+
+    # Deliberately `cp` over the existing file instead of ansible.builtin.copy:
+    # copy writes a temp file and renames it into place, which allocates a NEW
+    # inode. fzl-oauth2-proxy and fzl-theia bind-mount their mkcert-ca.crt as a
+    # single FILE, and a file bind mount follows the inode — after an atomic
+    # replace those containers would keep reading the old CA forever. An
+    # in-place cp keeps the inode and updates what the container already sees.
+    - name: Stage the mkcert root CA for the containers that must trust it
+      become: false
+      ansible.builtin.command:
+        cmd: cp -f {{ fzlbpms_root_ca }} {{ fzlbpms_repo_root }}/{{ item.item }}
+      loop: "{{ fzlbpms_staged_ca_stat.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: >-
+        not item.stat.exists
+        or item.stat.checksum != fzlbpms_root_ca_stat.stat.checksum
+      register: fzlbpms_ca_staged
+
+    - name: Record whether the certificate or the CA changed
+      ansible.builtin.set_fact:
+        fzlbpms_https_changed: "{{ (fzlbpms_cert_issued is changed) or (fzlbpms_ca_staged is changed) }}"
+
+    # -----------------------------------------------------------------------
+    # 5. Reload the containers that consume the certificate / CA
+    #
+    # `docker compose up -d` does NOT recreate a container whose config is
+    # unchanged, and every one of these services installs the certificate or
+    # the CA from its entrypoint — i.e. only at container start. Without this
+    # step a regenerated certificate sits on disk while nginx keeps serving the
+    # previous one, and the other containers keep trusting the previous CA.
+    # -----------------------------------------------------------------------
+    - name: Reload the certificate into the running containers
+      when: fzlbpms_https_changed | bool
+      block:
+        - name: Detect which certificate-consuming containers are running
+          become: false
+          ansible.builtin.command:
+            cmd: docker ps --quiet --filter name=^{{ item }}$ --filter status=running
+          loop: "{{ fzlbpms_cert_services }}"
+          register: fzlbpms_running_containers
+          changed_when: false
+          failed_when: false
+
+        - name: Record which of them are running
+          ansible.builtin.set_fact:
+            fzlbpms_running_services: >-
+              {{ fzlbpms_running_containers.results
+                 | selectattr('stdout', 'ne', '')
+                 | map(attribute='item') | list }}
+
+        - name: Restart the upstreams first, so nginx finds them when it returns
+          become: false
+          ansible.builtin.command:
+            cmd: docker compose restart {{ fzlbpms_restart_upstreams | join(' ') }}
+            chdir: "{{ fzlbpms_repo_root }}"
+          vars:
+            fzlbpms_restart_upstreams: >-
+              {{ fzlbpms_cert_upstreams | select('in', fzlbpms_running_services) | list }}
+          when: fzlbpms_restart_upstreams | length > 0
+          changed_when: true
+
+        - name: Restart nginx so its entrypoint installs the new certificate
+          become: false
+          ansible.builtin.command:
+            cmd: docker compose restart fzl-nginx
+            chdir: "{{ fzlbpms_repo_root }}"
+          when: "'fzl-nginx' in fzlbpms_running_services"
+          changed_when: true
+
+        # OIDC discovery starts the instant those containers do, so give nginx
+        # the moment it needs to be answering on 443 first.
+        - name: Wait for nginx to accept TLS connections again
+          become: false
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 443
+            timeout: 60
+          when: "'fzl-nginx' in fzlbpms_running_services"
+
+        - name: Restart the OIDC clients last, once nginx is answering
+          become: false
+          ansible.builtin.command:
+            cmd: docker compose restart {{ fzlbpms_restart_oidc | join(' ') }}
+            chdir: "{{ fzlbpms_repo_root }}"
+          vars:
+            fzlbpms_restart_oidc: >-
+              {{ fzlbpms_cert_oidc_clients | select('in', fzlbpms_running_services) | list }}
+          when: fzlbpms_restart_oidc | length > 0
+          changed_when: true
+
+        - name: Note that nothing was running to restart
+          ansible.builtin.debug:
+            msg: >-
+              The certificate for {{ fzlbpms_https_domain }} was (re)issued, but none of
+              {{ fzlbpms_cert_services | join(', ') }} is running — they will pick it up
+              on the next `./bin/run-stack.sh basic`. (If the stack IS up, this host's
+              shell may not have the `docker` group yet: run `newgrp docker` and re-run
+              with --tags certs.)
+          when: fzlbpms_running_services | length == 0
+
+    - name: Summarise the local-HTTPS state
+      ansible.builtin.debug:
+        msg:
+          - "Domain .............. https://{{ fzlbpms_https_domain }}"
+          - "Root CA ............. {{ fzlbpms_root_ca }}"
+          - "Certificate ......... {{ fzlbpms_nginx_certs_dir }}/{{ fzlbpms_https_domain }}.pem"
+          - "Certificate status .. {{ fzlbpms_cert_check.stdout | trim }}{{ ' -> re-issued' if fzlbpms_cert_issued is changed else '' }}"
+          - "CA staged for ....... {{ fzlbpms_ca_targets | map('dirname') | map('dirname') | map('basename') | list | join(', ') }}"
+          - "Browser CA stores ... {{ fzlbpms_nss_dbs.files | map(attribute='path') | map('dirname') | list | join(', ') | default('none found', true) }}"
+          - "Containers reloaded . {{ fzlbpms_running_services | join(', ') if (fzlbpms_running_services | default([]) | length > 0) else 'not needed' }}"

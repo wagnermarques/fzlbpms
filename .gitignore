@@ -17,7 +17,7 @@ containers/fzl-superset/superset-db-data
 containers/fzl-superset/redis-data
 containers/fzl-superset/superset-home
 
-# mkcert-issued local HTTPS cert + CA copies (bin/setup-local-https.sh) —
+# mkcert-issued local HTTPS cert + CA copies (ansible/setup-project.yml (--tags certs)) —
 # machine-specific, regenerated per developer, never shared.
 containers/fzl-nginx/certs/*.pem
 containers/fzl-php8.3-fpm/certs/*.crt
@@ -233,3 +233,4 @@ src-projects/moodledata
 
 credentials
 bin/azure
+/.emacs-revinfor/

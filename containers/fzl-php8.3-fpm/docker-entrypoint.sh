@@ -11,7 +11,7 @@ PREFIX=" php8.3-fpm docker-entrypoint.sh"
 fzlecho $PREFIX "Iniciando o entrypoint do contaiiner..."
 echo .
 
-# Trusts the local mkcert CA if bin/setup-local-https.sh has populated
+# Trusts the local mkcert CA if ansible/setup-project.yml (--tags certs) has populated
 # /usr/local/share/ca-certificates/mkcert (bind-mounted from
 # containers/fzl-php8.3-fpm/certs) — safe no-op otherwise. Needed for
 # curl/Guzzle calls to https://fzlbpms.local (Moodle's OAuth2 discovery and

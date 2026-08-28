@@ -90,7 +90,7 @@ Perfeito para dev, inaceitável para produção.
 `sudo` *internamente* para escrever no trust store do sistema. Rodando sob
 Ansible não há terminal para digitar a senha e ele falha com
 `sudo: um terminal é necessário para ler a senha`. A solução no nosso
-playbook (`ansible/fzlbpms-setup.yml`) foi separar as duas metades:
+playbook (`ansible/setup-project.yml`) foi separar as duas metades:
 
 ```yaml
 # metade do usuário: só o NSS dos navegadores (não precisa de sudo)
@@ -108,8 +108,9 @@ playbook (`ansible/fzlbpms-setup.yml`) foi separar as duas metades:
 ```
 
 Depois disso, um `mkcert -install` normal vira no-op (ele detecta que a CA
-já está instalada e não pede sudo) — é isso que deixa
-`bin/setup-local-https.sh` rodar tanto interativamente quanto sob Ansible.
+já está instalada e não pede sudo) — é isso que deixa a emissão dos
+certificados (`ansible/tasks/local-https.yml`) rodar sob Ansible sem nunca
+esbarrar num `sudo` interativo que ela não conseguiria responder.
 
 ---
 
@@ -273,18 +274,32 @@ continue funcionando:
 2. **A instalação da confiança acontece no *entrypoint*, não no build.**
    Entrypoint roda a cada start e enxerga os bind mounts; build não. Assim,
    trocar o certificado exige só um `docker compose restart`, nunca rebuild.
-   (Corolário: `docker compose up -d` **não** reinicia container cujo config
-   não mudou — depois de regenerar certificados, use `restart`.)
-3. **Tudo que exige root na máquina fica no playbook.** `ansible/
-   fzlbpms-setup.yml` instala mkcert, escreve o `/etc/hosts`, instala a CA
-   no sistema e chama `bin/setup-local-https.sh` — idempotente, roda quantas
-   vezes quiser:
+   Corolário que já custou caro: `docker compose up -d` **não** recria um
+   container cujo config não mudou, então um certificado novo em disco fica
+   invisível para o nginx, que segue servindo o anterior — e como as duas CAs
+   do mkcert têm o mesmo `CN`, o Firefox acha a CA pelo nome, valida com a
+   chave errada e acusa **assinatura inválida** (não "emissor desconhecido").
+   Por isso o `restart` deixou de ser instrução no README e virou tarefa:
+   `ansible/tasks/local-https.yml` reinicia sozinho os serviços que consomem
+   o certificado, e só quando ele de fato mudou.
+3. **Tudo fica no playbook — não há script paralelo.** `ansible/
+   setup-project.yml` instala mkcert, escreve o `/etc/hosts`, instala a CA no
+   sistema, registra a CA nos bancos NSS dos navegadores, emite/estagia o
+   certificado e recarrega os containers. Idempotente, roda quantas vezes
+   quiser:
    ```bash
-   ansible-playbook ansible/fzlbpms-setup.yml -i ansible/inventory.ini -K
+   ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml -K
+
+   # só a parte de certificados:
+   ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K
    ```
+   A emissão é condicional: o playbook só chama o `mkcert` quando o
+   certificado em disco não existe, não valida contra a CA atual, expira em
+   menos de 30 dias ou perdeu o SAN — caso contrário reporta `ok` e não
+   reinicia nada. (`-e fzlbpms_https_force_reissue=true` força.)
 4. **Degradação suave.** Sem mkcert, o stack sobe do mesmo jeito com o
    certificado fallback (navegador avisa, mas nada quebra silenciosamente) e
-   os entrypoints apenas logam um aviso dizendo qual script rodar.
+   os entrypoints apenas logam um aviso dizendo qual comando rodar.
 
 ---
 

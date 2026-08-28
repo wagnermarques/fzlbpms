@@ -30,10 +30,10 @@ RUN rm /var/log/nginx/access.log && \
     rm /var/log/nginx/error.log
 
 # Self-signed fallback for https://fzlbpms.local (01-tls.conf) so nginx
-# always has a valid cert to load, even before bin/setup-local-https.sh /
-# ansible/fzlbpms-setup.yml has issued a real mkcert-trusted one — the
-# entrypoint script overwrites this at container start if a real one is
-# bind-mounted in. Browsers will show a trust warning until then.
+# always has a valid cert to load, even before ansible/setup-project.yml
+# (--tags certs) has issued a real mkcert-trusted one — the entrypoint script
+# overwrites this at container start if a real one is bind-mounted in.
+# Browsers will show a trust warning until then.
 RUN apk add --no-cache openssl \
     && mkdir -p /etc/nginx/certs \
     && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \

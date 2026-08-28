@@ -88,4 +88,32 @@
         name="oxf.fr.field-encryption.password"
         value="${ORBEON_CRYPTO_PASSWORD}"/>
 
+    <!-- =====================================================================
+         ETEC Coordinator Forms — Camel Document Generation Integration
+         ===================================================================== -->
+    <!-- Custom toolbar buttons for etec-coord forms (parecer, despacho, processo-aproveitamento) -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.buttons.etec-coord.*"
+        value="home summary save generate-docs"/>
+
+    <!-- Process action: validate all fields, save to PostgreSQL, and send JSON to Camel endpoint -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.process.generate-docs.etec-coord.*">
+        require-valid
+        then save
+        then send(
+            uri = "http://fzl-karaf-camel-integration:9092/fzlbpms/aproveitamento/generate",
+            content = "json",
+            replace = "all"
+        )
+    </property>
+
+    <!-- Portuguese Label for the Generate Documents action button -->
+    <property
+        as="xs:string"
+        name="oxf.fr.resource.etec-coord.*.pt.detail.buttons.generate-docs"
+        value="📄 Gerar Documentos (ZIP)"/>
+
 </properties>

@@ -49,7 +49,22 @@ public class GenerateDocumentsProcessor implements Processor {
 
 	private String optionalString(Exchange exchange, String propertyName) {
 		Object value = exchange.getProperty(propertyName);
-		return value == null ? null : value.toString().trim();
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Collection<?>) {
+			Collection<?> col = (Collection<?>) value;
+			if (col.isEmpty()) {
+				return null;
+			}
+			for (Object item : col) {
+				if (item != null && !item.toString().trim().isBlank()) {
+					return item.toString().trim();
+				}
+			}
+			return null;
+		}
+		return value.toString().trim();
 	}
 
 	private List<String> stringList(Exchange exchange, String propertyName) {
@@ -57,38 +72,35 @@ public class GenerateDocumentsProcessor implements Processor {
 		if (value == null) {
 			return List.of();
 		}
+		List<String> items = new ArrayList<>();
+		collectStrings(value, items);
+		return items;
+	}
 
-		if (value instanceof Collection<?>) {
-			List<String> items = new ArrayList<>();
-			for (Object item : (Collection<?>) value) {
-				if (item != null) {
-					String normalized = item.toString().trim();
-					if (!normalized.isBlank()) {
-						items.add(normalized);
-					}
-				}
-			}
-			return items;
+	private void collectStrings(Object value, List<String> target) {
+		if (value == null) {
+			return;
 		}
-
+		if (value instanceof Collection<?>) {
+			for (Object item : (Collection<?>) value) {
+				collectStrings(item, target);
+			}
+			return;
+		}
 		String stringValue = value.toString().trim();
 		if (stringValue.startsWith("[") && stringValue.endsWith("]")) {
 			String inner = stringValue.substring(1, stringValue.length() - 1);
-			if (inner.isBlank()) {
-				return List.of();
-			}
-
-			List<String> items = new ArrayList<>();
 			for (String token : inner.split(",")) {
-				String normalized = token.trim().replace("\"", "");
+				String normalized = token.trim().replaceAll("^\"|\"$", "").replaceAll("^'|'$", "");
 				if (!normalized.isBlank()) {
-					items.add(normalized);
+					target.add(normalized);
 				}
 			}
-			return items;
+			return;
 		}
-
-		return List.of(Objects.toString(value).trim());
+		if (!stringValue.isBlank()) {
+			target.add(stringValue);
+		}
 	}
 
 	public void setService(AproveitamentoDocumentService service) {

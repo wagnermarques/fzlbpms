@@ -23,7 +23,6 @@ import java.util.zip.ZipOutputStream;
 
 public class AproveitamentoDocumentService {
 
-	private static final String DOCUMENT_XML_PATH = "word/document.xml";
 	private static final String DEFAULT_SCHOOL_NAME = "ZONA LESTE";
 	private static final String DEFAULT_PROGRAM_NAME = "Habilitação Profissional de Técnico em Desenvolvimento de Sistemas";
 	private static final String DEFAULT_COURSE_NAME = "Curso Técnico de Desenvolvimento de Sistemas Noturno";
@@ -33,10 +32,13 @@ public class AproveitamentoDocumentService {
 	private static final String DEFAULT_JUSTIFICATION = "há compatibilidade entre as competências demonstradas na documentação e o componente curricular solicitado.";
 	private static final DateTimeFormatter OUTPUT_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
-	private static final Pattern PARECER_SUMMARY_PARAGRAPH = Pattern.compile(
+	private static final String DEFAULT_PARECER_TEMPLATE_RESOURCE = "/templates/Doc_13_1_anexo_I_Parecer_da_Comissao_Template_Odt.odt";
+	private static final String DEFAULT_DESPACHO_TEMPLATE_RESOURCE = "/templates/Doc_13_2_anexo_II_Despacho-Template_Odt.odt";
+
+	private static final Pattern DOCX_PARECER_SUMMARY_PARAGRAPH = Pattern.compile(
 		"(?s)<w:p>(?:(?!</w:p>).)*?<w:t>Após analise documental a comissão entendeu que</w:t>(?:(?!</w:p>).)*?</w:p>");
-	private static final Pattern PARAGRAPH_PROPERTIES = Pattern.compile("<w:pPr>[\\s\\S]*?</w:pPr>");
-	private static final Pattern DESPACHO_COURSE_TEXT =
+	private static final Pattern DOCX_PARAGRAPH_PROPERTIES = Pattern.compile("<w:pPr>[\\s\\S]*?</w:pPr>");
+	private static final Pattern DOCX_DESPACHO_COURSE_TEXT =
 		Pattern.compile("<w:t xml:space=\"preserve\"> regularmente matriculado.*?</w:t>");
 
 	public String loadComponentsJson() throws IOException {
@@ -55,23 +57,25 @@ public class AproveitamentoDocumentService {
 
 	public GenerationResult generate(AproveitamentoRequest request) throws IOException {
 		ResolvedRequest resolved = resolve(request);
-		Map<String, String> replacements = buildReplacements(resolved);
 
-		byte[] parecerBytes = renderTemplate(
-			AproveitamentoSettings.requiredTemplateParecerPath(),
-			this::prepareParecerXml,
-			replacements);
-		byte[] despachoBytes = renderTemplate(
-			AproveitamentoSettings.requiredTemplateDespachoPath(),
-			this::prepareDespachoXml,
-			replacements);
+		byte[] parecerBytes;
+		try (InputStream is = openTemplateStream(AproveitamentoSettings.optionalTemplateParecerPath(), DEFAULT_PARECER_TEMPLATE_RESOURCE)) {
+			parecerBytes = renderDocument(is, resolved, true);
+		}
+
+		byte[] despachoBytes;
+		try (InputStream is = openTemplateStream(AproveitamentoSettings.optionalTemplateDespachoPath(), DEFAULT_DESPACHO_TEMPLATE_RESOURCE)) {
+			despachoBytes = renderDocument(is, resolved, false);
+		}
 
 		Path outputDirectory = createOutputDirectory(resolved);
 		String studentSlug = slugify(resolved.studentName);
 		String rmSlug = slugify(resolved.studentRm);
 		String suffix = studentSlug + (rmSlug.isBlank() ? "" : "-" + rmSlug);
-		String parecerName = "parecer-" + suffix + ".docx";
-		String despachoName = "despacho-" + suffix + ".docx";
+
+		String ext = isDocxTemplate(AproveitamentoSettings.optionalTemplateParecerPath()) ? ".docx" : ".odt";
+		String parecerName = "parecer-" + suffix + ext;
+		String despachoName = "despacho-" + suffix + ext;
 
 		Path parecerPath = outputDirectory.resolve(parecerName);
 		Path despachoPath = outputDirectory.resolve(despachoName);
@@ -87,6 +91,24 @@ public class AproveitamentoDocumentService {
 			archiveName,
 			archiveBytes,
 			List.of(new GeneratedFile(parecerName, parecerPath), new GeneratedFile(despachoName, despachoPath)));
+	}
+
+	private boolean isDocxTemplate(Path path) {
+		return path != null && path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".docx");
+	}
+
+	private InputStream openTemplateStream(Path configuredPath, String resourcePath) throws IOException {
+		if (configuredPath != null && Files.exists(configuredPath)) {
+			return Files.newInputStream(configuredPath);
+		}
+		InputStream resourceStream = getClass().getResourceAsStream(resourcePath);
+		if (resourceStream != null) {
+			return resourceStream;
+		}
+		if (configuredPath != null) {
+			throw new IOException("Template file not found at " + configuredPath + " and resource " + resourcePath + " is missing.");
+		}
+		throw new IOException("Missing bundled template resource: " + resourcePath);
 	}
 
 	private ResolvedRequest resolve(AproveitamentoRequest request) {
@@ -118,9 +140,9 @@ public class AproveitamentoDocumentService {
 			defaultIfBlank(request.getJustification(), DEFAULT_JUSTIFICATION));
 	}
 
-	private byte[] renderTemplate(Path templatePath, XmlPreparer xmlPreparer, Map<String, String> replacements)
+	private byte[] renderDocument(InputStream templateStream, ResolvedRequest resolved, boolean isParecer)
 		throws IOException {
-		try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(templatePath));
+		try (ZipInputStream zipInputStream = new ZipInputStream(templateStream);
 			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 			ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream)) {
 
@@ -130,9 +152,16 @@ public class AproveitamentoDocumentService {
 				ZipEntry outputEntry = new ZipEntry(entry.getName());
 				zipOutputStream.putNextEntry(outputEntry);
 
-				if (!entry.isDirectory() && Objects.equals(entry.getName(), DOCUMENT_XML_PATH)) {
+				if (!entry.isDirectory() && Objects.equals(entry.getName(), "content.xml")) {
+					// ODT Format
 					String xml = new String(entryBytes, StandardCharsets.UTF_8);
-					String prepared = xmlPreparer.prepare(xml);
+					String rendered = isParecer ? renderOdtParecer(xml, resolved) : renderOdtDespacho(xml, resolved);
+					zipOutputStream.write(rendered.getBytes(StandardCharsets.UTF_8));
+				} else if (!entry.isDirectory() && Objects.equals(entry.getName(), "word/document.xml")) {
+					// DOCX Format
+					String xml = new String(entryBytes, StandardCharsets.UTF_8);
+					Map<String, String> replacements = buildReplacements(resolved);
+					String prepared = isParecer ? prepareDocxParecerXml(xml) : prepareDocxDespachoXml(xml);
 					String rendered = applyReplacements(prepared, replacements);
 					zipOutputStream.write(rendered.getBytes(StandardCharsets.UTF_8));
 				} else if (!entry.isDirectory()) {
@@ -148,7 +177,114 @@ public class AproveitamentoDocumentService {
 		}
 	}
 
-	private String prepareParecerXml(String xml) {
+	private String renderOdtParecer(String xml, ResolvedRequest resolved) {
+		String result = xml;
+
+		// 1. Parecer conclusivo
+		String decisionSummary = buildDecisionSummary(resolved);
+		String startMarker = "<text:span text:style-name=\"T12\">Após analise documental";
+		String endMarker = "em outro curso apresentado na documentação.</text:span>";
+		if (result.contains(startMarker) && result.contains(endMarker)) {
+			int startIdx = result.indexOf(startMarker);
+			int endIdx = result.indexOf(endMarker, startIdx) + endMarker.length();
+			result = result.substring(0, startIdx)
+				+ "<text:span text:style-name=\"T1\">" + escapeXml(decisionSummary) + "</text:span>"
+				+ result.substring(endIdx);
+		}
+
+		// 2. Expediente
+		result = result.replace(
+			"Expediente de Atendimento de Aproveitamento de Estudo nº:",
+			"Expediente de Atendimento de Aproveitamento de Estudo nº: " + escapeXml(resolved.expedientNumber));
+
+		// 3. Aluno
+		String studentDisplay = resolved.studentName + (resolved.studentRm.isBlank() ? "" : " (RM: " + resolved.studentRm + ")");
+		result = result.replace(
+			"<text:span text:style-name=\"T3\"> «</text:span><text:span text:style-name=\"T4\">nomedoaluno»</text:span>",
+			"<text:span text:style-name=\"T4\"> " + escapeXml(studentDisplay) + "</text:span>");
+
+		// 4. Curso / Programa
+		String programDisplay = resolved.programName;
+		if (programDisplay.startsWith("Habilitação Profissional de ")) {
+			programDisplay = programDisplay.substring("Habilitação Profissional de ".length());
+		}
+		result = result.replace(
+			"Habilitação Profissional de «</text:span><text:span text:style-name=\"T5\">nomedocurso»</text:span>",
+			"Habilitação Profissional de </text:span><text:span text:style-name=\"T5\">" + escapeXml(programDisplay) + "</text:span>");
+
+		// 5. Portaria date
+		result = result.replace(
+			"Em conformidade com a Portaria do Sr(a). Diretor(a) da Etec, no 15/08/2022",
+			"Em conformidade com a Portaria do Sr(a). Diretor(a) da Etec, no " + escapeXml(resolved.portariaDate));
+
+		// 6. Professores
+		result = result.replace(
+			"<text:span text:style-name=\"T10\">«</text:span><text:span text:style-name=\"T11\">nomeprofpresidente»</text:span>",
+			"<text:span text:style-name=\"T11\">" + escapeXml(resolved.teacherPresident) + "</text:span>");
+		result = result.replace(
+			"<text:span text:style-name=\"T10\">«</text:span><text:span text:style-name=\"T11\">nomeprofmembro1»</text:span>",
+			"<text:span text:style-name=\"T11\">" + escapeXml(resolved.teacherMember1) + "</text:span>");
+		result = result.replace(
+			"<text:span text:style-name=\"T10\">«</text:span><text:span text:style-name=\"T11\">nomeprofmembro2»</text:span>",
+			"<text:span text:style-name=\"T11\">" + escapeXml(resolved.teacherMember2) + "</text:span>");
+
+		// 7. Disciplinas
+		List<String> components = resolved.componentNames;
+		String c1 = components.size() > 0 ? components.get(0) : "";
+		String c2 = components.size() > 1 ? components.get(1) : "";
+		String c3 = components.size() > 2 ? components.get(2) : "";
+
+		result = result.replace(
+			"<text:span text:style-name=\"T1\">«</text:span><text:span text:style-name=\"T7\">disciplina1»</text:span>",
+			"<text:span text:style-name=\"T7\">" + escapeXml(c1) + "</text:span>");
+		result = result.replace(
+			"«<text:span text:style-name=\"T8\">disciplina2»</text:span>",
+			"<text:span text:style-name=\"T8\">" + escapeXml(c2) + "</text:span>");
+		result = result.replace(
+			"«<text:span text:style-name=\"T8\">disciplina3»</text:span>",
+			"<text:span text:style-name=\"T8\">" + escapeXml(c3) + "</text:span>");
+
+		return result;
+	}
+
+	private String renderOdtDespacho(String xml, ResolvedRequest resolved) {
+		String result = xml;
+
+		// 1. Folhas
+		result = result.replace(
+			"<text:span text:style-name=\"T5\"> 01</text:span>",
+			"<text:span text:style-name=\"T5\"> " + escapeXml(resolved.parecerPageReference) + "</text:span>");
+
+		// 2. Escola / Etec
+		result = result.replace("ZONA LESTE", escapeXml(resolved.schoolName));
+
+		// 3. Aluno
+		String studentDisplay = resolved.studentName + (resolved.studentRm.isBlank() ? "" : " (RM: " + resolved.studentRm + ")");
+		result = result.replace(
+			"<text:span text:style-name=\"T7\">«</text:span><text:span text:style-name=\"T8\">nomedoaluno»</text:span>",
+			"<text:span text:style-name=\"T8\">" + escapeXml(studentDisplay) + "</text:span>");
+
+		// 4. Curso
+		result = result.replace(
+			"Curso Técnico de Desenvolvimento de Sistemas Noturno",
+			escapeXml(resolved.courseName));
+
+		// 5. Disciplinas
+		String componentsStr = String.join(", ", resolved.componentNames);
+		result = result.replace(
+			"<text:span text:style-name=\"T12\">«</text:span><text:span text:style-name=\"T13\">disciplina1»</text:span>",
+			"<text:span text:style-name=\"T13\">" + escapeXml(componentsStr) + "</text:span>");
+
+		// 6. Resultado
+		String resText = resolved.decision.equals("deferido")
+			? "deferido o aproveitamento de estudos"
+			: "indeferido o aproveitamento de estudos";
+		result = result.replace("deferido o aproveitamento de estudos", escapeXml(resText));
+
+		return result;
+	}
+
+	private String prepareDocxParecerXml(String xml) {
 		String transformed = xml;
 		transformed = replaceExact(
 			transformed,
@@ -187,7 +323,7 @@ public class AproveitamentoDocumentService {
 			"parecer teacher member 2");
 		transformed = replaceParagraph(
 			transformed,
-			PARECER_SUMMARY_PARAGRAPH,
+			DOCX_PARECER_SUMMARY_PARAGRAPH,
 			"__DECISION_SUMMARY__",
 			"parecer decision summary");
 		transformed = replaceExact(
@@ -198,7 +334,7 @@ public class AproveitamentoDocumentService {
 		return transformed;
 	}
 
-	private String prepareDespachoXml(String xml) {
+	private String prepareDocxDespachoXml(String xml) {
 		String transformed = xml;
 		transformed = replaceExact(
 			transformed,
@@ -217,7 +353,7 @@ public class AproveitamentoDocumentService {
 			"despacho student name");
 		transformed = replaceRegexOnce(
 			transformed,
-			DESPACHO_COURSE_TEXT,
+			DOCX_DESPACHO_COURSE_TEXT,
 			"<w:t xml:space=\"preserve\"> regularmente matriculado no (a) __COURSE_NAME__</w:t>",
 			"despacho course name");
 		transformed = replaceExact(
@@ -244,7 +380,7 @@ public class AproveitamentoDocumentService {
 			throw new IllegalStateException("Template mismatch while replacing " + label + ": multiple paragraphs found.");
 		}
 
-		Matcher propertiesMatcher = PARAGRAPH_PROPERTIES.matcher(paragraph);
+		Matcher propertiesMatcher = DOCX_PARAGRAPH_PROPERTIES.matcher(paragraph);
 		if (!propertiesMatcher.find()) {
 			throw new IllegalStateException(
 				"Template mismatch while replacing " + label + ": paragraph properties not found.");
@@ -404,50 +540,11 @@ public class AproveitamentoDocumentService {
 	}
 
 	private String escapeXml(String value) {
+		if (value == null) {
+			return "";
+		}
 		String escaped = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 		return escaped.replace("\"", "&quot;").replace("'", "&apos;");
-	}
-
-	@FunctionalInterface
-	private interface XmlPreparer {
-		String prepare(String xml);
-	}
-
-	private static final class ResolvedRequest {
-		private final String studentName;
-		private final String studentRm;
-		private final String teacherPresident;
-		private final String teacherMember1;
-		private final String teacherMember2;
-		private final List<String> componentNames;
-		private final String expedientNumber;
-		private final String schoolName;
-		private final String programName;
-		private final String courseName;
-		private final String portariaDate;
-		private final String parecerPageReference;
-		private final String decision;
-		private final String justification;
-
-		private ResolvedRequest(String studentName, String studentRm, String teacherPresident, String teacherMember1,
-				String teacherMember2, List<String> componentNames, String expedientNumber, String schoolName,
-				String programName, String courseName, String portariaDate, String parecerPageReference, String decision,
-				String justification) {
-			this.studentName = studentName;
-			this.studentRm = studentRm;
-			this.teacherPresident = teacherPresident;
-			this.teacherMember1 = teacherMember1;
-			this.teacherMember2 = teacherMember2;
-			this.componentNames = componentNames;
-			this.expedientNumber = expedientNumber;
-			this.schoolName = schoolName;
-			this.programName = programName;
-			this.courseName = courseName;
-			this.portariaDate = portariaDate;
-			this.parecerPageReference = parecerPageReference;
-			this.decision = decision;
-			this.justification = justification;
-		}
 	}
 
 	public static final class GeneratedFile {
@@ -496,6 +593,43 @@ public class AproveitamentoDocumentService {
 
 		public List<GeneratedFile> getGeneratedFiles() {
 			return generatedFiles;
+		}
+	}
+
+	private static final class ResolvedRequest {
+		private final String studentName;
+		private final String studentRm;
+		private final String teacherPresident;
+		private final String teacherMember1;
+		private final String teacherMember2;
+		private final List<String> componentNames;
+		private final String expedientNumber;
+		private final String schoolName;
+		private final String programName;
+		private final String courseName;
+		private final String portariaDate;
+		private final String parecerPageReference;
+		private final String decision;
+		private final String justification;
+
+		private ResolvedRequest(String studentName, String studentRm, String teacherPresident, String teacherMember1,
+				String teacherMember2, List<String> componentNames, String expedientNumber, String schoolName,
+				String programName, String courseName, String portariaDate, String parecerPageReference, String decision,
+				String justification) {
+			this.studentName = studentName;
+			this.studentRm = studentRm;
+			this.teacherPresident = teacherPresident;
+			this.teacherMember1 = teacherMember1;
+			this.teacherMember2 = teacherMember2;
+			this.componentNames = componentNames;
+			this.expedientNumber = expedientNumber;
+			this.schoolName = schoolName;
+			this.programName = programName;
+			this.courseName = courseName;
+			this.portariaDate = portariaDate;
+			this.parecerPageReference = parecerPageReference;
+			this.decision = decision;
+			this.justification = justification;
 		}
 	}
 }

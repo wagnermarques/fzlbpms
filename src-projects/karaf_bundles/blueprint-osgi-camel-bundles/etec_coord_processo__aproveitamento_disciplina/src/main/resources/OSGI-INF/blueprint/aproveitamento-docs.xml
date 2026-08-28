@@ -51,46 +51,46 @@
 			<from uri="direct:generate-documents" />
 
 			<setProperty name="studentName">
-				<jsonpath>$.studentName</jsonpath>
+				<jsonpath suppressExceptions="true">$..studentName</jsonpath>
 			</setProperty>
 			<setProperty name="studentRm">
-				<jsonpath suppressExceptions="true">$.studentRm</jsonpath>
+				<jsonpath suppressExceptions="true">$..studentRm</jsonpath>
 			</setProperty>
 			<setProperty name="teacherPresident">
-				<jsonpath>$.teacherPresident</jsonpath>
+				<jsonpath suppressExceptions="true">$..teacherPresident</jsonpath>
 			</setProperty>
 			<setProperty name="teacherMember1">
-				<jsonpath>$.teacherMember1</jsonpath>
+				<jsonpath suppressExceptions="true">$..teacherMember1</jsonpath>
 			</setProperty>
 			<setProperty name="teacherMember2">
-				<jsonpath>$.teacherMember2</jsonpath>
+				<jsonpath suppressExceptions="true">$..teacherMember2</jsonpath>
 			</setProperty>
 			<setProperty name="componentNames">
-				<jsonpath>$.componentNames</jsonpath>
+				<jsonpath suppressExceptions="true">$..componentNames</jsonpath>
 			</setProperty>
 			<setProperty name="expedientNumber">
-				<jsonpath suppressExceptions="true">$.expedientNumber</jsonpath>
+				<jsonpath suppressExceptions="true">$..expedientNumber</jsonpath>
 			</setProperty>
 			<setProperty name="schoolName">
-				<jsonpath suppressExceptions="true">$.schoolName</jsonpath>
+				<jsonpath suppressExceptions="true">$..schoolName</jsonpath>
 			</setProperty>
 			<setProperty name="programName">
-				<jsonpath suppressExceptions="true">$.programName</jsonpath>
+				<jsonpath suppressExceptions="true">$..programName</jsonpath>
 			</setProperty>
 			<setProperty name="courseName">
-				<jsonpath suppressExceptions="true">$.courseName</jsonpath>
+				<jsonpath suppressExceptions="true">$..courseName</jsonpath>
 			</setProperty>
 			<setProperty name="portariaDate">
-				<jsonpath suppressExceptions="true">$.portariaDate</jsonpath>
+				<jsonpath suppressExceptions="true">$..portariaDate</jsonpath>
 			</setProperty>
 			<setProperty name="parecerPageReference">
-				<jsonpath suppressExceptions="true">$.parecerPageReference</jsonpath>
+				<jsonpath suppressExceptions="true">$..parecerPageReference</jsonpath>
 			</setProperty>
 			<setProperty name="decision">
-				<jsonpath suppressExceptions="true">$.decision</jsonpath>
+				<jsonpath suppressExceptions="true">$..decision</jsonpath>
 			</setProperty>
 			<setProperty name="justification">
-				<jsonpath suppressExceptions="true">$.justification</jsonpath>
+				<jsonpath suppressExceptions="true">$..justification</jsonpath>
 			</setProperty>
 
 			<process ref="generateDocumentsProcessor" />

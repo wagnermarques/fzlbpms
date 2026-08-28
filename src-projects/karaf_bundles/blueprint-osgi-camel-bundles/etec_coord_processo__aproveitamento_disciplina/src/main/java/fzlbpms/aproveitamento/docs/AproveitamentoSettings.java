@@ -13,12 +13,14 @@ final class AproveitamentoSettings {
 	private AproveitamentoSettings() {
 	}
 
-	static Path requiredTemplateParecerPath() {
-		return Paths.get(required(TEMPLATE_PARECER_PROPERTY, "FZLBPMS_APROVEITAMENTO_TEMPLATE_PARECER"));
+	static Path optionalTemplateParecerPath() {
+		String value = optional(TEMPLATE_PARECER_PROPERTY, "FZLBPMS_APROVEITAMENTO_TEMPLATE_PARECER");
+		return value == null || value.isBlank() ? null : Paths.get(value);
 	}
 
-	static Path requiredTemplateDespachoPath() {
-		return Paths.get(required(TEMPLATE_DESPACHO_PROPERTY, "FZLBPMS_APROVEITAMENTO_TEMPLATE_DESPACHO"));
+	static Path optionalTemplateDespachoPath() {
+		String value = optional(TEMPLATE_DESPACHO_PROPERTY, "FZLBPMS_APROVEITAMENTO_TEMPLATE_DESPACHO");
+		return value == null || value.isBlank() ? null : Paths.get(value);
 	}
 
 	static Path optionalComponentsPath() {

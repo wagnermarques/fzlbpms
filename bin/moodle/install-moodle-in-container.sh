@@ -350,6 +350,23 @@ purge_caches() {
     fi
 }
 
+database_is_initialized() {
+    PGHOST="$PG_HOST" PGPORT="$PG_PORT" DBNAME="$MOODLE_DB_NAME" DBUSER="$MOODLE_DB_USER" \
+    DBPASS="$MOODLE_DB_PASS" PREFIX="$MOODLE_DB_PREFIX" php -r '
+        $dsn = sprintf("pgsql:host=%s;port=%s;dbname=%s",
+            getenv("PGHOST"), getenv("PGPORT"), getenv("DBNAME"));
+        try {
+            $pdo = new PDO($dsn, getenv("DBUSER"), getenv("DBPASS"), [PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT]);
+            $table = getenv("PREFIX") . "config";
+            $stmt = $pdo->query("SELECT 1 FROM information_schema.tables WHERE table_name = " . $pdo->quote($table));
+            if ($stmt && $stmt->fetchColumn()) {
+                exit(0);
+            }
+        } catch (Exception $e) {}
+        exit(1);
+    '
+}
+
 main() {
     log "=== Moodle ${MOODLE_VERSION} provisioning started ==="
     create_database
@@ -357,7 +374,14 @@ main() {
 
     # Was Moodle already installed before this run? Decides how plugins register.
     local was_installed=0
-    [ -f "${MOODLE_DIR}/config.php" ] && was_installed=1
+    if [ -f "${MOODLE_DIR}/config.php" ]; then
+        if database_is_initialized; then
+            was_installed=1
+        else
+            log "Stale config.php found with uninitialized database — removing config.php to run fresh CLI install."
+            rm -f "${MOODLE_DIR}/config.php"
+        fi
+    fi
 
     install_plugins        # drop plugin code into the tree (before install/upgrade)
     fix_permissions

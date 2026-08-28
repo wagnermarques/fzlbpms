@@ -201,7 +201,7 @@ services:
     volumes:
       - ./src-projects:/sql-scripts
       - ./containers/fzl-postgresql/init-scripts:/docker-entrypoint-initdb.d
-      - ./containers/fzl-postgresql/postgresql-data:/var/lib/postgresql/data
+      - fzl_postgresql_data:/var/lib/postgresql/data
     networks:
       - fzl-network
     healthcheck:
@@ -752,6 +752,7 @@ networks:
     driver: bridge
 
 volumes:
+  fzl_postgresql_data:
   flowable_db_data:
   # Theia's per-user settings, keybindings and plugin state. Kept off the
   # ./workspaces bind mount so IDE config doesn't land in the users' files.

@@ -1,0 +1,17 @@
+#+Title: Etec Téc DS Logbook
+
+
+| data             | hora | evento             | obs |
+| <2026-08-13 qui> |      | Reu Representantes |     |
+
+* <2026-08-13 qui> reunião com representantes, reun coordenadores
+  reun_represententas_tec_ds__2026-08-13_09.jpg
+** ata
+ Discrição
+ Volta do Intervalo
+ Frequencia
+ Cadeiras
+ Feteps
+ Workshop
+* avisei valdeir pelo whats
+* concedi prazo ptd valdeir

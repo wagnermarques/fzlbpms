@@ -1,0 +1,2 @@
+osgi.wiring.host; (&(osgi.wiring.host=jakarta.servlet-api)(bundle-version>=4.0.0)(!(bundle-version>=5.0.0)))
+27

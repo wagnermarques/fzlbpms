@@ -1,0 +1,17 @@
+{
+  "name": "doc-aproveitamento-disciplina",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:templates": "node src/prepare-templates.mjs",
+    "generate:sample": "node src/generate-sample.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "docxtemplater": "^3.66.7",
+    "express": "^4.21.2",
+    "pizzip": "^3.2.0"
+  }
+}

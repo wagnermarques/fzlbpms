@@ -1,0 +1,2 @@
+osgi.wiring.host; (&(osgi.wiring.host=javax.el-api)(bundle-version>=0.0.0))
+173

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gerador de Aproveitamento de Estudos</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Gerador de Aproveitamento de Estudos</h1>
+      <p class="lead">
+        Preencha uma vez e gere os dois documentos finais em DOCX.
+      </p>
+
+      <form id="generator-form">
+        <section class="panel">
+          <h2>Dados principais</h2>
+
+          <label>
+            Nome do aluno
+            <input name="studentName" required />
+          </label>
+
+          <label>
+            RM do aluno
+            <input name="studentRm" />
+          </label>
+
+          <label>
+            Número do expediente
+            <input name="expedientNumber" placeholder="Ex.: 2026-001" />
+          </label>
+
+          <label>
+            Componentes curriculares
+            <select id="componentNames" name="componentNames" multiple size="8" required></select>
+          </label>
+          <p class="hint">Use Ctrl/Cmd + clique para selecionar mais de um componente.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Comissão de professores</h2>
+
+          <label>
+            Presidente
+            <input name="teacherPresident" required value="Wagner França Marques" />
+          </label>
+
+          <label>
+            Membro 1
+            <input name="teacherMember1" required value="Ralf Gerônimo" />
+          </label>
+
+          <label>
+            Membro 2
+            <input name="teacherMember2" required value="João Paulo Frias" />
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>Configuração institucional</h2>
+
+          <label>
+            Etec
+            <input name="schoolName" value="ZONA LESTE" />
+          </label>
+
+          <label>
+            Programa/Habilitação
+            <input
+              name="programName"
+              value="Habilitação Profissional de Técnico em Desenvolvimento de Sistemas"
+            />
+          </label>
+
+          <label>
+            Curso
+            <input name="courseName" value="Curso Técnico de Desenvolvimento de Sistemas Noturno" />
+          </label>
+
+          <label>
+            Data da portaria
+            <input name="portariaDate" value="15/08/2022" />
+          </label>
+
+          <label>
+            Folha do parecer
+            <input name="parecerPageReference" value="01" />
+          </label>
+
+          <label>
+            Resultado
+            <select name="decision">
+              <option value="deferido">Deferido</option>
+              <option value="indeferido">Indeferido</option>
+            </select>
+          </label>
+
+          <label>
+            Justificativa
+            <textarea
+              name="justification"
+              rows="4"
+            >há compatibilidade entre as competências demonstradas na documentação e o componente curricular solicitado.</textarea>
+          </label>
+        </section>
+
+        <div class="actions">
+          <button type="submit">Gerar documentos</button>
+          <span id="status"></span>
+        </div>
+      </form>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>

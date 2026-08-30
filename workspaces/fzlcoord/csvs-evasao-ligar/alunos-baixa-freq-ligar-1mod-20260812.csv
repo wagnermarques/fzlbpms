@@ -1,0 +1,17 @@
+PRIORIDADE;RISCO;RM;NOME;IDADE;MENOR_DE_IDADE;GRUPO;AULAS;FALTAS;FREQ_PERC;CEL_ALUNO;TEL_ALUNO;EMAIL_PESSOAL;EMAIL_INSTITUCIONAL;RESP_DO_ALUNO;CEL_RESP;CEL2_RESP;STATUS_CONTATO;DATA_CONTATO;OBSERVACOES
+1;CRITICO;27279;ARTHUR HENRIQUE DE OLIVEIRA SANTOS;18;NAO;GRUPO A;5;5;0;(11) 96065-1415;(11) 2511-9134;arthurzica002@gmail.com;arthur.santos83@aluno.cps.sp.gov.br;MONICA ... SANTOS;(11) 98968-7332;(11) 95226-0675;;;
+2;CRITICO;26712;DAVID QUIRINO DA SILVA;19;NAO;GRUPO A;5;5;0;11952215087;1195221508;davidsoele@gmail.com;david.silva44@aluno.cps.sp.gov.br;;;;;;
+3;CRITICO;27775;CARLOS HENRIQUE AUGUSTO DA SILVA;19;NAO;GRUPO A;2,5;2,5;0;(11) 96455-2272;;carloshenriqueaugustodasilva9@gmail.com;carlos.silva256@aluno.cps.sp.gov.br;HELLEN ... SILVA;(11) 97991-9817;(11) 98048-2495;;;
+4;ALTO;26375;FÁBIO ASSATO ROSSI;34;NAO;GRUPO B;7,5;5;33,33;11951935955;1120433444;fabioassatorossi@gmail.com;fabio.rossi@aluno.cps.sp.gov.br;;;;;;
+5;ALTO;27717;JUAN AUGUSTO AMARAL ALVES;17;SIM;GRUPO B;7,5;5;33,33;(11) 95907-3252;;juanaugusto2708@gmail.com;juan.alves10@aluno.cps.sp.gov.br;;;;;;
+6;ALTO;27748;BRYAN BENNINGTON RIBEIRO DE OLIVEIRA;16;SIM;GRUPO A;5;2,5;50;(11) 98525-2480;;luizsbb@gmail.com;bryan.oliveira23@aluno.cps.sp.gov.br;;;;;;
+7;ALTO;27665;CAIO DOS SANTOS CARVALHO;24;NAO;GRUPO A;5;2,5;50;(11) 95412-4123;;caioscarvalho.2002@gmail.com;caio.carvalho10@aluno.cps.sp.gov.br;;;;;;
+8;ALTO;27743;ISABELLA ANDRADE DE MELO;21;NAO;GRUPO A;5;2,5;50;(11) 93012-8410;;andradeisabella410@gmail.com;isabella.melo6@aluno.cps.sp.gov.br;;;;;;
+9;ATENCAO;26467;JEAN PYETRO AGUIAR DIAS;16;SIM;GRUPO B;7,5;2,5;66,67;(11) 96123-1580;;jeanpyyetro@gmail.com;jean.dias01@aluno.cps.sp.gov.br;CARLA ... DIAS;(11) 95404-9233;;;;
+10;ATENCAO;27700;JULIA PASCOAL ESTEVAM;17;SIM;GRUPO B;7,5;2,5;66,67;(11) 95865-9757;;jpascoalestevam@gmail.com;julia.estevam@aluno.cps.sp.gov.br;LEANDRO ... ESTEVAM;(11) 98325-4174;(11) 95907-7571;;;
+11;ATENCAO;27710;LUAN GUILHERME ALVES FARIAS;16;SIM;GRUPO B;7,5;2,5;66,67;(11) 96729-1550;;luisguilherme.farias@yahoo.com.br;luan.farias01@aluno.cps.sp.gov.br;;;;;;
+12;ATENCAO;27670;LUANA DE MORAES URASHIMA KINOSHITA;17;SIM;GRUPO B;7,5;2,5;66,67;(11) 98976-3575;;ruanatchan@gmail.com;luana.kinoshita@aluno.cps.sp.gov.br;;;;;;
+13;ATENCAO;27682;VINYCIUS FABRI OLIVEIRA CAMPOS;17;SIM;GRUPO B;7,5;2,5;66,67;(11) 99760-8101;;vinnicyus.fabri.oliveira.campos@gmail.com;vinycius.campos@aluno.cps.sp.gov.br;EVELIZE ... SANTOS;(11) 97078-8826;;;;
+14;ATENCAO;23124;PAULA CRISTINA SILVA ROCHA;36;NAO;GRUPO B;7,5;2,5;66,67;(11) 97876-4983;(11) 2280-4640;paulacristinasilvarocha@gmail.com;paula.rocha@aluno.cps.sp.gov.br;;;;;;
+15;ATENCAO;27666;RAUL GOMES GARCIA;27;NAO;GRUPO B;7,5;2,5;66,67;(11) 94903-3134;;raulgomesgarcia@gmail.com;raul.garcia2@aluno.cps.sp.gov.br;;;;;;
+16;ATENCAO;27758;SUELLEN DE FREITAS VIANA DOS SANTOS;31;NAO;GRUPO B;7,5;2,5;66,67;(11) 96518-7842;;suellenfreitas3@gmail.com;suellen.santos6@aluno.cps.sp.gov.br;;;;;;

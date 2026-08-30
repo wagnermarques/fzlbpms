@@ -1,0 +1,132 @@
+#+TITLE: BPMN Editor for Eclipse Theia
+#+OPTIONS: toc:2
+
+* Visão geral
+
+Este pacote é uma extensão frontend para Eclipse Theia que disponibiliza um
+editor visual BPMN 2.0 baseado em [[https://bpmn.io/toolkit/bpmn-js/][bpmn-js]]. O MVP inclui a
+criação de diagramas, abertura de arquivos =.bpmn= ou =.bpmn20.xml= e
+persistência do XML BPMN.
+
+O pacote não é uma aplicação Theia independente. Ele deve ser adicionado como
+dependência de uma aplicação Theia para que o workbench carregue a extensão.
+
+
+* Pré-requisitos
+
+- Node.js 20 LTS ou superior
+- Yarn Classic (1.x), usado pelo ecossistema Theia
+- Uma aplicação Theia compatível com as dependências =@theia/*= deste pacote
+
+
+* Desenvolvimento do plugin
+
+Instale as dependências e gere o JavaScript compilado:
+
+#+begin_src sh
+yarn install
+yarn build
+#+end_src
+
+Para recompilar a extensão continuamente:
+
+#+begin_src sh
+yarn watch
+#+end_src
+
+
+* Executando em uma aplicação Theia
+
+Na aplicação Theia que hospedará o editor, referencie este diretório como uma
+dependência local. O exemplo abaixo pressupõe que o aplicativo e este projeto
+estão em diretórios irmãos.
+
+#+begin_src json
+{
+  "dependencies": {
+    "@fzlsoft/theia-plugin-bpmn-editor": "file:../theia-plugin-bpmn-editor"
+  }
+}
+#+end_src
+
+Em seguida, no diretório do aplicativo Theia:
+
+#+begin_src sh
+  yarn install
+  npm run compile
+  yarn theia build
+  yarn start
+#+end_src
+
+Mantenha =yarn watch= em execução neste projeto durante o desenvolvimento.
+Após alterações na extensão, recarregue a janela do navegador do Theia. Quando
+a estrutura de arquivos da extensão mudar, execute novamente =yarn theia build=
+no aplicativo hospedeiro.
+
+** Solução de problemas de build no aplicativo hospedeiro
+
+O =yarn install= do aplicativo Theia hospedeiro só compila alguns pacotes
+internos (ex.: =@theia/cli=, =@theia/core=) via =afterInstall=. Se
+=yarn theia build= falhar com =Cannot find module '../lib/theia'=, é
+necessário compilar o monorepo Theia por completo antes:
+
+#+begin_src sh
+npm run compile
+yarn theia build
+#+end_src
+
+Dependendo da versão do Theia, o =npm run compile= pode falhar por conflitos
+de dependências transitivas com versões duplicadas (ex.: =@types/multer=
+resolvendo um =@types/express-serve-static-core= incompatível, ou
+=open-collaboration-yjs= resolvendo um =open-collaboration-protocol= diferente
+do usado por =@theia/collaboration=). Nesses casos, fixe uma única versão via
+=resolutions= no =package.json= raiz do aplicativo hospedeiro:
+
+#+begin_src json
+{
+  "resolutions": {
+    "@types/express-serve-static-core": "^4.17.33",
+    "open-collaboration-protocol": "0.3.0"
+  }
+}
+#+end_src
+
+Em seguida, rode =yarn install= novamente, remova cópias duplicadas
+remanescentes em =node_modules= (ex.:
+=node_modules/@types/multer/node_modules/@types= e
+=node_modules/open-collaboration-yjs/node_modules/open-collaboration-protocol=)
+e execute =npm run compile= mais uma vez.
+
+* Uso
+
+Após o carregamento, os comandos ficam disponíveis no menu =File= e na paleta
+de comandos:
+
+- =New BPMN Diagram=: abre um modelo BPMN vazio.
+- =Open BPMN Diagram...=: abre um arquivo =.bpmn= ou =.bpmn20.xml=.
+- =Save BPMN Diagram=: salva o XML; em documentos novos, solicita o destino.
+
+O atalho =Ctrl+S= (ou =Cmd+S= no macOS) executa o comando de salvar quando o
+foco está no editor.
+
+* Estrutura
+
+#+begin_example
+src/browser/
+├── bpmn-editor-contribution.ts    comandos, menus e integração com o workbench
+├── bpmn-editor-frontend-module.ts registro de serviços Theia
+├── bpmn-editor-widget.ts          widget e integração bpmn-js/FileService
+└── style/index.css                estilos do editor
+#+end_example
+
+* Próximas evoluções
+
+O escopo inicial deliberadamente mantém apenas um documento aberto por vez.
+Para produção, as evoluções naturais são:
+
+1. Um widget por URI, permitindo várias abas BPMN.
+2. Painel de propriedades com =bpmn-js-properties-panel=.
+3. Integração com o serviço de editor do Theia para abrir =.bpmn= pelo
+   explorador de arquivos.
+4. Confirmação para documentos alterados antes de fechar ou substituir a aba.
+5. Exportação SVG/PNG, validação de processos e extensões específicas do domínio.

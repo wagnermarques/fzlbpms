@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  moodle-create-turma
+
+  Creates a "turma" (a class/cohort of students) across the fzlbpms stack in a
+  single orchestrated flow. Keycloak is the single source of truth for identity;
+  Moodle holds a synchronized replica (auth=oauth2) so students can log in and
+  be enrolled/reported on. The process talks ONLY to the Camel bundles over HTTP
+  (never to Keycloak or Moodle directly) — Camel owns the integration details.
+
+  Flow:
+    1. startTurmaForm (start form) — the operator provides the turma-name parts
+       (year, semester, org course, module) and the CSV filename with students.
+    2. composeAndValidateName (script) — builds the turma name from the parts and
+       validates it against the naming rule below.
+    3. loadStudentsCsv (script) — parses the CSV into a `students` list.
+    4. createKeycloakGroup (HTTP) — one Keycloak group, named exactly turmaName.
+    5. createMoodleCohort  (HTTP) — one Moodle cohort, name AND idnumber = turmaName.
+    6. createKeycloakStudents (HTTP, sequential multi-instance over students) —
+       one Keycloak user per student, added to the group so they can log in.
+    7. createMoodleStudents  (HTTP, sequential multi-instance over students) —
+       one Moodle user per student (auth=oauth2), added to the cohort.
+    8. buildSummary (script) — a human-readable summary.
+    9. reviewResults (user task, form) — shows the summary; the operator confirms.
+
+  Turma naming rule (enforced in step 2):
+    <year>Sem<1|2>-<OrgCourse>-Alunos-<N>Mod
+    e.g. 2026Sem2-TecDS-Alunos-1Mod
+      - year      : 4 digits (2026)
+      - Sem1/Sem2 : first or second semester
+      - OrgCourse : the ORGANIZATION course (e.g. TecDS) — NOT a Moodle course;
+                    an org course groups several Moodle courses (disciplines)
+      - Alunos    : fixed literal — this group/cohort is for STUDENTS only
+      - <N>Mod    : the module the students are taking (1Mod, 2Mod, 3Mod)
+    The Keycloak group and the Moodle cohort get this exact same name, which is
+    the stable key that later ties group membership <-> cohort membership.
+
+  Camel endpoints this process expects (to be implemented in the Camel bundles —
+  keycloak-admin-camel-context.xml @ :9090 and moodle-admin-camel-context.xml
+  @ :9091). Names/lastnames are URL-encoded here (see charset note); the Camel
+  side must urldecode them before calling Keycloak (JSON) / Moodle (form body):
+
+    POST :9090/fzlbpms/admin/groups
+         {"name":"<turmaName>"}                                 -> {"id":"..."}
+    POST :9090/fzlbpms/admin/users
+         {"username","email","firstName","lastName","groupName":"<turmaName>"}
+    POST :9091/fzlbpms/moodle/cohorts
+         {"name":"<turmaName>","idnumber":"<turmaName>"}        -> [{"id":...}]
+    POST :9091/fzlbpms/moodle/users
+         {"username","email","firstname","lastname","auth":"oauth2",
+          "cohortIdnumber":"<turmaName>"}
+
+  Expected CSV (header + one student per line), UTF-8, read from the flowable-ui
+  mount /opt/fzlbpms/csvs/<csvFileName>:
+    username,firstName,lastName,email
+  (username may be blank — then the email is used as the username.)
+
+  Charset trap: Flowable's HTTP task encodes request bodies as ISO-8859-1, which
+  corrupts accents (José -> Jos�). So firstName/lastName are URL-encoded in the
+  Groovy script (correct UTF-8 there on Java 11) and sent as pure ASCII; username
+  and email are assumed ASCII and sent raw. Runs on flowable-ui 6.7.2 / Java 11 /
+  Groovy 3.0.9 — no groovy-json, so JSON is parsed with the Jackson ObjectMapper.
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://fzlbpms.com.br/processes"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath">
+
+  <process id="moodle-create-turma" name="Moodle — Criar turma (grupo Keycloak + cohort Moodle + alunos)" isExecutable="true">
+
+    <!-- 1. Start form: turma-name parts + CSV filename -->
+    <startEvent id="startTurmaForm" name="Nova turma">
+      <extensionElements>
+        <flowable:formProperty id="year" name="Ano (4 dígitos, ex: 2026)" type="string" required="true"/>
+        <flowable:formProperty id="semester" name="Semestre" type="enum" required="true">
+          <flowable:value id="Sem1" name="1º semestre"/>
+          <flowable:value id="Sem2" name="2º semestre"/>
+        </flowable:formProperty>
+        <flowable:formProperty id="orgCourse" name="Curso da organização (ex: TecDS)" type="string" required="true"/>
+        <flowable:formProperty id="modulo" name="Módulo (ex: 1, 2, 3)" type="string" required="true"/>
+        <flowable:formProperty id="csvFileName" name="Arquivo CSV de alunos (em /opt/fzlbpms/csvs/)" type="string" required="true"/>
+      </extensionElements>
+    </startEvent>
+    <sequenceFlow id="toComposeName" sourceRef="startTurmaForm" targetRef="composeAndValidateName"/>
+
+    <!-- 2. Build + validate the turma name from the parts -->
+    <scriptTask id="composeAndValidateName" name="Compor e validar nome da turma" scriptFormat="groovy">
+      <script><![CDATA[
+        def turma = ("" + year + semester + "-" + orgCourse + "-Alunos-" + modulo + "Mod").toString()
+        if (!(turma ==~ /^\d{4}Sem[12]-[A-Za-z0-9]+-Alunos-\d+Mod$/)) {
+          throw new org.flowable.common.engine.api.FlowableException(
+            "Nome de turma inválido: '" + turma + "'. Regra esperada: <ano>Sem<1|2>-<CursoOrg>-Alunos-<N>Mod (ex: 2026Sem2-TecDS-Alunos-1Mod)")
+        }
+        execution.setVariable('turmaName', turma)
+      ]]></script>
+    </scriptTask>
+    <sequenceFlow id="toLoadStudents" sourceRef="composeAndValidateName" targetRef="loadStudentsCsv"/>
+
+    <!-- 3. Parse the students CSV -> `students` list (name fields URL-encoded) -->
+    <scriptTask id="loadStudentsCsv" name="Ler CSV de alunos" scriptFormat="groovy">
+      <script><![CDATA[
+        def path = '/opt/fzlbpms/csvs/' + csvFileName
+        def f = new File(path)
+        if (!f.exists()) {
+          throw new org.flowable.common.engine.api.FlowableException("CSV não encontrado: " + path)
+        }
+        def lines = f.readLines('UTF-8').findAll { it != null }
+        if (lines && lines[0].startsWith('﻿')) { lines[0] = lines[0].substring(1) }
+        // URL-encode here where the strings are correct UTF-8; Flowable's HTTP
+        // task would otherwise corrupt accents (see the charset note in the header).
+        def enc = { v -> java.net.URLEncoder.encode((v ?: '').toString(), 'UTF-8') }
+        def students = new ArrayList()
+        lines.drop(1).findAll { it?.trim() }.each { line ->
+          def c = line.split(',', -1)
+          def username  = (c.size() > 0 ? c[0].trim() : '')
+          def firstName = (c.size() > 1 ? c[1].trim() : '')
+          def lastName  = (c.size() > 2 ? c[2].trim() : '')
+          def email     = (c.size() > 3 ? c[3].trim() : '')
+          if (!username) { username = email }
+          if (!email || !username) {
+            throw new org.flowable.common.engine.api.FlowableException("Linha de aluno inválida (email/username obrigatório): '" + line + "'")
+          }
+          def m = new java.util.HashMap()
+          m.put('username', username)     // assumed ASCII -> sent raw
+          m.put('email', email)           // assumed ASCII -> sent raw
+          m.put('firstNameEnc', enc(firstName))
+          m.put('lastNameEnc', enc(lastName))
+          students.add(m)
+        }
+        if (students.isEmpty()) {
+          throw new org.flowable.common.engine.api.FlowableException("Nenhum aluno encontrado no CSV: " + path)
+        }
+        execution.setVariable('students', students)
+        execution.setVariable('studentCount', students.size())
+      ]]></script>
+    </scriptTask>
+    <sequenceFlow id="toCreateKcGroup" sourceRef="loadStudentsCsv" targetRef="createKeycloakGroup"/>
+
+    <!-- 4. Create the Keycloak group (name = turmaName) -->
+    <serviceTask id="createKeycloakGroup" name="Criar grupo no Keycloak" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl"><flowable:string>http://fzl-karaf-camel-integration:9090/fzlbpms/admin/groups</flowable:string></flowable:field>
+        <flowable:field name="requestHeaders"><flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string></flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"name":"${turmaName}"}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>kcGroupResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>true</flowable:string></flowable:field>
+      </extensionElements>
+    </serviceTask>
+    <sequenceFlow id="toCreateCohort" sourceRef="createKeycloakGroup" targetRef="createMoodleCohort"/>
+
+    <!-- 5. Create the Moodle cohort (name AND idnumber = turmaName) -->
+    <serviceTask id="createMoodleCohort" name="Criar cohort no Moodle" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl"><flowable:string>http://fzl-karaf-camel-integration:9091/fzlbpms/moodle/cohorts</flowable:string></flowable:field>
+        <flowable:field name="requestHeaders"><flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string></flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"name":"${turmaName}","idnumber":"${turmaName}"}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>cohortResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>true</flowable:string></flowable:field>
+      </extensionElements>
+    </serviceTask>
+    <sequenceFlow id="toCreateKcStudents" sourceRef="createMoodleCohort" targetRef="createKeycloakStudents"/>
+
+    <!-- 6. One Keycloak user per student, added to the group (so they can log in) -->
+    <serviceTask id="createKeycloakStudents" name="Criar alunos no Keycloak" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl"><flowable:string>http://fzl-karaf-camel-integration:9090/fzlbpms/admin/users</flowable:string></flowable:field>
+        <flowable:field name="requestHeaders"><flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string></flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"username":"${student.username}","email":"${student.email}","firstName":"${student.firstNameEnc}","lastName":"${student.lastNameEnc}","groupName":"${turmaName}"}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>kcUserResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>true</flowable:string></flowable:field>
+      </extensionElements>
+      <multiInstanceLoopCharacteristics isSequential="true"
+          flowable:collection="${students}" flowable:elementVariable="student"/>
+    </serviceTask>
+    <sequenceFlow id="toCreateMoodleStudents" sourceRef="createKeycloakStudents" targetRef="createMoodleStudents"/>
+
+    <!-- 7. One Moodle user per student (auth=oauth2), added to the cohort -->
+    <serviceTask id="createMoodleStudents" name="Criar alunos no Moodle" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl"><flowable:string>http://fzl-karaf-camel-integration:9091/fzlbpms/moodle/users</flowable:string></flowable:field>
+        <flowable:field name="requestHeaders"><flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string></flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"username":"${student.username}","email":"${student.email}","firstname":"${student.firstNameEnc}","lastname":"${student.lastNameEnc}","auth":"oauth2","cohortIdnumber":"${turmaName}"}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>moodleUserResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>true</flowable:string></flowable:field>
+      </extensionElements>
+      <multiInstanceLoopCharacteristics isSequential="true"
+          flowable:collection="${students}" flowable:elementVariable="student"/>
+    </serviceTask>
+    <sequenceFlow id="toBuildSummary" sourceRef="createMoodleStudents" targetRef="buildSummary"/>
+
+    <!-- 8. Human-readable summary for the review form -->
+    <scriptTask id="buildSummary" name="Montar resumo" scriptFormat="groovy">
+      <script><![CDATA[
+        def sb = new StringBuilder()
+        sb.append("Turma: ").append(turmaName).append("\n")
+        sb.append("Grupo criado no Keycloak: ").append(turmaName).append("\n")
+        sb.append("Cohort criado no Moodle (idnumber): ").append(turmaName).append("\n")
+        sb.append("Alunos processados: ").append(studentCount)
+        execution.setVariable('resumo', sb.toString())
+      ]]></script>
+    </scriptTask>
+    <sequenceFlow id="toReview" sourceRef="buildSummary" targetRef="reviewResults"/>
+
+    <!-- 9. Review form — operator confirms the result -->
+    <userTask id="reviewResults" name="Revisar resultado da criação da turma">
+      <extensionElements>
+        <flowable:formProperty id="turmaNameOut" name="Turma" type="string" expression="${turmaName}" writable="false"/>
+        <flowable:formProperty id="alunosOut" name="Alunos processados" type="string" expression="${studentCount}" writable="false"/>
+        <flowable:formProperty id="resumoOut" name="Resumo" type="string" expression="${resumo}" writable="false"/>
+        <flowable:formProperty id="confirmacao" name="Confirmação" type="enum" required="true">
+          <flowable:value id="ok" name="OK — turma criada corretamente"/>
+          <flowable:value id="revisar" name="Preciso revisar"/>
+        </flowable:formProperty>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="toEnd" sourceRef="reviewResults" targetRef="endEvent"/>
+
+    <endEvent id="endEvent" name="Fim"/>
+
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_moodle-create-turma">
+    <bpmndi:BPMNPlane bpmnElement="moodle-create-turma" id="BPMNPlane_moodle-create-turma">
+      <bpmndi:BPMNShape bpmnElement="startTurmaForm" id="S_startTurmaForm">
+        <omgdc:Bounds height="30.0" width="30.0" x="100.0" y="163.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="composeAndValidateName" id="S_composeAndValidateName">
+        <omgdc:Bounds height="80.0" width="100.0" x="180.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="loadStudentsCsv" id="S_loadStudentsCsv">
+        <omgdc:Bounds height="80.0" width="100.0" x="330.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createKeycloakGroup" id="S_createKeycloakGroup">
+        <omgdc:Bounds height="80.0" width="100.0" x="480.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createMoodleCohort" id="S_createMoodleCohort">
+        <omgdc:Bounds height="80.0" width="100.0" x="630.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createKeycloakStudents" id="S_createKeycloakStudents">
+        <omgdc:Bounds height="80.0" width="100.0" x="780.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createMoodleStudents" id="S_createMoodleStudents">
+        <omgdc:Bounds height="80.0" width="100.0" x="930.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="buildSummary" id="S_buildSummary">
+        <omgdc:Bounds height="80.0" width="100.0" x="1080.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="reviewResults" id="S_reviewResults">
+        <omgdc:Bounds height="80.0" width="100.0" x="1230.0" y="138.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="endEvent" id="S_endEvent">
+        <omgdc:Bounds height="28.0" width="28.0" x="1380.0" y="164.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="toComposeName" id="E_toComposeName">
+        <omgdi:waypoint x="130.0" y="178.0"/><omgdi:waypoint x="180.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toLoadStudents" id="E_toLoadStudents">
+        <omgdi:waypoint x="280.0" y="178.0"/><omgdi:waypoint x="330.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toCreateKcGroup" id="E_toCreateKcGroup">
+        <omgdi:waypoint x="430.0" y="178.0"/><omgdi:waypoint x="480.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toCreateCohort" id="E_toCreateCohort">
+        <omgdi:waypoint x="580.0" y="178.0"/><omgdi:waypoint x="630.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toCreateKcStudents" id="E_toCreateKcStudents">
+        <omgdi:waypoint x="730.0" y="178.0"/><omgdi:waypoint x="780.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toCreateMoodleStudents" id="E_toCreateMoodleStudents">
+        <omgdi:waypoint x="880.0" y="178.0"/><omgdi:waypoint x="930.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toBuildSummary" id="E_toBuildSummary">
+        <omgdi:waypoint x="1030.0" y="178.0"/><omgdi:waypoint x="1080.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toReview" id="E_toReview">
+        <omgdi:waypoint x="1180.0" y="178.0"/><omgdi:waypoint x="1230.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="toEnd" id="E_toEnd">
+        <omgdi:waypoint x="1330.0" y="178.0"/><omgdi:waypoint x="1380.0" y="178.0"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

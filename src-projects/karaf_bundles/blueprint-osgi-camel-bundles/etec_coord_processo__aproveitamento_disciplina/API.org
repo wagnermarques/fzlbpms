@@ -1,0 +1,100 @@
+#+TITLE: aproveitamento-docs API
+#+AUTHOR: GitHub Copilot
+
+* GET /fzlbpms/aproveitamento/components
+
+Returns a JSON array with the values that can populate the form select list.
+
+Example response:
+
+#+begin_src json
+[
+  "Inglês Instrumental",
+  "Banco de Dados I",
+  "Banco de Dados II"
+]
+#+end_src
+
+* POST /fzlbpms/aproveitamento/generate
+
+Receives one JSON document and returns a =.zip= with the two generated DOCX
+files.
+
+** Request body
+
+Required fields:
+
+- =studentName=
+- =teacherPresident=
+- =teacherMember1=
+- =teacherMember2=
+- =componentNames=
+
+Optional fields:
+
+- =studentRm=
+- =expedientNumber=
+- =schoolName=
+- =programName=
+- =courseName=
+- =portariaDate=
+- =parecerPageReference=
+- =decision= (=deferido= or =indeferido=)
+- =justification=
+
+Example:
+
+#+begin_src json
+{
+  "studentName": "Fábio Assato Rossi",
+  "studentRm": "26375",
+  "teacherPresident": "Wagner França Marques",
+  "teacherMember1": "Ralf Gerônimo",
+  "teacherMember2": "João Paulo Frias",
+  "componentNames": [
+    "Inglês Instrumental"
+  ],
+  "expedientNumber": "2026-001",
+  "schoolName": "ZONA LESTE",
+  "programName": "Habilitação Profissional de Técnico em Desenvolvimento de Sistemas",
+  "courseName": "Curso Técnico de Desenvolvimento de Sistemas Noturno",
+  "portariaDate": "15/08/2022",
+  "parecerPageReference": "01",
+  "decision": "deferido",
+  "justification": "há compatibilidade entre as competências demonstradas na documentação e o componente curricular solicitado."
+}
+#+end_src
+
+** Response
+
+Successful response:
+
+- status =200=
+- content type =application/zip=
+- body =ZIP binary=
+
+Useful headers:
+
+- =Content-Disposition= → generated ZIP filename
+- =X-Generated-Output-Dir= → server-side directory where the DOCX files were saved
+
+* Curl example saving the ZIP file
+
+#+begin_src bash
+curl -X POST "http://localhost:9092/fzlbpms/aproveitamento/generate" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/zip" \
+  --data @payload.json \
+  --output aproveitamento-documentos.zip
+#+end_src
+
+* Notes about the templates
+
+The current implementation assumes the structure of the two provided DOCX
+models and replaces the expected XML fragments in:
+
+1. the =parecer= template;
+2. the =despacho= template.
+
+If the institution changes the source DOCX layout substantially, validate the
+replacement points again before deploying the new files.

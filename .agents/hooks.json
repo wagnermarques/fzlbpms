@@ -1,0 +1,16 @@
+{
+  "safe-commands-approval": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/scripts/approve_safe_commands.py ]; then python3 .agents/scripts/approve_safe_commands.py; elif [ -f scripts/approve_safe_commands.py ]; then python3 scripts/approve_safe_commands.py; else python3 \"$(git rev-parse --show-toplevel 2>/dev/null)/.agents/scripts/approve_safe_commands.py\"; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

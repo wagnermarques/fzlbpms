@@ -1,0 +1,31 @@
+################################################################################
+# users.properties — TEMPLATE ONLY. The real file is NOT in this repository.
+#
+# This file defines Karaf's JAAS realm, which guards:
+#   - the SSH console          (8101)
+#   - JMX / RMI                (1099, 44444)
+#   - the HTTP Basic realm in front of the Felix web console and Hawtio (8181)
+#
+# It used to ship here with a default password. That meant rotating the
+# credential took a commit, and the old value stayed in the history of a
+# public repository. It is now GENERATED AT CONTAINER START by
+# containers/fzl-karaf-camel-integration/entrypoint.sh from:
+#
+#   FZL_KARAF_USER=...
+#   FZL_KARAF_PASSWORD=...
+#
+# in .env (gitignored — see .env.template). nginx reads the same two variables
+# to build the Authorization header it presents towards /system/console and
+# /hawtio, so the two sides can never drift apart.
+#
+# To rotate the password:
+#   1. openssl rand -base64 24        # or any strong value
+#   2. put it in FZL_KARAF_PASSWORD in .env
+#   3. docker compose up -d --force-recreate fzl-karaf-camel-integration fzl-nginx
+#
+# The generated file looks like this (roles unchanged from Karaf's default
+# admingroup — edit entrypoint.sh if you need to narrow them):
+#
+#   <FZL_KARAF_USER> = <FZL_KARAF_PASSWORD>,_g_:admingroup
+#   _g_\:admingroup = group,admin,manager,viewer,systembundles,ssh
+################################################################################

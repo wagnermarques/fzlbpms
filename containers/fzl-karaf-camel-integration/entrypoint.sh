@@ -4,6 +4,45 @@ set -e # Encerra o script se um comando falhar
 echo "==== INSPECIONANDO PERMISS�ES ANTES DO CHOWN ===="
 ls -la /opt/karaf
 
+# ---------------------------------------------------------------------------
+# Karaf JAAS realm (etc/users.properties) — generated here, never committed.
+#
+# This one file guards the SSH console (8101), JMX/RMI (1099, 44444) and the
+# HTTP Basic realm in front of the Felix web console and Hawtio (8181). It
+# used to ship in git with a default password, which meant rotating the
+# credential required a commit — and the old value stayed in the history of a
+# public repository forever.
+#
+# Now it is written at container start from FZL_KARAF_USER / FZL_KARAF_PASSWORD,
+# which docker-compose.yml passes from .env (gitignored), exactly like the 15
+# other secrets this service already consumes. nginx reads the SAME two
+# variables to build the Authorization header it presents towards
+# /system/console and /hawtio (containers/fzl-nginx/docker-entrypoint.d/
+# 11-karaf-basic-auth.sh), so the two can never drift apart.
+#
+# To rotate: change FZL_KARAF_PASSWORD in .env, then
+#   docker compose up -d --force-recreate fzl-karaf-camel-integration fzl-nginx
+#
+# Runs as root, before the gosu below, so it can write into $KARAF_HOME/etc;
+# the chown that follows hands the file to appuser.
+# ---------------------------------------------------------------------------
+echo "==== GENERATING KARAF JAAS REALM (etc/users.properties) ===="
+if [ -n "${FZL_KARAF_USER:-}" ] && [ -n "${FZL_KARAF_PASSWORD:-}" ]; then
+  cat > "$KARAF_HOME/etc/users.properties" <<USERS_EOF
+# GENERATED AT CONTAINER START by entrypoint.sh — do not edit, do not commit.
+# Source of truth: FZL_KARAF_USER / FZL_KARAF_PASSWORD in .env
+${FZL_KARAF_USER} = ${FZL_KARAF_PASSWORD},_g_:admingroup
+_g_\\:admingroup = group,admin,manager,viewer,systembundles,ssh
+USERS_EOF
+  chmod 600 "$KARAF_HOME/etc/users.properties"
+  echo "  Wrote etc/users.properties for user '${FZL_KARAF_USER}'."
+else
+  echo "  FATAL: FZL_KARAF_USER / FZL_KARAF_PASSWORD are unset."
+  echo "  Set them in .env — see .env.template. Refusing to start with no"
+  echo "  credential rather than falling back to a default one."
+  exit 1
+fi
+
 echo "==== EXECUTANDO CHOWN EM $KARAF_HOME ===="
 chown -R appuser:appuser "$KARAF_HOME"
 
@@ -19,7 +58,7 @@ ls -la /opt/karaf
 # (Moodle web services) with TLS verification. Runs as root (we're still
 # root here, before gosu) so it can write the JDK's cacerts directly. The CA
 # is bind-mounted from containers/fzl-karaf-camel-integration/certs, staged
-# by bin/setup-local-https.sh. Safe no-op when absent.
+# by ansible/setup-project.yml (--tags certs). Safe no-op when absent.
 MKCERT_CA="/run/mkcert-certs/mkcert-ca.pem"
 if [ -f "$MKCERT_CA" ]; then
   echo "==== TRUSTING LOCAL mkcert CA IN THE JVM ===="
@@ -31,7 +70,7 @@ if [ -f "$MKCERT_CA" ]; then
     echo "  mkcert CA already present (or import skipped)."
   fi
 else
-  echo "==== No mkcert CA at $MKCERT_CA — https://fzlbpms.local calls will fail TLS verification. Run bin/setup-local-https.sh. ===="
+  echo "==== No mkcert CA at $MKCERT_CA — https://fzlbpms.local calls will fail TLS verification. Run: ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K ===="
 fi
 
 echo "==== DEPLOYING BLUEPRINT XML BUNDLES ===="

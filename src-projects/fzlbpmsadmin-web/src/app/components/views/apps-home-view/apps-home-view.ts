@@ -42,6 +42,11 @@ export class AppsHomeView {
       description: 'Web-based BPMN 2.0 modeler (bpmn-js) for designing and editing process diagrams.',
     },
     {
+      name: 'Orbeon Forms',
+      url: '/orbeon/',
+      description: 'Open-source forms platform (Community Edition) — visual Form Builder and Form Runner for process start forms and data collection.',
+    },
+    {
       name: 'Moodle',
       url: '/moodle',
       description: 'Learning Management System (LMS) for educational workflows.',
@@ -58,6 +63,17 @@ export class AppsHomeView {
       url: '/karafconsole/',
       description: 'Web console for Apache Karaf (OSGi container), managing bundles and services.',
       credentials: { user: 'karaf', pass: 'karaf' },
+    },
+    {
+      name: 'Hawtio',
+      url: '/hawtio/',
+      description: 'Management console for Apache Camel routes, JMX mbeans, Jolokia, and OSGi runtime diagnostics.',
+      credentials: { user: 'karaf', pass: 'karaf' },
+    },
+    {
+      name: 'Theia IDE',
+      url: '/theia/',
+      description: 'Cloud and desktop IDE for code editing, terminal access, and development workspace.',
     },
   ]);
 }

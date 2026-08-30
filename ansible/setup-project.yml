@@ -1,0 +1,397 @@
+---
+# =============================================================================
+# setup-project.yml — Full system onboarding and setup for fzlbpms
+#
+# Configures everything needed on the host machine to run the project smoothly:
+#   1. Installs Docker Engine + Docker Compose v2 plugin (Debian, Ubuntu, Fedora, Alpine).
+#   2. Configures Docker storage driver (btrfs optimization on Fedora Workstation).
+#   3. Sets SELinux container_file_t contexts on bind-mounted directories.
+#   4. Configures /etc/hosts (maps 127.0.0.1 fzlbpms.local for browser access).
+#   5. Installs mkcert, trusts the local CA, and stages HTTPS certs for containers.
+#
+# Usage:
+#   cd ansible
+#   ansible-playbook setup-project.yml -K        # -K prompts for sudo password
+#
+# After the first run:
+#   - Open a new terminal (or run `newgrp docker`) for group permissions.
+#   - Start the stack: ./bin/run-stack.sh basic
+# =============================================================================
+- name: Setup host environment for fzlbpms stack
+  hosts: docker_hosts
+  become: false
+  vars:
+    docker_login_user: "{{ ansible_facts.env.SUDO_USER | default(ansible_facts.env.USER) }}"
+    fzlbpms_repo_root: "{{ (playbook_dir + '/..') | realpath }}"
+
+    docker_packages:
+      Debian:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        - docker-buildx-plugin
+        - docker-compose-plugin
+      RedHat:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        - docker-buildx-plugin
+        - docker-compose-plugin
+      Alpine:
+        - docker
+        - docker-cli-compose
+
+  pre_tasks:
+    - name: Ensure the distribution is supported
+      ansible.builtin.assert:
+        that: ansible_facts.os_family in docker_packages
+        fail_msg: >-
+          Unsupported OS family '{{ ansible_facts.os_family }}'.
+          This playbook supports Debian, Ubuntu, Fedora and Alpine.
+
+    - name: Ensure this playbook only targets Fedora within the RedHat family
+      ansible.builtin.assert:
+        that: ansible_facts.distribution == "Fedora"
+        fail_msg: >-
+          '{{ ansible_facts.distribution }}' uses a different Docker repo path
+          than Fedora (see download.docker.com/linux/) — add it explicitly
+          before running this playbook on RHEL/CentOS/Rocky.
+      when: ansible_facts.os_family == "RedHat"
+
+  tasks:
+    # ------------------------------------------------------------------
+    # 1. Docker Engine Installation (Debian / Ubuntu)
+    # ------------------------------------------------------------------
+    - name: Install apt prerequisites for Docker
+      become: true
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Create the apt keyrings directory
+      become: true
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Download Docker's apt GPG key
+      become: true
+      ansible.builtin.get_url:
+        url: "https://download.docker.com/linux/{{ ansible_facts.distribution | lower }}/gpg"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Add Docker apt repository
+      become: true
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch={{ ansible_facts.architecture | regex_replace('x86_64', 'amd64') | regex_replace('aarch64', 'arm64') }}
+          signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/{{ ansible_facts.distribution | lower }}
+          {{ ansible_facts.distribution_release }} stable
+        filename: docker
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Install Docker Engine (apt)
+      become: true
+      ansible.builtin.apt:
+        name: "{{ docker_packages.Debian }}"
+        state: present
+      when: ansible_facts.os_family == "Debian"
+
+    # ------------------------------------------------------------------
+    # 2. Docker Engine Installation (Fedora)
+    # ------------------------------------------------------------------
+    - name: Install dnf-plugins-core
+      become: true
+      ansible.builtin.dnf:
+        name: dnf-plugins-core
+        state: present
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Add Docker dnf repository
+      become: true
+      ansible.builtin.yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/fedora/$releasever/$basearch/stable
+        gpgcheck: true
+        gpgkey: https://download.docker.com/linux/fedora/gpg
+        enabled: true
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Install Docker Engine (dnf)
+      become: true
+      ansible.builtin.dnf:
+        name: "{{ docker_packages.RedHat }}"
+        state: present
+      when: ansible_facts.os_family == "RedHat"
+
+    # ------------------------------------------------------------------
+    # 3. Docker Engine Installation (Alpine)
+    # ------------------------------------------------------------------
+    - name: Install Docker (apk)
+      become: true
+      community.general.apk:
+        name: "{{ docker_packages.Alpine }}"
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Alpine"
+
+    # ------------------------------------------------------------------
+    # 4. Service & Group Configuration
+    # ------------------------------------------------------------------
+    - name: Enable and start docker service (systemd)
+      become: true
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+      when: ansible_facts.os_family in ["Debian", "RedHat"]
+
+    - name: Enable and start docker service (OpenRC)
+      become: true
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+        state: started
+      when: ansible_facts.os_family == "Alpine"
+
+    - name: Add {{ docker_login_user }} to docker group
+      become: true
+      ansible.builtin.user:
+        name: "{{ docker_login_user }}"
+        groups: docker
+        append: true
+
+    # ------------------------------------------------------------------
+    # 5. btrfs Storage Driver Optimization (Fedora Workstation)
+    # ------------------------------------------------------------------
+    - name: Detect filesystem backing docker data-root
+      ansible.builtin.command: stat -f -c %T /var/lib/docker
+      register: docker_root_fstype
+      changed_when: false
+      when: ansible_facts.os_family in ["Debian", "RedHat"]
+
+    - name: Ensure /etc/docker exists
+      become: true
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+      when:
+        - ansible_facts.os_family in ["Debian", "RedHat"]
+        - docker_root_fstype.stdout | default('') == "btrfs"
+
+    - name: Configure native btrfs storage driver
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+        content: |
+          {
+            "storage-driver": "btrfs",
+            "features": {
+              "containerd-snapshotter": false
+            }
+          }
+      register: docker_daemon_json
+      when:
+        - ansible_facts.os_family in ["Debian", "RedHat"]
+        - docker_root_fstype.stdout | default('') == "btrfs"
+
+    - name: Restart docker to apply storage-driver change
+      become: true
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+      when: docker_daemon_json is changed
+
+    # ------------------------------------------------------------------
+    # 6. SELinux: Container file labels
+    # ------------------------------------------------------------------
+    - name: Ensure semanage is available (policycoreutils-python-utils)
+      become: true
+      ansible.builtin.dnf:
+        name: policycoreutils-python-utils
+        state: present
+      when:
+        - ansible_facts.os_family == "RedHat"
+        - ansible_facts.selinux.status | default('disabled') == "enabled"
+
+    - name: Persist container_file_t SELinux context for bind-mounts
+      become: true
+      community.general.sefcontext:
+        target: "{{ fzlbpms_repo_root }}/{{ item }}(/.*)?"
+        setype: container_file_t
+        state: present
+      loop:
+        - containers
+        - src-projects
+      when: ansible_facts.selinux.status | default('disabled') == "enabled"
+
+    - name: Apply container_file_t context to existing files
+      become: true
+      ansible.builtin.command: "restorecon -Rv {{ fzlbpms_repo_root }}/{{ item }}"
+      loop:
+        - containers
+        - src-projects
+      register: restorecon_result
+      changed_when: restorecon_result.stdout != ""
+      when: ansible_facts.selinux.status | default('disabled') == "enabled"
+
+    # ------------------------------------------------------------------
+    # 7. DNS & Host Resolution (/etc/hosts)
+    # ------------------------------------------------------------------
+    - name: Map fzlbpms.local to 127.0.0.1 in /etc/hosts
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 fzlbpms.local"
+        regexp: '^127\.0\.0\.1\s+.*fzlbpms\.local.*$'
+        state: present
+
+    # ------------------------------------------------------------------
+    # 8. Generated secrets in .env
+    #
+    # docker-compose.yml consumes FZL_KARAF_PASSWORD with "${...:?}", so the
+    # stack refuses to start rather than fall back to a default password —
+    # correct, but it means a fresh clone stops with a compose error until
+    # someone invents a password by hand. Generate one here instead, once,
+    # and only when there isn't one already.
+    #
+    # The Karaf JAAS realm (etc/users.properties) is written from this value
+    # at container start, and nginx builds the Authorization header it
+    # presents to /system/console and /hawtio from the same variable — so
+    # this single line is the whole credential.
+    # ------------------------------------------------------------------
+    - name: Ensure .env exists (seeded from .env.template)
+      become: false
+      ansible.builtin.copy:
+        src: "{{ fzlbpms_repo_root }}/.env.template"
+        dest: "{{ fzlbpms_repo_root }}/.env"
+        remote_src: true
+        mode: "0600"
+        force: false
+      tags: [secrets]
+
+    - name: Check whether FZL_KARAF_PASSWORD already has a value
+      become: false
+      ansible.builtin.command:
+        cmd: grep -qE '^FZL_KARAF_PASSWORD=.+' {{ fzlbpms_repo_root }}/.env
+      register: fzlbpms_karaf_pw
+      changed_when: false
+      failed_when: false
+      tags: [secrets]
+
+    # no_log: the generated value must not reach the Ansible output, and
+    # lineinfile would otherwise echo the whole line it wrote.
+    # Alphanumeric on purpose: this value is substituted into a .properties
+    # file, a shell heredoc and a base64 Basic header, and every escaping
+    # class it could carry has to survive all three.
+    - name: Generate a random FZL_KARAF_PASSWORD
+      become: false
+      ansible.builtin.lineinfile:
+        path: "{{ fzlbpms_repo_root }}/.env"
+        regexp: '^FZL_KARAF_PASSWORD='
+        line: "FZL_KARAF_PASSWORD={{ lookup('password', '/dev/null length=28 chars=ascii_letters,digits') }}"
+        mode: "0600"
+      no_log: true
+      when: fzlbpms_karaf_pw.rc != 0
+      register: fzlbpms_karaf_pw_written
+      tags: [secrets]
+
+    - name: Report the Karaf credential state
+      ansible.builtin.debug:
+        msg: >-
+          {{ "Generated a random FZL_KARAF_PASSWORD in .env — it is the login for the
+          Karaf SSH console, and nginx presents it to /system/console and /hawtio on
+          your behalf after Keycloak sign-in, so you never have to type it."
+          if (fzlbpms_karaf_pw_written is changed)
+          else "FZL_KARAF_PASSWORD already set in .env — left untouched." }}
+      tags: [secrets]
+
+    # ------------------------------------------------------------------
+    # 9. Local HTTPS & SSL Certificates (mkcert)
+    #
+    # The whole of it lives in tasks/local-https.yml. Re-issue certificates
+    # without redoing the rest of the host setup:
+    #
+    #   ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml \
+    #       --tags certs -K
+    # ------------------------------------------------------------------
+    # `apply:` is what pushes the tags onto the included tasks — tags on a
+    # dynamic include_tasks otherwise gate only the include statement itself,
+    # and `--tags certs` would run the include and then filter everything in it.
+    - name: Set up local HTTPS for fzlbpms.local
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/local-https.yml"
+        apply:
+          tags:
+            - certs
+            - https
+      tags:
+        - certs
+        - https
+
+    # ------------------------------------------------------------------
+    # 10. Verification & Summary
+    # ------------------------------------------------------------------
+    - name: Verify Docker tools are accessible
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - docker --version
+        - docker compose version
+      register: versions
+      changed_when: false
+      become: true
+
+    - name: Display installed versions
+      ansible.builtin.debug:
+        msg: "{{ versions.results | map(attribute='stdout') | list }}"
+
+    # Being in /etc/group is not the same as the running shell having the
+    # group: the terminal that launched this playbook kept the group list it
+    # was created with. `sg docker` starts a process that does have it, which
+    # is what distinguishes "not set up" from "set up, shell just needs
+    # refreshing" — and turns the generic reminder below into a precise one.
+    - name: Verify {{ docker_login_user }} can already run docker via the docker group
+      become: false
+      ansible.builtin.command: sg docker -c "docker info"
+      register: sg_docker_check
+      changed_when: false
+      failed_when: false
+      when: ansible_facts.os_family != "Alpine"   # sg may be absent there
+
+    - name: Summary notice
+      ansible.builtin.debug:
+        msg:
+          - "=================================================================="
+          - "Setup Complete!"
+          - "  - Docker & Compose v2: Installed and running"
+          - "  - /etc/hosts: 127.0.0.1 fzlbpms.local configured"
+          - "  - SSL Certs: mkcert trusted on host and staged for containers"
+          - "=================================================================="
+          - "{{ docker_group_note }}"
+          - "=================================================================="
+          - "Next steps:"
+          - "  1. Start the stack: `./bin/run-stack.sh basic`"
+          - "  2. Open: `https://fzlbpms.local/fzlbpmsadmin/`"
+          - "=================================================================="
+      vars:
+        docker_group_note: >-
+          {{ "Docker group: OK — " ~ docker_login_user ~ " can run docker without sudo."
+             if (sg_docker_check.rc | default(1)) == 0
+             else "Docker group: the grant is in /etc/group, but THIS terminal still has
+                   the group list it was created with, so plain `docker` / `docker compose`
+                   will fail here with \"permission denied\". Open a new terminal, or run
+                   `newgrp docker` in this one, before the next step." }}

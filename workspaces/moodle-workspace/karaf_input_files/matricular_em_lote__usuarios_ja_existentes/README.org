@@ -1,0 +1,3 @@
+deposite um csv com campos corretos para matricular *usuarios já existentes no moodle*  em um ou mais cursos em lote
+os campos devem ser:
+usuario_id,

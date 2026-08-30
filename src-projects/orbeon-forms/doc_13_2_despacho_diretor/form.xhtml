@@ -1,0 +1,268 @@
+<xh:html xmlns:xh="http://www.w3.org/1999/xhtml"
+         xmlns:xf="http://www.w3.org/2002/xforms"
+         xmlns:xs="http://www.w3.org/2001/XMLSchema"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:ev="http://www.w3.org/2001/xml-events"
+         xmlns:xi="http://www.w3.org/2001/XInclude"
+         xmlns:xxi="http://orbeon.org/oxf/xml/xinclude"
+         xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+         xmlns:fr="http://orbeon.org/oxf/xml/form-runner"
+         xmlns:saxon="http://saxon.sf.net/">
+    <xh:head>
+        <xh:title>Doc 13.2 - Anexo II: Despacho do Diretor de Escola Técnica</xh:title>
+        <xf:model id="fr-form-model" xxf:expose-xpath-types="true">
+            <xf:instance id="fr-form-instance" xxf:exclude-result-prefixes="#all">
+                <form>
+                    <secao-direcao>
+                        <schoolName>ZONA LESTE</schoolName>
+                        <expedientNumber>2026-001</expedientNumber>
+                        <parecerPageReference>01</parecerPageReference>
+                    </secao-direcao>
+                    <secao-aluno-curso>
+                        <studentName/>
+                        <studentRm/>
+                        <courseName>Curso Técnico de Desenvolvimento de Sistemas Noturno</courseName>
+                    </secao-aluno-curso>
+                    <secao-componentes>
+                        <componentNames/>
+                    </secao-componentes>
+                    <secao-decisao-diretor>
+                        <decision>deferido</decision>
+                    </secao-decisao-diretor>
+                </form>
+            </xf:instance>
+
+            <xf:bind id="fr-form-binds" ref="instance('fr-form-instance')">
+                <xf:bind id="secao-direcao-bind" name="secao-direcao" ref="secao-direcao">
+                    <xf:bind id="schoolName-bind" name="schoolName" ref="schoolName" required="true()"/>
+                    <xf:bind id="expedientNumber-bind" name="expedientNumber" ref="expedientNumber" required="true()"/>
+                    <xf:bind id="parecerPageReference-bind" name="parecerPageReference" ref="parecerPageReference" required="true()"/>
+                </xf:bind>
+                <xf:bind id="secao-aluno-curso-bind" name="secao-aluno-curso" ref="secao-aluno-curso">
+                    <xf:bind id="studentName-bind" name="studentName" ref="studentName" required="true()"/>
+                    <xf:bind id="studentRm-bind" name="studentRm" ref="studentRm" required="false()"/>
+                    <xf:bind id="courseName-bind" name="courseName" ref="courseName" required="true()"/>
+                </xf:bind>
+                <xf:bind id="secao-componentes-bind" name="secao-componentes" ref="secao-componentes">
+                    <xf:bind id="componentNames-bind" name="componentNames" ref="componentNames" required="true()"/>
+                </xf:bind>
+                <xf:bind id="secao-decisao-diretor-bind" name="secao-decisao-diretor" ref="secao-decisao-diretor">
+                    <xf:bind id="decision-bind" name="decision" ref="decision" required="true()"/>
+                </xf:bind>
+            </xf:bind>
+
+            <xf:instance id="fr-form-metadata" xxf:readonly="true" xxf:exclude-result-prefixes="#all">
+                <metadata>
+                    <application-name>etec-coord</application-name>
+                    <form-name>despacho-diretor</form-name>
+                    <title xml:lang="pt">Doc 13.2 - Anexo II: Despacho do Diretor da Etec</title>
+                    <description xml:lang="pt">Formulário de Despacho e Decisão Final da Direção sobre o Processo de Aproveitamento de Estudos.</description>
+                    <version-comment>1.0.0</version-comment>
+                </metadata>
+            </xf:instance>
+
+            <xf:instance id="fr-form-attachments" xxf:exclude-result-prefixes="#all">
+                <attachments/>
+            </xf:instance>
+
+            <xf:instance id="fr-form-resources" xxf:readonly="false" xxf:exclude-result-prefixes="#all">
+                <resources>
+                    <resource xml:lang="pt">
+                        <secao-direcao>
+                            <label>1. Identificação da Unidade e Expediente</label>
+                        </secao-direcao>
+                        <schoolName>
+                            <label>Unidade de Ensino (Etec)</label>
+                            <hint>Nome da unidade escolar</hint>
+                        </schoolName>
+                        <expedientNumber>
+                            <label>Nº do Expediente</label>
+                            <hint>Ex: 2026-001</hint>
+                        </expedientNumber>
+                        <parecerPageReference>
+                            <label>Folhas do Parecer da Comissão</label>
+                            <hint>Nº das folhas do parecer nos autos (Ex: 01)</hint>
+                        </parecerPageReference>
+
+                        <secao-aluno-curso>
+                            <label>2. Aluno e Matrícula</label>
+                        </secao-aluno-curso>
+                        <studentName>
+                            <label>Nome do Aluno</label>
+                            <hint>Nome completo do discente</hint>
+                        </studentName>
+                        <studentRm>
+                            <label>RM (Registro de Matrícula)</label>
+                            <hint>Número de matrícula do aluno</hint>
+                        </studentRm>
+                        <courseName>
+                            <label>Curso e Período</label>
+                            <hint>Curso no qual o aluno está regularmente matriculado</hint>
+                        </courseName>
+
+                        <secao-componentes>
+                            <label>3. Componentes Curriculares</label>
+                        </secao-componentes>
+                        <componentNames>
+                            <label>Componentes para Despacho</label>
+                            <hint>Selecione as disciplinas objeto do despacho</hint>
+                            <item>
+                                <label>Inglês Instrumental</label>
+                                <value>Inglês Instrumental</value>
+                            </item>
+                            <item>
+                                <label>Linguagem, Trabalho e Tecnologia</label>
+                                <value>Linguagem, Trabalho e Tecnologia</value>
+                            </item>
+                            <item>
+                                <label>Programação de Aplicativos Mobile</label>
+                                <value>Programação de Aplicativos Mobile</value>
+                            </item>
+                            <item>
+                                <label>Programação Web I</label>
+                                <value>Programação Web I</value>
+                            </item>
+                            <item>
+                                <label>Programação Web II</label>
+                                <value>Programação Web II</value>
+                            </item>
+                            <item>
+                                <label>Banco de Dados I</label>
+                                <value>Banco de Dados I</value>
+                            </item>
+                            <item>
+                                <label>Banco de Dados II</label>
+                                <value>Banco de Dados II</value>
+                            </item>
+                            <item>
+                                <label>Análise e Projeto de Sistemas</label>
+                                <value>Análise e Projeto de Sistemas</value>
+                            </item>
+                            <item>
+                                <label>Desenvolvimento de Sistemas</label>
+                                <value>Desenvolvimento de Sistemas</value>
+                            </item>
+                            <item>
+                                <label>Técnicas de Programação</label>
+                                <value>Técnicas de Programação</value>
+                            </item>
+                        </componentNames>
+
+                        <secao-decisao-diretor>
+                            <label>4. Decisão da Direção</label>
+                        </secao-decisao-diretor>
+                        <decision>
+                            <label>Despacho Final</label>
+                            <hint>Homologação da direção</hint>
+                            <item>
+                                <label>Deferido (Aprovado o aproveitamento)</label>
+                                <value>deferido</value>
+                            </item>
+                            <item>
+                                <label>Indeferido (Não aprovado o aproveitamento)</label>
+                                <value>indeferido</value>
+                            </item>
+                        </decision>
+                    </resource>
+                </resources>
+            </xf:instance>
+        </xf:model>
+    </xh:head>
+    <xh:body>
+        <fr:view>
+            <fr:body>
+                <fr:section id="secao-direcao-section" bind="secao-direcao-bind">
+                    <xf:label ref="$form-resources/secao-direcao/label"/>
+                    <fr:grid id="grid-direcao">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="schoolName-control" bind="schoolName-bind">
+                                    <xf:label ref="$form-resources/schoolName/label"/>
+                                    <xf:hint ref="$form-resources/schoolName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="expedientNumber-control" bind="expedientNumber-bind">
+                                    <xf:label ref="$form-resources/expedientNumber/label"/>
+                                    <xf:hint ref="$form-resources/expedientNumber/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td colspan="2">
+                                <xf:input id="parecerPageReference-control" bind="parecerPageReference-bind">
+                                    <xf:label ref="$form-resources/parecerPageReference/label"/>
+                                    <xf:hint ref="$form-resources/parecerPageReference/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-aluno-curso-section" bind="secao-aluno-curso-bind">
+                    <xf:label ref="$form-resources/secao-aluno-curso/label"/>
+                    <fr:grid id="grid-aluno-curso">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="studentName-control" bind="studentName-bind">
+                                    <xf:label ref="$form-resources/studentName/label"/>
+                                    <xf:hint ref="$form-resources/studentName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="studentRm-control" bind="studentRm-bind">
+                                    <xf:label ref="$form-resources/studentRm/label"/>
+                                    <xf:hint ref="$form-resources/studentRm/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td colspan="2">
+                                <xf:input id="courseName-control" bind="courseName-bind">
+                                    <xf:label ref="$form-resources/courseName/label"/>
+                                    <xf:hint ref="$form-resources/courseName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-componentes-section" bind="secao-componentes-bind">
+                    <xf:label ref="$form-resources/secao-componentes/label"/>
+                    <fr:grid id="grid-componentes">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:select id="componentNames-control" bind="componentNames-bind" appearance="full">
+                                    <xf:label ref="$form-resources/componentNames/label"/>
+                                    <xf:hint ref="$form-resources/componentNames/hint"/>
+                                    <xf:itemset ref="$form-resources/componentNames/item">
+                                        <xf:label ref="label"/>
+                                        <xf:value ref="value"/>
+                                    </xf:itemset>
+                                </xf:select>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-decisao-diretor-section" bind="secao-decisao-diretor-bind">
+                    <xf:label ref="$form-resources/secao-decisao-diretor/label"/>
+                    <fr:grid id="grid-decisao">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:select1 id="decision-control" bind="decision-bind" appearance="full">
+                                    <xf:label ref="$form-resources/decision/label"/>
+                                    <xf:hint ref="$form-resources/decision/hint"/>
+                                    <xf:itemset ref="$form-resources/decision/item">
+                                        <xf:label ref="label"/>
+                                        <xf:value ref="value"/>
+                                    </xf:itemset>
+                                </xf:select1>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+            </fr:body>
+        </fr:view>
+    </xh:body>
+</xh:html>

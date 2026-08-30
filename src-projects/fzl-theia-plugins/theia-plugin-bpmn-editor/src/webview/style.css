@@ -1,0 +1,42 @@
+/*
+ * The webview host (Theia or VS Code) styles <body> with the current theme and
+ * exposes it through --vscode-* custom properties; Theia maps its own theme
+ * onto the same names. Everything below is only about making the canvas fill
+ * the panel and keeping bpmn-js legible on a dark background.
+ */
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+#canvas {
+    height: 100vh;
+    width: 100%;
+    background-color: var(--vscode-editor-background, #ffffff);
+}
+
+/*
+ * bpmn-js draws the diagram itself in fixed colors (black strokes on white
+ * fills) and its palette/context pad inherit the page background, which under a
+ * dark theme leaves black-on-black icons. Force the chrome back to a light
+ * surface rather than restyling the whole toolkit.
+ */
+.djs-palette,
+.djs-context-pad .entry,
+.djs-popup {
+    background-color: #fafafa;
+    color: #333333;
+}
+
+.djs-palette .entry:hover,
+.djs-context-pad .entry:hover {
+    background-color: #eeeeee;
+}
+
+.bjs-powered-by {
+    display: none;
+}

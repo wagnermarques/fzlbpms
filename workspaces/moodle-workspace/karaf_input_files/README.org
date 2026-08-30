@@ -1,0 +1,1 @@
+karaf_input_files is a special directory that can trigger a camel routes

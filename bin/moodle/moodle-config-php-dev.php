@@ -38,12 +38,28 @@ $CFG = new stdClass();
 // will be stored.  This database must already have been created         //
 // and a username/password created to access it.                         //
 
-$CFG->dbtype    = 'mysqli';      // 'pgsql', 'mariadb', 'mysqli', 'auroramysql', 'sqlsrv' or 'oci'
+//-------------------------------------------------------------------------
+// fzlbpms note — READ THIS BEFORE COPYING ANYTHING BELOW.
+//
+// This file is Moodle's upstream config-dist.php, kept as a REFERENCE. It is
+// not the configuration the stack runs on and nothing reads it.
+//
+// The live config is src-projects/var_www/html/moodle/config.php, written by
+// the moodle-installer container and gitignored, precisely so no credential
+// ends up in this repository.
+//
+// The database block used to be hardcoded here with a root password, pointing
+// at a MySQL host ('phpdev-mysql8-dev') that this stack no longer has — the
+// stack runs Moodle on PostgreSQL (fzl-postgresql). It now reads the same
+// MOODLE_DB_* variables the installer uses, which live in .env (gitignored,
+// see .env.template). Never write a password into this file.
+//-------------------------------------------------------------------------
+$CFG->dbtype    = getenv('MOODLE_DB_TYPE') ?: 'pgsql';   // this stack: pgsql
 $CFG->dblibrary = 'native';     // 'native' only at the moment
-$CFG->dbhost    = 'phpdev-mysql8-dev';  // eg 'localhost' or 'db.isp.com' or IP
-$CFG->dbname    = 'moodle';     // database name, eg moodle
-$CFG->dbuser    = 'root';   // your database username
-$CFG->dbpass    = 'admin123';   // your database password
+$CFG->dbhost    = getenv('MOODLE_DB_HOST') ?: 'fzl-postgresql';
+$CFG->dbname    = getenv('MOODLE_DB_NAME') ?: 'moodle';
+$CFG->dbuser    = getenv('MOODLE_DB_USER') ?: 'moodle';
+$CFG->dbpass    = getenv('MOODLE_DB_PASS');   // from .env — never hardcode
 $CFG->prefix    = 'mdl_';       // prefix to use for all table names
 $CFG->dboptions = array(
     'dbpersist' => false,       // should persistent database connections be

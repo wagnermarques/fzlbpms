@@ -3,8 +3,8 @@
 # every executable script in /docker-entrypoint.d/ runs, sorted by name).
 #
 # /run/mkcert-certs is a directory bind mount of containers/fzl-nginx/certs
-# on the host (see docker-compose.yml) — populated by bin/setup-local-https.sh
-# / ansible/fzlbpms-setup.yml. Mounting a directory is safe even when it
+# on the host (see docker-compose.yml) — populated by
+# ansible/setup-project.yml (--tags certs). Mounting a directory is safe even when it
 # doesn't exist yet on the host (Docker just creates it empty), unlike
 # mounting a single file path, so `docker compose up` never fails here for
 # someone who hasn't run the mkcert setup.
@@ -23,5 +23,5 @@ if [ -f "$SRC/fzlbpms.local.pem" ] && [ -f "$SRC/fzlbpms.local-key.pem" ]; then
     cp "$SRC/fzlbpms.local-key.pem" "$DEST/fzlbpms.local-key.pem"
     echo "$0: installed the mkcert-issued certificate for fzlbpms.local."
 else
-    echo "$0: no mkcert certificate at $SRC — https://fzlbpms.local will use the built-in self-signed fallback (browser will warn). Run bin/setup-local-https.sh to fix."
+    echo "$0: no mkcert certificate at $SRC — https://fzlbpms.local will use the built-in self-signed fallback (browser will warn). Run: ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K"
 fi

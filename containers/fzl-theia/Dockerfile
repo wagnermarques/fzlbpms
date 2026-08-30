@@ -50,6 +50,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git openssh-client ca-certificates bash procps libsecret-1-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Eclipse Theia's own source, vendored for in-IDE reference/browsing while
+# writing plugins (see docker-entrypoint.sh for how it's exposed in the
+# workspace) — NOT what builds this app; that still comes from the published
+# @theia/* packages above. Pinned to the same version. Shallow (no history)
+# and world-readable rather than owned by the theia user, since it's
+# reference-only and never written to.
+ARG THEIA_REF_VERSION=v1.73.1
+RUN git clone --depth 1 --branch ${THEIA_REF_VERSION} \
+        https://github.com/eclipse-theia/theia.git /opt/theia-reference \
+    && rm -rf /opt/theia-reference/.git \
+    && chmod -R a+rX /opt/theia-reference
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Non-root. A browser IDE is a remote shell; it should not also be root.
 #
 # The uid MUST match the host user that owns ./workspaces, or the IDE can
@@ -80,7 +95,15 @@ COPY --from=build --chown=${THEIA_UID}:${THEIA_GID} /app /app
 USER theia
 WORKDIR /app
 
-ENV THEIA_DEFAULT_PLUGINS=local-dir:/app/plugins \
+# Two local-dir sources: /app/plugins is baked in at image-build time
+# (theiaPlugins in package.json, e.g. bpmn-modeler); /home/custom-plugins is
+# bind-mounted from src-projects/fzl-theia-plugins-dist (see
+# docker-compose.yml + bin/theia/build-plugins.sh) so custom plugins can be
+# rebuilt and picked up with just a container restart, no image rebuild.
+# THEIA_DEFAULT_PLUGINS is comma-split, each entry resolved independently by
+# its own scheme prefix — confirmed in
+# packages/plugin-ext/src/main/node/plugin-deployer-impl.ts upstream.
+ENV THEIA_DEFAULT_PLUGINS=local-dir:/app/plugins,local-dir:/home/custom-plugins \
     SHELL=/bin/bash \
     USE_LOCAL_GIT=true \
     NODE_EXTRA_CA_CERTS=/etc/fzlbpms/mkcert-ca.crt
@@ -98,6 +121,10 @@ ENV THEIA_DEFAULT_PLUGINS=local-dir:/app/plugins \
 ENV THEIA_WEBVIEW_EXTERNAL_ENDPOINT="{{hostname}}"
 
 EXPOSE 3000
+
+# Symlinks the vendored Theia reference source into the workspace on every
+# start (see docker-entrypoint.sh), then execs CMD below.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Run the generated backend directly so @theia/cli (a devDependency) isn't
 # needed at runtime. The frontend is served from /app/lib/frontend by this

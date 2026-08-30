@@ -1,0 +1,119 @@
+<!-- Orbeon Forms configuration (properties-local.xml).
+     Rendered into the exploded WAR by docker-entrypoint-fzl.sh; only
+     ${ORBEON_CRYPTO_PASSWORD} is substituted from the environment.
+     Reference: https://doc.orbeon.com/configuration/properties -->
+<properties
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:oxf="http://www.orbeon.com/oxf/processors"
+    xmlns:fr="http://orbeon.org/oxf/xml/form-runner"
+    xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+>
+
+    <!-- Required. Encryption password for Orbeon; injected from
+         FZL_ORBEON_CRYPTO_PASSWORD by the container entrypoint. -->
+    <property
+        as="xs:string"
+        name="oxf.crypto.password"
+        value="${ORBEON_CRYPTO_PASSWORD}"/>
+
+    <!-- Persist ALL form definitions and data (every app/form/version = *.*.*)
+         in PostgreSQL, via the container-managed datasource named 'orbeon'
+         (Tomcat Resource jdbc/orbeon, see context.xml). -->
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.provider.*.*.*"
+        value="postgresql"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.postgresql.datasource"
+        value="orbeon"/>
+
+    <!-- Orbeon 2025.1 core ships MORE-SPECIFIC defaults that pin its own
+         built-in apps to the bundled sqlite provider, and those override the
+         *.*.* wildcard above. We don't configure sqlite, so leaving them would
+         trigger the "database configuration is incomplete" banner. Redirect
+         them to PostgreSQL too. (See properties-form-runner.xml in
+         orbeon-core.jar, lines 405-406.) -->
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.provider.orbeon.*.form"
+        value="postgresql"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.persistence.provider.orbeon-features.*.form"
+        value="postgresql"/>
+
+    <!-- Language: run the whole Form Runner + Form Builder UI in Portuguese.
+         Orbeon ships Portuguese as the `pt` code (fr-resources-pt.xml /
+         fb-resources-pt.xml); there is no separate `pt-BR` UI bundle, so `pt`
+         IS the Brazilian/Portuguese translation.
+
+         Two default-language properties are needed:
+           - `oxf.fr.default-language.*.*`  -> forms and Form Builder (app/form
+             scoped pages).
+           - `oxf.fr.default-language`      -> the top-level Orbeon Forms Home
+             (/fr/, mode=landing) which passes no app/form, so it ignores the
+             *.*-scoped one and reads this bare property.
+
+         `available-languages` restricts the language selector to Portuguese
+         (no language switcher). To allow multilingual forms again, widen the
+         available-languages values back to e.g. "pt en" or the shipped default
+         "en es fr it de pt sv fi nl da ar". -->
+    <property
+        as="xs:string"
+        name="oxf.fr.default-language"
+        value="pt"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.default-language.*.*"
+        value="pt"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.available-languages.*.*"
+        value="pt"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.available-languages"
+        value="pt"/>
+
+    <!-- Optional passwords Orbeon flags as "not strong enough" in the log.
+         Reuse the injected crypto password (already scored 4/4) so the
+         configuration banner clears completely. -->
+    <property
+        as="xs:string"
+        name="oxf.fr.access-token.password"
+        value="${ORBEON_CRYPTO_PASSWORD}"/>
+    <property
+        as="xs:string"
+        name="oxf.fr.field-encryption.password"
+        value="${ORBEON_CRYPTO_PASSWORD}"/>
+
+    <!-- =====================================================================
+         ETEC Coordinator Forms — Camel Document Generation Integration
+         ===================================================================== -->
+    <!-- Custom toolbar buttons for etec-coord forms (parecer, despacho, processo-aproveitamento) -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.buttons.etec-coord.*"
+        value="home summary save generate-docs"/>
+
+    <!-- Process action: validate all fields, save to PostgreSQL, and send JSON to Camel endpoint -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.process.generate-docs.etec-coord.*">
+        require-valid
+        then save
+        then send(
+            uri = "http://fzl-karaf-camel-integration:9092/fzlbpms/aproveitamento/generate",
+            content = "json",
+            replace = "all"
+        )
+    </property>
+
+    <!-- Portuguese Label for the Generate Documents action button -->
+    <property
+        as="xs:string"
+        name="oxf.fr.resource.etec-coord.*.pt.detail.buttons.generate-docs"
+        value="📄 Gerar Documentos (ZIP)"/>
+
+</properties>

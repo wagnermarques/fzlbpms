@@ -127,11 +127,12 @@ if [ "$MODE" = "down" ]; then
     CMD=(docker compose stop "${SERVICES[@]}")
 else
     # A bind mount whose source FILE does not exist yet makes Docker create it
-    # as a root-owned *directory* — which then blocks bin/setup-local-https.sh
-    # from writing the real CA there (it can't overwrite a directory, and root
-    # owns it). Unlike the other services, oauth2-proxy and theia mount the
-    # mkcert CA as a single file, so guarantee those sources exist as (empty)
-    # files first; setup-local-https.sh fills them with the real CA later.
+    # as a root-owned *directory* — which then blocks the cert staging in
+    # ansible/tasks/local-https.yml from writing the real CA there (it can't
+    # overwrite a directory, and root owns it). Unlike the other services,
+    # oauth2-proxy and theia mount the mkcert CA as a single file, so guarantee
+    # those sources exist as (empty) files first; the playbook fills them with
+    # the real CA later (--tags certs).
     if [ "$DRY_RUN" != "1" ]; then
         for cert in \
             "$PROJECT_DIR/containers/fzl-oauth2-proxy/certs/mkcert-ca.crt" \
@@ -149,6 +150,14 @@ else
     # build that ends in "Temporary failure resolving 'deb.debian.org'".
     if [ "$DRY_RUN" != "1" ] && [ -x "$PROJECT_DIR/bin/docker-dns-preflight.sh" ]; then
         "$PROJECT_DIR/bin/docker-dns-preflight.sh" || true
+    fi
+
+    # Check if fzlbpms.local is mapped in /etc/hosts (managed by ansible/setup-project.yml)
+    if [ "$DRY_RUN" != "1" ]; then
+        if ! grep -qE '\bfzlbpms\.local\b' /etc/hosts 2>/dev/null; then
+            echo "NOTE: 'fzlbpms.local' is not in /etc/hosts."
+            echo "      Run 'cd ansible && ansible-playbook setup-project.yml -K' to configure host & SSL certs."
+        fi
     fi
 
     # Rebuild by default: 'docker compose up' never rebuilds an existing image

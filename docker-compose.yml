@@ -25,16 +25,25 @@ services:
       # from the running container's own processes, even though it's listed
       # correctly in /proc/mounts. See containers/fzl-php8.3-fpm/docker-entrypoint.sh.
       - ./src-projects/moodledata:/moodledata:rw
-      # Populated by bin/setup-local-https.sh / ansible/fzlbpms-setup.yml —
+      # Populated by ansible/setup-project.yml (--tags certs) —
       # see docker-entrypoint.d/10-install-mkcert-certs.sh for how a missing
       # or empty dir here is handled safely.
       - ./containers/fzl-nginx/certs:/run/mkcert-certs:ro
+    environment:
+      # Karaf's service credential, presented by nginx towards
+      # /system/console and /hawtio once oauth2-proxy has established a
+      # Keycloak session — see containers/fzl-nginx/docker-entrypoint.d/
+      # 11-karaf-basic-auth.sh. Must match a user in the Karaf JAAS realm
+      # (containers/fzl-karaf-camel-integration/custom_karaf_etc/
+      # etc-from-4.4.7/users.properties). Values live in .env (gitignored).
+      FZL_KARAF_USER: "${FZL_KARAF_USER:-}"
+      FZL_KARAF_PASSWORD: "${FZL_KARAF_PASSWORD:-}"
     networks:
       fzl-network:
         # Lets other containers (Moodle, Flowable) reach this same nginx —
         # and therefore Keycloak — via https://fzlbpms.local, matching what
         # a browser resolves via the /etc/hosts entry on the dev machine.
-        # See bin/switch-domain.sh and ansible/fzlbpms-setup.yml.
+        # See bin/switch-domain.sh and ansible/setup-project.yml.
         aliases:
           - fzlbpms.local
 
@@ -56,8 +65,8 @@ services:
     volumes:
       - ./src-projects/var_www/html:/var/www/html
       - ./src-projects/moodledata:/moodledata
-      # Trusted by docker-entrypoint.sh at container start if present — see
-      # bin/setup-local-https.sh. Needed for curl/Guzzle calls to
+      # Trusted by docker-entrypoint.sh at container start if present —
+      # populated by ansible/setup-project.yml (--tags certs). Needed for curl/Guzzle calls to
       # https://fzlbpms.local (Moodle's OAuth2 discovery/token exchange).
       - ./containers/fzl-php8.3-fpm/certs:/usr/local/share/ca-certificates/mkcert:ro
     networks:
@@ -96,6 +105,13 @@ services:
       MOODLE_ADMIN_EMAIL: ${MOODLE_ADMIN_EMAIL:?}
       MOODLE_FULLNAME: ${MOODLE_FULLNAME:-fzlbpms Moodle}
       MOODLE_SHORTNAME: ${MOODLE_SHORTNAME:-fzlbpms}
+      # Extra plugins bundled from a GitHub Releases page (one .zip per plugin).
+      # The installer reads each zip's version.php to place it in the right
+      # Moodle dir and registers it via install.php/upgrade.php. Set
+      # MOODLE_PLUGINS_ENABLED=0 to skip; MOODLE_PLUGINS_RELEASE can pin a tag.
+      MOODLE_PLUGINS_ENABLED: ${MOODLE_PLUGINS_ENABLED:-1}
+      MOODLE_PLUGINS_REPO: ${MOODLE_PLUGINS_REPO:-wagnermarques/fzlbpms-moodle-plugins}
+      MOODLE_PLUGINS_RELEASE: ${MOODLE_PLUGINS_RELEASE:-latest}
     networks:
       - fzl-network
     restart: "no"
@@ -185,7 +201,7 @@ services:
     volumes:
       - ./src-projects:/sql-scripts
       - ./containers/fzl-postgresql/init-scripts:/docker-entrypoint-initdb.d
-      - ./containers/fzl-postgresql/postgresql-data:/var/lib/postgresql/data
+      - fzl_postgresql_data:/var/lib/postgresql/data
     networks:
       - fzl-network
     healthcheck:
@@ -203,6 +219,13 @@ services:
       - "${FZL_KARAF_REST_PORT:?}:9090"
       - "${FZL_KARAF_MOODLE_REST_PORT:-9091}:9091"
     environment:
+      # Karaf's own JAAS realm — entrypoint.sh writes etc/users.properties from
+      # these at container start, so the credential never lives in git. nginx
+      # reads the SAME two variables to build the Authorization header it
+      # presents towards /system/console and /hawtio, so they cannot drift.
+      # ":?" on purpose: fail fast rather than boot with a default password.
+      FZL_KARAF_USER: "${FZL_KARAF_USER:?}"
+      FZL_KARAF_PASSWORD: "${FZL_KARAF_PASSWORD:?}"
       KC_HOST: fzl-keycloak
       KC_HTTP_RELATIVE_PATH: /auth
       KC_ADMIN_USER: ${FZL_KEYCLOAK_ADMIN_USER:?}
@@ -513,7 +536,7 @@ services:
         "flowable.common.app.security.oauth2.last-name-attribute":"family_name",
         "flowable.common.app.security.oauth2.email-attribute":"email"}
     volumes:
-      # Populated by bin/setup-local-https.sh / ansible/fzlbpms-setup.yml.
+      # Populated by ansible/setup-project.yml (--tags certs).
       # The 'flowable' user can't write the JVM's own cacerts (root-owned),
       # so the entrypoint below builds a writable copy instead — see there
       # for why. Needed for this container's own OIDC discovery/token-
@@ -538,7 +561,7 @@ services:
             echo "[entrypoint] WARNING - failed to import the mkcert CA; https://fzlbpms.local calls will fail TLS verification."
           fi
         else
-          echo "[entrypoint] No mkcert CA at /run/mkcert-certs - https://fzlbpms.local calls will fail TLS verification. Run bin/setup-local-https.sh to fix."
+          echo "[entrypoint] No mkcert CA at /run/mkcert-certs - https://fzlbpms.local calls will fail TLS verification. Run: ansible-playbook -i ansible/inventory.ini ansible/setup-project.yml --tags certs -K"
         fi
         exec /flowable-entrypoint.sh
     extra_hosts:
@@ -583,6 +606,14 @@ services:
   # logs in. Access is gated by fzl-oauth2-proxy below — a browser IDE is a
   # remote shell on fzl-network, so it is deliberately NOT open to the realm
   # at large, only to holders of the 'theia-user' role.
+  #
+  # Custom-plugin workflow: write a VS Code plugin under
+  # src-projects/fzl-theia-plugins/<name> (visible inside the IDE itself, see
+  # the volume below), run bin/theia/build-plugins.sh to package it and unpack
+  # it into src-projects/fzl-theia-plugins-dist/<name>/, then
+  # `docker compose restart fzl-theia` to load it — no image rebuild needed.
+  # Note it must be a VS Code plugin, not a Theia extension: only the former
+  # can be deployed into a running application.
   fzl-theia:
     build:
       context: ./containers/fzl-theia
@@ -605,6 +636,16 @@ services:
       # Scoped to ./workspaces on purpose: the repo root holds .env and its
       # secrets, and everyone with IDE access would be able to read it.
       - ./workspaces:/home/workspace:rw
+      # Plugin sources you're actively writing, mounted as a subpath of the
+      # workspace bind mount above (Docker mounts nest correctly) so they
+      # show up directly in Theia's own file explorer for editing.
+      - ./src-projects/fzl-theia-plugins:/home/workspace/fzl-theia-plugins:rw
+      # Unpacked plugin output (see bin/theia/build-plugins.sh) — this is the
+      # second THEIA_DEFAULT_PLUGINS local-dir source (see Dockerfile). One
+      # directory per plugin: Theia does not unpack .vsix files from a system
+      # plugin source, only from a user install.
+      # Restart the container to pick up anything new here; no rebuild needed.
+      - ./src-projects/fzl-theia-plugins-dist:/home/custom-plugins:rw
       - theia_user_data:/home/theia/.theia
       # The container runs as non-root, so it can't run update-ca-certificates
       # at start. Instead the CA is handed to Node directly via
@@ -647,7 +688,7 @@ services:
     volumes:
       # OIDC discovery runs against https://fzlbpms.local/auth/... — without
       # the mkcert CA that call fails TLS verification and the proxy never
-      # becomes ready. Populated by bin/setup-local-https.sh.
+      # becomes ready. Populated by ansible/setup-project.yml (--tags certs).
       #
       # Mounted as a FILE inside /etc/ssl/certs, not as a directory: this is a
       # distroless Go binary, and Go's root-CA loader scans /etc/ssl/certs for
@@ -678,11 +719,40 @@ services:
     networks:
       - fzl-network
 
+  # Orbeon Forms Community Edition (LGPL) — open-source forms platform (visual
+  # Form Builder + Form Runner). Built locally from the CE WAR (Orbeon images
+  # only its commercial PE). Reached at https://fzlbpms.local/orbeon/. Form
+  # definitions and data persist in fzl-postgresql (database 'orbeon', created
+  # and migrated by the container entrypoint). See containers/fzl-orbeon/README.
+  fzl-orbeon:
+    build:
+      context: ./containers/fzl-orbeon
+    image: fzl-orbeon:0.0.1
+    # Built locally, never published — go straight to building (see fzl-theia).
+    pull_policy: build
+    container_name: fzl-orbeon
+    ports:
+      # Direct access (dev), bypassing nginx + SSO. Reach it normally at
+      # https://fzlbpms.local/orbeon/. Do not expose this port off the machine.
+      - "${FZL_ORBEON_PORT:-8890}:8080"
+    environment:
+      FZL_POSTGRES_USER: ${FZL_POSTGRES_USER:?}
+      FZL_POSTGRES_PASSWORD: ${FZL_POSTGRES_PASSWORD:?}
+      FZL_ORBEON_DB_NAME: ${FZL_ORBEON_DB_NAME:-orbeon}
+      FZL_ORBEON_CRYPTO_PASSWORD: ${FZL_ORBEON_CRYPTO_PASSWORD:?}
+    depends_on:
+      fzl-postgresql:
+        condition: service_healthy
+    networks:
+      - fzl-network
+    restart: unless-stopped
+
 networks:
   fzl-network:
     driver: bridge
 
 volumes:
+  fzl_postgresql_data:
   flowable_db_data:
   # Theia's per-user settings, keybindings and plugin state. Kept off the
   # ./workspaces bind mount so IDE config doesn't land in the users' files.

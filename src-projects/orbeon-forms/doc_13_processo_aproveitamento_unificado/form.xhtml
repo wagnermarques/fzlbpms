@@ -1,0 +1,352 @@
+<xh:html xmlns:xh="http://www.w3.org/1999/xhtml"
+         xmlns:xf="http://www.w3.org/2002/xforms"
+         xmlns:xs="http://www.w3.org/2001/XMLSchema"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:ev="http://www.w3.org/2001/xml-events"
+         xmlns:xi="http://www.w3.org/2001/XInclude"
+         xmlns:xxi="http://orbeon.org/oxf/xml/xinclude"
+         xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+         xmlns:fr="http://orbeon.org/oxf/xml/form-runner"
+         xmlns:saxon="http://saxon.sf.net/">
+    <xh:head>
+        <xh:title>Processo de Aproveitamento de Estudos - Parecer e Despacho (Docs 13.1 e 13.2)</xh:title>
+        <xf:model id="fr-form-model" xxf:expose-xpath-types="true">
+            <xf:instance id="fr-form-instance" xxf:exclude-result-prefixes="#all">
+                <form>
+                    <secao-geral>
+                        <schoolName>ZONA LESTE</schoolName>
+                        <expedientNumber>2026-001</expedientNumber>
+                        <portariaDate>15/08/2022</portariaDate>
+                        <programName>Habilitação Profissional de Técnico em Desenvolvimento de Sistemas</programName>
+                        <courseName>Curso Técnico de Desenvolvimento de Sistemas Noturno</courseName>
+                        <parecerPageReference>01</parecerPageReference>
+                    </secao-geral>
+                    <secao-aluno>
+                        <studentName/>
+                        <studentRm/>
+                    </secao-aluno>
+                    <secao-comissao>
+                        <teacherPresident>Wagner França Marques</teacherPresident>
+                        <teacherMember1>Ralf Gerônimo</teacherMember1>
+                        <teacherMember2>João Paulo Frias</teacherMember2>
+                    </secao-comissao>
+                    <secao-componentes>
+                        <componentNames/>
+                    </secao-componentes>
+                    <secao-deliberacao>
+                        <decision>deferido</decision>
+                        <justification>há compatibilidade entre as competências demonstradas na documentação e o componente curricular solicitado.</justification>
+                    </secao-deliberacao>
+                </form>
+            </xf:instance>
+
+            <xf:bind id="fr-form-binds" ref="instance('fr-form-instance')">
+                <xf:bind id="secao-geral-bind" name="secao-geral" ref="secao-geral">
+                    <xf:bind id="schoolName-bind" name="schoolName" ref="schoolName" required="true()"/>
+                    <xf:bind id="expedientNumber-bind" name="expedientNumber" ref="expedientNumber" required="true()"/>
+                    <xf:bind id="portariaDate-bind" name="portariaDate" ref="portariaDate" required="true()"/>
+                    <xf:bind id="programName-bind" name="programName" ref="programName" required="true()"/>
+                    <xf:bind id="courseName-bind" name="courseName" ref="courseName" required="true()"/>
+                    <xf:bind id="parecerPageReference-bind" name="parecerPageReference" ref="parecerPageReference" required="true()"/>
+                </xf:bind>
+                <xf:bind id="secao-aluno-bind" name="secao-aluno" ref="secao-aluno">
+                    <xf:bind id="studentName-bind" name="studentName" ref="studentName" required="true()"/>
+                    <xf:bind id="studentRm-bind" name="studentRm" ref="studentRm" required="false()"/>
+                </xf:bind>
+                <xf:bind id="secao-comissao-bind" name="secao-comissao" ref="secao-comissao">
+                    <xf:bind id="teacherPresident-bind" name="teacherPresident" ref="teacherPresident" required="true()"/>
+                    <xf:bind id="teacherMember1-bind" name="teacherMember1" ref="teacherMember1" required="true()"/>
+                    <xf:bind id="teacherMember2-bind" name="teacherMember2" ref="teacherMember2" required="true()"/>
+                </xf:bind>
+                <xf:bind id="secao-componentes-bind" name="secao-componentes" ref="secao-componentes">
+                    <xf:bind id="componentNames-bind" name="componentNames" ref="componentNames" required="true()"/>
+                </xf:bind>
+                <xf:bind id="secao-deliberacao-bind" name="secao-deliberacao" ref="secao-deliberacao">
+                    <xf:bind id="decision-bind" name="decision" ref="decision" required="true()"/>
+                    <xf:bind id="justification-bind" name="justification" ref="justification" required="true()"/>
+                </xf:bind>
+            </xf:bind>
+
+            <xf:instance id="fr-form-metadata" xxf:readonly="true" xxf:exclude-result-prefixes="#all">
+                <metadata>
+                    <application-name>etec-coord</application-name>
+                    <form-name>processo-aproveitamento</form-name>
+                    <title xml:lang="pt">Processo de Aproveitamento de Estudos (Docs 13.1 e 13.2)</title>
+                    <description xml:lang="pt">Emissão simultânea do Parecer da Comissão e Despacho do Diretor para Aproveitamento de Estudos.</description>
+                    <version-comment>1.0.0</version-comment>
+                </metadata>
+            </xf:instance>
+
+            <xf:instance id="fr-form-attachments" xxf:exclude-result-prefixes="#all">
+                <attachments/>
+            </xf:instance>
+
+            <xf:instance id="fr-form-resources" xxf:readonly="false" xxf:exclude-result-prefixes="#all">
+                <resources>
+                    <resource xml:lang="pt">
+                        <secao-geral>
+                            <label>1. Dados da Unidade e do Processo</label>
+                        </secao-geral>
+                        <schoolName>
+                            <label>Etec (Unidade de Ensino)</label>
+                            <hint>Ex: ZONA LESTE</hint>
+                        </schoolName>
+                        <expedientNumber>
+                            <label>Nº do Expediente</label>
+                            <hint>Ex: 2026-001</hint>
+                        </expedientNumber>
+                        <portariaDate>
+                            <label>Data da Portaria</label>
+                            <hint>Data da portaria da comissão</hint>
+                        </portariaDate>
+                        <programName>
+                            <label>Habilitação Profissional</label>
+                            <hint>Habilitação profissional do curso</hint>
+                        </programName>
+                        <courseName>
+                            <label>Curso e Período</label>
+                            <hint>Nome completo do curso</hint>
+                        </courseName>
+                        <parecerPageReference>
+                            <label>Folhas do Parecer nos Autos</label>
+                            <hint>Número da(s) folha(s) do parecer (Ex: 01)</hint>
+                        </parecerPageReference>
+
+                        <secao-aluno>
+                            <label>2. Identificação do Aluno</label>
+                        </secao-aluno>
+                        <studentName>
+                            <label>Nome Completo do Aluno</label>
+                            <hint>Nome oficial do aluno</hint>
+                        </studentName>
+                        <studentRm>
+                            <label>RM (Registro de Matrícula)</label>
+                            <hint>Opcional</hint>
+                        </studentRm>
+
+                        <secao-comissao>
+                            <label>3. Comissão Especial de Avaliação</label>
+                        </secao-comissao>
+                        <teacherPresident>
+                            <label>Professor Presidente da Comissão</label>
+                        </teacherPresident>
+                        <teacherMember1>
+                            <label>Professor Membro 1</label>
+                        </teacherMember1>
+                        <teacherMember2>
+                            <label>Professor Membro 2</label>
+                        </teacherMember2>
+
+                        <secao-componentes>
+                            <label>4. Componente(s) Curricular(es)</label>
+                        </secao-componentes>
+                        <componentNames>
+                            <label>Componente(s) Curricular(es) Solicitado(s)</label>
+                            <hint>Selecione as disciplinas para emissão dos documentos</hint>
+                            <item>
+                                <label>Inglês Instrumental</label>
+                                <value>Inglês Instrumental</value>
+                            </item>
+                            <item>
+                                <label>Linguagem, Trabalho e Tecnologia</label>
+                                <value>Linguagem, Trabalho e Tecnologia</value>
+                            </item>
+                            <item>
+                                <label>Programação de Aplicativos Mobile</label>
+                                <value>Programação de Aplicativos Mobile</value>
+                            </item>
+                            <item>
+                                <label>Programação Web I</label>
+                                <value>Programação Web I</value>
+                            </item>
+                            <item>
+                                <label>Programação Web II</label>
+                                <value>Programação Web II</value>
+                            </item>
+                            <item>
+                                <label>Banco de Dados I</label>
+                                <value>Banco de Dados I</value>
+                            </item>
+                            <item>
+                                <label>Banco de Dados II</label>
+                                <value>Banco de Dados II</value>
+                            </item>
+                            <item>
+                                <label>Análise e Projeto de Sistemas</label>
+                                <value>Análise e Projeto de Sistemas</value>
+                            </item>
+                            <item>
+                                <label>Desenvolvimento de Sistemas</label>
+                                <value>Desenvolvimento de Sistemas</value>
+                            </item>
+                            <item>
+                                <label>Técnicas de Programação</label>
+                                <value>Técnicas de Programação</value>
+                            </item>
+                        </componentNames>
+
+                        <secao-deliberacao>
+                            <label>5. Conclusão e Justificativa</label>
+                        </secao-deliberacao>
+                        <decision>
+                            <label>Resultado da Avaliação</label>
+                            <item>
+                                <label>Deferido (Aprovado)</label>
+                                <value>deferido</value>
+                            </item>
+                            <item>
+                                <label>Indeferido (Não Aprovado)</label>
+                                <value>indeferido</value>
+                            </item>
+                        </decision>
+                        <justification>
+                            <label>Justificativa do Parecer</label>
+                            <hint>Fundamentação técnica da comissão</hint>
+                        </justification>
+                    </resource>
+                </resources>
+            </xf:instance>
+        </xf:model>
+    </xh:head>
+    <xh:body>
+        <fr:view>
+            <fr:body>
+                <fr:section id="secao-geral-section" bind="secao-geral-bind">
+                    <xf:label ref="$form-resources/secao-geral/label"/>
+                    <fr:grid id="grid-geral">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="schoolName-control" bind="schoolName-bind">
+                                    <xf:label ref="$form-resources/schoolName/label"/>
+                                    <xf:hint ref="$form-resources/schoolName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="expedientNumber-control" bind="expedientNumber-bind">
+                                    <xf:label ref="$form-resources/expedientNumber/label"/>
+                                    <xf:hint ref="$form-resources/expedientNumber/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="portariaDate-control" bind="portariaDate-bind">
+                                    <xf:label ref="$form-resources/portariaDate/label"/>
+                                    <xf:hint ref="$form-resources/portariaDate/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="parecerPageReference-control" bind="parecerPageReference-bind">
+                                    <xf:label ref="$form-resources/parecerPageReference/label"/>
+                                    <xf:hint ref="$form-resources/parecerPageReference/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="programName-control" bind="programName-bind">
+                                    <xf:label ref="$form-resources/programName/label"/>
+                                    <xf:hint ref="$form-resources/programName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="courseName-control" bind="courseName-bind">
+                                    <xf:label ref="$form-resources/courseName/label"/>
+                                    <xf:hint ref="$form-resources/courseName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-aluno-section" bind="secao-aluno-bind">
+                    <xf:label ref="$form-resources/secao-aluno/label"/>
+                    <fr:grid id="grid-aluno">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="studentName-control" bind="studentName-bind">
+                                    <xf:label ref="$form-resources/studentName/label"/>
+                                    <xf:hint ref="$form-resources/studentName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="studentRm-control" bind="studentRm-bind">
+                                    <xf:label ref="$form-resources/studentRm/label"/>
+                                    <xf:hint ref="$form-resources/studentRm/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-comissao-section" bind="secao-comissao-bind">
+                    <xf:label ref="$form-resources/secao-comissao/label"/>
+                    <fr:grid id="grid-comissao">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="teacherPresident-control" bind="teacherPresident-bind">
+                                    <xf:label ref="$form-resources/teacherPresident/label"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="teacherMember1-control" bind="teacherMember1-bind">
+                                    <xf:label ref="$form-resources/teacherMember1/label"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td colspan="2">
+                                <xf:input id="teacherMember2-control" bind="teacherMember2-bind">
+                                    <xf:label ref="$form-resources/teacherMember2/label"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-componentes-section" bind="secao-componentes-bind">
+                    <xf:label ref="$form-resources/secao-componentes/label"/>
+                    <fr:grid id="grid-componentes">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:select id="componentNames-control" bind="componentNames-bind" appearance="full">
+                                    <xf:label ref="$form-resources/componentNames/label"/>
+                                    <xf:hint ref="$form-resources/componentNames/hint"/>
+                                    <xf:itemset ref="$form-resources/componentNames/item">
+                                        <xf:label ref="label"/>
+                                        <xf:value ref="value"/>
+                                    </xf:itemset>
+                                </xf:select>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="secao-deliberacao-section" bind="secao-deliberacao-bind">
+                    <xf:label ref="$form-resources/secao-deliberacao/label"/>
+                    <fr:grid id="grid-deliberacao">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:select1 id="decision-control" bind="decision-bind" appearance="full">
+                                    <xf:label ref="$form-resources/decision/label"/>
+                                    <xf:itemset ref="$form-resources/decision/item">
+                                        <xf:label ref="label"/>
+                                        <xf:value ref="value"/>
+                                    </xf:itemset>
+                                </xf:select1>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td>
+                                <xf:textarea id="justification-control" bind="justification-bind">
+                                    <xf:label ref="$form-resources/justification/label"/>
+                                    <xf:hint ref="$form-resources/justification/hint"/>
+                                </xf:textarea>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+            </fr:body>
+        </fr:view>
+    </xh:body>
+</xh:html>

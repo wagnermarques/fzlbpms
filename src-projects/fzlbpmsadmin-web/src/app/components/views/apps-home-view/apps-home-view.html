@@ -24,10 +24,23 @@
                 <li>Password: <code>{{ app.credentials.pass }}</code></li>
               </ul>
             </div>
+
+            <div *ngIf="app.processes?.length" class="processes-section">
+              <strong>Processes:</strong>
+              <ul>
+                <li *ngFor="let process of app.processes">
+                  <a [href]="process.url" target="_blank" rel="noopener">{{ process.name }}</a>
+                  <span *ngIf="process.description"> — {{ process.description }}</span>
+                </li>
+              </ul>
+            </div>
           </mat-card-content>
           <mat-card-actions>
             <a mat-flat-button color="primary" [href]="app.url" target="_blank" rel="noopener">
               <mat-icon>open_in_new</mat-icon> Open in Browser
+            </a>
+            <a *ngFor="let process of app.processes" mat-stroked-button color="accent" [href]="process.url" target="_blank" rel="noopener">
+              <mat-icon>play_arrow</mat-icon> {{ process.name }}
             </a>
           </mat-card-actions>
         </mat-card>

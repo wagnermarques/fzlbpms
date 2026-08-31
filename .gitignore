@@ -240,3 +240,4 @@ bin/azure
 # FZL_KARAF_PASSWORD in .env. Never commit it: it guards the SSH console, JMX
 # and the web console. See users.properties.template alongside it.
 containers/fzl-karaf-camel-integration/custom_karaf_etc/etc-from-4.4.7/users.properties
+.playwright-mcp

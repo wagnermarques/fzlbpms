@@ -13,6 +13,11 @@ export interface Application {
     user: string;
     pass: string;
   };
+  processes?: {
+    name: string;
+    url: string;
+    description?: string;
+  }[];
 }
 
 @Component({
@@ -51,6 +56,13 @@ export class AppsHomeView {
       url: '/moodle',
       description: 'Learning Management System (LMS) for educational workflows.',
       credentials: { user: 'admin', pass: 'admin' },
+      processes: [
+        {
+          name: 'Criar usuário no Moodle',
+          url: '/orbeon/fr/fzlbpms/create-moodle-user/new',
+          description: 'Start the create-moodle-user BPMN process (creates the account in both Keycloak and Moodle). Requires the Keycloak login gate in front of Orbeon.',
+        },
+      ],
     },
     {
       name: 'Keycloak',

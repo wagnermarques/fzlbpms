@@ -19,6 +19,12 @@
     POST /fzlbpms/moodle/courses      {"fullname":"...","shortname":"...","categoryid":N}
          → core_course_create_courses. Returns Moodle JSON: [{"id":N,"shortname":"..."}]
 
+    POST /fzlbpms/moodle/users        {"username":"...","email":"...","firstname":"...","lastname":"..."}
+         → core_user_create_users (auth is fixed to "oauth2" — every Moodle
+           account in this stack authenticates via the Keycloak SSO session,
+           there is no local Moodle password). Returns Moodle JSON:
+           [{"id":N,"username":"..."}]
+
     GET  /fzlbpms/moodle/categories   → core_course_get_categories (debug helper)
 
   ENCODING CONTRACT: the string values (name, fullname, shortname) MUST
@@ -70,6 +76,27 @@
       <post path="/courses" consumes="application/json">
         <to uri="direct:moodle-create-course"/>
       </post>
+      <post path="/users" consumes="application/json">
+        <to uri="direct:moodle-create-user"/>
+      </post>
+    </rest>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         BPMS PROCESS-START BRIDGE
+         Orbeon's Form Runner send() process action posts its own flat JSON
+         shape here; this reshapes it into Flowable's process-start JSON and
+         forwards it with HTTP Basic admin:test — the same credential the
+         deploy tooling already relies on (Flowable's process-api accepts it
+         even with OAuth2 configured for the UI apps). Kept here rather than
+         a new bundle to avoid a third Jetty port for one endpoint.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <rest path="/fzlbpms/bpms">
+      <post path="/start/create-moodle-user" consumes="application/json">
+        <to uri="direct:bpms-start-create-moodle-user"/>
+      </post>
+      <get path="/my-tasks">
+        <to uri="direct:bpms-my-tasks"/>
+      </get>
     </rest>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -107,6 +134,133 @@
       <setHeader name="Content-Type"><constant>application/x-www-form-urlencoded</constant></setHeader>
       <to uri="{{MOODLE_WS_URL}}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
       <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CREATE USER → core_user_create_users
+         In:  {"username":"...","email":"...","firstname":"<url-encoded>","lastname":"<url-encoded>"}
+         auth is fixed to "oauth2" here (not caller-supplied) — every Moodle
+         account in this stack logs in via the Keycloak SSO session, so there
+         is no local Moodle password to set.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="moodle-create-user">
+      <from uri="direct:moodle-create-user"/>
+      <setProperty name="m.username"><jsonpath>$.username</jsonpath></setProperty>
+      <setProperty name="m.email"><jsonpath>$.email</jsonpath></setProperty>
+      <setProperty name="m.firstname"><jsonpath>$.firstname</jsonpath></setProperty>
+      <setProperty name="m.lastname"><jsonpath>$.lastname</jsonpath></setProperty>
+      <!-- firstname/lastname are already form-urlencoded by the caller; username/email assumed ASCII -->
+      <setBody>
+        <simple>wstoken={{MOODLE_WS_TOKEN}}&amp;wsfunction=core_user_create_users&amp;moodlewsrestformat=json&amp;users[0][username]=${exchangeProperty.m.username}&amp;users[0][email]=${exchangeProperty.m.email}&amp;users[0][firstname]=${exchangeProperty.m.firstname}&amp;users[0][lastname]=${exchangeProperty.m.lastname}&amp;users[0][auth]=oauth2</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/x-www-form-urlencoded</constant></setHeader>
+      <to uri="{{MOODLE_WS_URL}}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         BPMS START BRIDGE → create-moodle-user
+         In:  {"username":"...","firstName":"...","lastName":"...","email":"..."}
+         Out: Flowable's process-start shape, POSTed to flowable-ui's own
+         REST API (context path /flowable-ui, matching nginx's passthrough).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-start-create-moodle-user">
+      <from uri="direct:bpms-start-create-moodle-user"/>
+      <!-- Orbeon's send(content="json") serializes the XForms instance tree
+           as-is, nesting fields under the section/grid's auto-generated ids
+           (e.g. {"section-1":{"grid-1":{"username":"...",...}}}) — confirmed
+           by testing against the actual create-moodle-user form. Those ids
+           are Form Builder internals tied to this form's current layout;
+           re-check them (temporarily log ${body}) if the form is
+           restructured. A "$.." recursive search would avoid depending on
+           them, but always returns a JSON array even for one match, and its
+           toString() (e.g. "[maria@example.com]", brackets included) then
+           corrupts the value — so the concrete path is used instead, which
+           returns the scalar directly. Bracket notation is required because
+           the ids contain hyphens (invalid in JSONPath's dot-child syntax). -->
+      <setProperty name="b.username"><jsonpath>$['section-1']['grid-1']['username']</jsonpath></setProperty>
+      <setProperty name="b.firstName"><jsonpath>$['section-1']['grid-1']['firstName']</jsonpath></setProperty>
+      <setProperty name="b.lastName"><jsonpath>$['section-1']['grid-1']['lastName']</jsonpath></setProperty>
+      <setProperty name="b.email"><jsonpath>$['section-1']['grid-1']['email']</jsonpath></setProperty>
+      <!-- Optional: the Keycloak/oauth2-proxy identity of whoever is filling
+           the form — not actually sent by the Orbeon form today (it doesn't
+           forward its own inbound X-Forwarded-User to this call), so this
+           always falls through to the default below for now. Default must
+           match oauth2-proxy's X-Auth-Request-User value exactly (it reports
+           the Keycloak user's EMAIL, not the bare username — confirmed via
+           oauth2-proxy's access log) or the /bpms/my-tasks lookup won't find
+           the task it assigns. suppressExceptions: this field may be absent. -->
+      <setProperty name="b.requestedBy"><jsonpath suppressExceptions="true">$..requestedBy</jsonpath></setProperty>
+      <setBody>
+        <simple>{"processDefinitionKey":"create-moodle-user","variables":[{"name":"username","value":"${exchangeProperty.b.username}"},{"name":"firstName","value":"${exchangeProperty.b.firstName}"},{"name":"lastName","value":"${exchangeProperty.b.lastName}"},{"name":"email","value":"${exchangeProperty.b.email}"},{"name":"requestedBy","value":"${exchangeProperty.b.requestedBy ?: 'fzlbpmsadmin@fzlbpms.local'}"}]}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         TASK INBOX — GET /fzlbpms/bpms/my-tasks
+         The common landing point after Keycloak/oauth2-proxy login (nginx
+         gates /bpms/ the same way as /orbeon/ and forwards X-Forwarded-User,
+         see app-server.conf). Looks up the logged-in user's own pending
+         tasks across ANY process — not hardcoded to one — via Flowable's
+         REST API (Basic admin:test, same as the start-bridge above) and
+         redirects the browser to wherever that user should continue:
+           0 tasks  -> the create-moodle-user Orbeon start form (today's only
+                       process; revisit once there is more than one).
+           1 task   -> that task in Flowable's own Task app. Only the START
+                       form is Orbeon in this iteration — no generic Orbeon
+                       renderer exists yet for arbitrary in-flight tasks, so
+                       follow-up tasks (e.g. reviewResults) stay on Flowable's
+                       native UI.
+           >1 tasks -> the raw task list (JSON) as a fallback; no current
+                       process produces more than one pending task per user.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-my-tasks">
+      <from uri="direct:bpms-my-tasks"/>
+      <setProperty name="t.user"><simple>${header[X-Forwarded-User]}</simple></setProperty>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/tasks?assignee=${exchangeProperty.t.user}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <!-- Materialize the response as a String: the HTTP producer's body is
+           a single-read stream, and this route runs jsonpath against it
+           more than once below (total, then data[0].id) — a second read
+           on the raw stream fails with "No content to map". -->
+      <convertBodyTo type="java.lang.String"/>
+      <setProperty name="t.tasksJson"><simple>${body}</simple></setProperty>
+      <setProperty name="t.total"><jsonpath>$.total</jsonpath></setProperty>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.t.total} == 0</simple>
+          <removeHeaders pattern="*"/>
+          <setHeader name="CamelHttpResponseCode"><constant>302</constant></setHeader>
+          <!-- Placeholder Orbeon Form Runner URL (app "fzlbpms", form
+               "create-moodle-user") — adjust to match whatever app/form
+               names are actually used once the form is built in Form
+               Builder; Orbeon's default new-document URL shape is
+               /fr/<app>/<form>/new. -->
+          <setHeader name="Location"><constant>/orbeon/fr/fzlbpms/create-moodle-user/new</constant></setHeader>
+          <setBody><constant></constant></setBody>
+        </when>
+        <when>
+          <simple>${exchangeProperty.t.total} == 1</simple>
+          <setProperty name="t.taskId"><jsonpath>$.data[0].id</jsonpath></setProperty>
+          <removeHeaders pattern="*"/>
+          <setHeader name="CamelHttpResponseCode"><constant>302</constant></setHeader>
+          <setHeader name="Location"><simple>/flowable-ui/workflow/#/task/${exchangeProperty.t.taskId}</simple></setHeader>
+          <setBody><constant></constant></setBody>
+        </when>
+        <otherwise>
+          <setBody><simple>${exchangeProperty.t.tasksJson}</simple></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+        </otherwise>
+      </choice>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════

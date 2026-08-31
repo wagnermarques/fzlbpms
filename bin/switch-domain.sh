@@ -43,6 +43,7 @@ else
     PROTO="https"
 fi
 NEW_WWWROOT="${PROTO}://${DOMAIN}/moodle"
+NEW_WS_URL="${PROTO}://${DOMAIN}/moodle/webservice/rest/server.php"
 
 # oauth2-proxy (the gate in front of /theia/) must not set a Secure cookie on
 # a plain-http stack — the browser would refuse to send it back and the login
@@ -55,11 +56,12 @@ fi
 
 log "Domain: ${DOMAIN}  (proto: ${PROTO})"
 
-log "Updating FZL_PUBLIC_HOSTNAME / FZL_PUBLIC_PROTO / MOODLE_WWWROOT / FZL_OAUTH2_COOKIE_SECURE in ${ENV_FILE}..."
+log "Updating FZL_PUBLIC_HOSTNAME / FZL_PUBLIC_PROTO / MOODLE_WWWROOT / MOODLE_WS_URL / FZL_OAUTH2_COOKIE_SECURE in ${ENV_FILE}..."
 sed -i \
     -e "s#^FZL_PUBLIC_HOSTNAME=.*#FZL_PUBLIC_HOSTNAME=${DOMAIN}#" \
     -e "s#^FZL_PUBLIC_PROTO=.*#FZL_PUBLIC_PROTO=${PROTO}#" \
     -e "s#^MOODLE_WWWROOT=.*#MOODLE_WWWROOT=${NEW_WWWROOT}#" \
+    -e "s#^MOODLE_WS_URL=.*#MOODLE_WS_URL=${NEW_WS_URL}#" \
     -e "s#^FZL_OAUTH2_COOKIE_SECURE=.*#FZL_OAUTH2_COOKIE_SECURE=${COOKIE_SECURE}#" \
     "$ENV_FILE"
 

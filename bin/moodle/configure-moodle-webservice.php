@@ -49,6 +49,8 @@ $functions = [
     'core_course_get_categories',
     'core_course_create_courses',
     'core_course_get_courses_by_field',
+    'core_user_create_users',
+    'core_user_get_users_by_field',
 ];
 
 try {

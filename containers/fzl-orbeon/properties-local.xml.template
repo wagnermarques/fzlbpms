@@ -116,4 +116,34 @@
         name="oxf.fr.resource.etec-coord.*.pt.detail.buttons.generate-docs"
         value="📄 Gerar Documentos (ZIP)"/>
 
+    <!-- =====================================================================
+         fzlbpms — create-moodle-user start form: submit bridge to Flowable
+
+         Same pattern as the ETEC Coordinator process above: a custom toolbar
+         button whose process sends the (validated) form data as JSON to the
+         Camel bundle, which reshapes it into Flowable's process-start call
+         and forwards it with HTTP Basic admin:test — see
+         bpms-start-create-moodle-user in moodle-admin-camel-context.xml.
+         ===================================================================== -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.buttons.fzlbpms.*"
+        value="home summary create-user"/>
+
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.process.create-user.fzlbpms.*">
+        require-valid
+        then send(
+            uri = "http://fzl-karaf-camel-integration:9091/fzlbpms/bpms/start/create-moodle-user",
+            content = "json",
+            replace = "all"
+        )
+    </property>
+
+    <property
+        as="xs:string"
+        name="oxf.fr.resource.fzlbpms.*.pt.detail.buttons.create-user"
+        value="Criar usuário"/>
+
 </properties>

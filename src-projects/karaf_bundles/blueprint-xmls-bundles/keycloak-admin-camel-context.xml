@@ -19,6 +19,12 @@
        fzl-oauth2-proxy to gate the Theia browser IDE at /theia/, plus the
        'theia-user' realm role that gate requires, granted to the admin
        user above.
+    7. Registers a 'microsoft' Identity Provider (generic OIDC, pointed at
+       the tenant-specific Microsoft Entra ID endpoints rather than the
+       multi-tenant 'common' ones) so realm users can log in with a
+       Microsoft work/school account from FZL_MICROSOFT_TENANT_ID only.
+       Skipped entirely if FZL_MICROSOFT_CLIENT_ID is unset — this feature
+       is opt-in.
 
   Auth endpoints (port 9090):
     POST /fzlbpms/auth/login    {username, password}  → tokens
@@ -50,6 +56,12 @@
     FZL_MOODLE_CLIENT_SECRET — secret for the Moodle confidential client
     FZL_FLOWABLE_CLIENT_ID — confidential client id for Flowable UI's OIDC login
     FZL_FLOWABLE_CLIENT_SECRET — secret for the Flowable confidential client
+    FZL_MICROSOFT_CLIENT_ID — Azure/Entra App Registration's Application (client) ID.
+                             Optional — the Microsoft identity provider is skipped
+                             entirely if unset.
+    FZL_MICROSOFT_CLIENT_SECRET — that App Registration's client secret value
+    FZL_MICROSOFT_TENANT_ID — Azure/Entra Directory (tenant) ID — restricts login to
+                             that single organization (not multi-tenant 'common')
 -->
 <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -133,6 +145,7 @@
         <to uri="direct:kc-ensure-admin-user"/>
         <!-- After the user exists — the grant needs its id. -->
         <to uri="direct:kc-grant-theia-role"/>
+        <to uri="direct:kc-ensure-microsoft-idp"/>
         <log message="[KC-SETUP] Provisioning complete."/>
         <doCatch>
           <exception>java.lang.Exception</exception>
@@ -571,6 +584,63 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] User '{{FZLBPMS_ADMIN_USERNAME}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE MICROSOFT IDENTITY PROVIDER (generic OIDC, tenant-restricted)
+         Opt-in: skipped entirely if FZL_MICROSOFT_CLIENT_ID is unset, so
+         installs that don't need this don't need the Azure App Registration
+         either. Uses the generic 'oidc' provider (not Keycloak's built-in
+         'microsoft' social provider) pointed at the tenant-specific
+         login.microsoftonline.com/{tenant}/... endpoints rather than the
+         multi-tenant 'common'/'organizations' ones — this is what actually
+         restricts login to FZL_MICROSOFT_TENANT_ID's organization; the
+         built-in 'microsoft' provider alone does not enforce that.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-microsoft-idp">
+      <from uri="direct:kc-ensure-microsoft-idp"/>
+      <choice>
+        <when>
+          <simple>'{{FZL_MICROSOFT_CLIENT_ID}}' == ''</simple>
+          <log message="[KC-SETUP] FZL_MICROSOFT_CLIENT_ID not set — skipping Microsoft identity provider."/>
+        </when>
+        <otherwise>
+          <setBody><constant></constant></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/identity-provider/instances/microsoft?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 404</simple>
+              <setBody>
+                <simple>{"alias":"microsoft","displayName":"Microsoft","providerId":"oidc","enabled":true,"trustEmail":true,"firstBrokerLoginFlowAlias":"first broker login","config":{"clientId":"{{FZL_MICROSOFT_CLIENT_ID}}","clientSecret":"{{FZL_MICROSOFT_CLIENT_SECRET}}","authorizationUrl":"https://login.microsoftonline.com/{{FZL_MICROSOFT_TENANT_ID}}/oauth2/v2.0/authorize","tokenUrl":"https://login.microsoftonline.com/{{FZL_MICROSOFT_TENANT_ID}}/oauth2/v2.0/token","jwksUrl":"https://login.microsoftonline.com/{{FZL_MICROSOFT_TENANT_ID}}/discovery/v2.0/keys","issuer":"https://login.microsoftonline.com/{{FZL_MICROSOFT_TENANT_ID}}/v2.0","userInfoUrl":"https://graph.microsoft.com/oidc/userinfo","logoutUrl":"https://login.microsoftonline.com/{{FZL_MICROSOFT_TENANT_ID}}/oauth2/v2.0/logout","defaultScope":"openid profile email","validateSignature":"true","useJwksUrl":"true","pkceEnabled":"true","pkceMethod":"S256","syncMode":"IMPORT"} }</simple>
+              </setBody>
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <setHeader name="Content-Type">
+                <constant>application/json</constant>
+              </setHeader>
+              <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/identity-provider/instances?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+              <choice>
+                <when>
+                  <simple>${header.CamelHttpResponseCode} == 201</simple>
+                  <log message="[KC-SETUP] Identity provider 'microsoft' created (tenant {{FZL_MICROSOFT_TENANT_ID}})."/>
+                </when>
+                <otherwise>
+                  <log message="[KC-SETUP] Identity provider 'microsoft' create returned ${header.CamelHttpResponseCode}."/>
+                </otherwise>
+              </choice>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Identity provider 'microsoft' already exists."/>
+            </otherwise>
+          </choice>
         </otherwise>
       </choice>
     </route>

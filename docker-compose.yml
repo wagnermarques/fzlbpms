@@ -13,6 +13,7 @@ services:
       context: .
       dockerfile: containers/fzl-nginx/Dockerfile
     container_name: fzl-nginx
+    restart: unless-stopped
     ports:
       - "${FZL_NGINX_PORT_HTTP:?}:80"
       - "${FZL_NGINX_PORT_HTTPS:?}:443"
@@ -44,8 +45,17 @@ services:
         # and therefore Keycloak — via https://fzlbpms.local, matching what
         # a browser resolves via the /etc/hosts entry on the dev machine.
         # See bin/switch-domain.sh and ansible/setup-project.yml.
+        #
+        # The current public domain is ALSO aliased here so internal
+        # server-to-server calls that must match Moodle's $CFG->wwwroot
+        # exactly (e.g. MOODLE_WS_URL) resolve straight to this container
+        # instead of round-tripping out to the public internet/Cloudflare
+        # tunnel and back — Moodle's initialise_fullme_variables()
+        # (lib/setuplib.php) 303-redirects any request whose Host doesn't
+        # match wwwroot, webservice calls included.
         aliases:
           - fzlbpms.local
+          - ${FZL_PUBLIC_HOSTNAME:-fzlbpms.local}
 
   fzl-php8.1-fpm:
     build:
@@ -243,6 +253,13 @@ services:
       FZL_FLOWABLE_CLIENT_SECRET: ${FZL_FLOWABLE_CLIENT_SECRET:?}
       FZL_THEIA_CLIENT_ID: ${FZL_THEIA_CLIENT_ID:?}
       FZL_THEIA_CLIENT_SECRET: ${FZL_THEIA_CLIENT_SECRET:?}
+      # Microsoft (Azure/Entra ID) identity provider — opt-in, empty by
+      # default. Only FZL_MICROSOFT_CLIENT_ID gates whether kc-setup creates
+      # it; must always be *set* (even empty) so the Camel property
+      # placeholder resolves without needing the var present in the shell env.
+      FZL_MICROSOFT_CLIENT_ID: ${FZL_MICROSOFT_CLIENT_ID:-}
+      FZL_MICROSOFT_CLIENT_SECRET: ${FZL_MICROSOFT_CLIENT_SECRET:-}
+      FZL_MICROSOFT_TENANT_ID: ${FZL_MICROSOFT_TENANT_ID:-}
       # Moodle REST web service (consumed by moodle-admin-camel-context.xml).
       # Uses the canonical https host so Moodle sees its own wwwroot; the JVM
       # trusts the mkcert CA via the certs mount below + entrypoint import.

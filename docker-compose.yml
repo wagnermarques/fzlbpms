@@ -150,8 +150,11 @@ services:
       KEYCLOAK_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}
       # SSO user to promote to Moodle site administrator (see
       # configure-oauth2-keycloak.php — requires that user's first Keycloak
-      # login to have happened, and is a no-op until then).
-      MOODLE_SITEADMIN_USERNAME: ${FZLBPMS_ADMIN_USERNAME:?}
+      # login to have happened, and is a no-op until then). This is Moodle's
+      # own dedicated admin identity, distinct from FZLBPMS_ADMIN_USERNAME
+      # (the stack-wide super-admin) and from MOODLE_ADMIN_USER (Moodle's
+      # local, non-SSO admin account).
+      MOODLE_SITEADMIN_USERNAME: ${FZL_MOODLE_ADMIN_USERNAME:?}
     networks:
       - fzl-network
     restart: "no"
@@ -244,6 +247,12 @@ services:
       FZL_REALM: fzlbpms
       FZLBPMS_ADMIN_USERNAME: ${FZLBPMS_ADMIN_USERNAME:?}
       FZLBPMS_ADMIN_PASSWORD: ${FZLBPMS_ADMIN_PASSWORD:?}
+      # Per-software administrator identities — see .env.template. Bootstrapped
+      # by keycloak-admin-camel-context.xml alongside FZLBPMS_ADMIN_USERNAME.
+      FZL_FLOWABLE_ADMIN_USERNAME: ${FZL_FLOWABLE_ADMIN_USERNAME:?}
+      FZL_FLOWABLE_ADMIN_PASSWORD: ${FZL_FLOWABLE_ADMIN_PASSWORD:?}
+      FZL_MOODLE_ADMIN_USERNAME: ${FZL_MOODLE_ADMIN_USERNAME:?}
+      FZL_MOODLE_ADMIN_PASSWORD: ${FZL_MOODLE_ADMIN_PASSWORD:?}
       # SSO clients (browser-redirect OIDC) bootstrapped alongside fzlbpms-camel.
       FZL_PUBLIC_HOSTNAME: ${FZL_PUBLIC_HOSTNAME:-localhost}
       FZL_WEBAPP_CLIENT_ID: ${FZL_WEBAPP_CLIENT_ID:?}
@@ -536,9 +545,12 @@ services:
       - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE=openid,profile,email
       - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI=${FZL_PUBLIC_PROTO:-https}://${FZL_PUBLIC_HOSTNAME:-localhost}/auth/realms/fzlbpms
       - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_USER_NAME_ATTRIBUTE=preferred_username
-      # Every realm user who can log in gets full Flowable privileges —
-      # acceptable while the realm only holds fzlbpms staff; switch to a
-      # claim-based mapping (authorities-attribute) if that changes.
+      # Baseline for every realm user: Task app access only. Admin authorities
+      # (access-idm/access-admin/access-modeler/access-rest-api) come ONLY from
+      # the 'flowable_authorities' claim, which Keycloak populates from the
+      # user's client roles on the 'flowable' client — granted solely to
+      # FZL_FLOWABLE_ADMIN_USERNAME by keycloak-admin-camel-context.xml. So the
+      # flowable-admin user (and only that user) is a real Flowable admin.
       # NOTE: these flowable.common.app.security.oauth2.* properties CANNOT be
       # set as individual env vars — the Java field is `oAuth2` (canonical
       # name "o-auth2") and dashed leaves like default-authorities don't
@@ -546,7 +558,8 @@ services:
       # exact property names, matching flowable-default.properties.
       - >-
         SPRING_APPLICATION_JSON={
-        "flowable.common.app.security.oauth2.default-authorities":"access-idm,access-admin,access-modeler,access-task,access-rest-api",
+        "flowable.common.app.security.oauth2.default-authorities":"access-task",
+        "flowable.common.app.security.oauth2.authorities-attribute":"flowable_authorities",
         "flowable.common.app.security.oauth2.default-groups":"flowableUser",
         "flowable.common.app.security.oauth2.full-name-attribute":"name",
         "flowable.common.app.security.oauth2.first-name-attribute":"given_name",

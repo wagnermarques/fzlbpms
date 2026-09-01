@@ -25,6 +25,16 @@
        Microsoft work/school account from FZL_MICROSOFT_TENANT_ID only.
        Skipped entirely if FZL_MICROSOFT_CLIENT_ID is unset — this feature
        is opt-in.
+    8. Creates {{FZL_MOODLE_ADMIN_USERNAME}} — a dedicated user promoted to
+       Moodle site administrator by bin/moodle/configure-oauth2-keycloak.php
+       (via SSO, after its first login), separate from fzlbpmsadmin above.
+    9. Creates {{FZL_FLOWABLE_ADMIN_USERNAME}} and grants it every Flowable
+       client role (access-idm/access-admin/access-modeler/access-task/
+       access-rest-api) on the {{FZL_FLOWABLE_CLIENT_ID}} client, plus the
+       'flowable_authorities' protocol mapper that surfaces those client
+       roles as an ID-token claim. Flowable UI (docker-compose.yml) reads
+       that claim to grant admin authorities ONLY to this user — every other
+       realm user gets just 'access-task' by default.
 
   Auth endpoints (port 9090):
     POST /fzlbpms/auth/login    {username, password}  → tokens
@@ -62,6 +72,10 @@
     FZL_MICROSOFT_CLIENT_SECRET — that App Registration's client secret value
     FZL_MICROSOFT_TENANT_ID — Azure/Entra Directory (tenant) ID — restricts login to
                              that single organization (not multi-tenant 'common')
+    FZL_MOODLE_ADMIN_USERNAME — dedicated Moodle site-admin username (SSO)
+    FZL_MOODLE_ADMIN_PASSWORD — dedicated Moodle site-admin password
+    FZL_FLOWABLE_ADMIN_USERNAME — dedicated Flowable admin username (SSO)
+    FZL_FLOWABLE_ADMIN_PASSWORD — dedicated Flowable admin password
 -->
 <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -146,6 +160,21 @@
         <!-- After the user exists — the grant needs its id. -->
         <to uri="direct:kc-grant-theia-role"/>
         <to uri="direct:kc-ensure-microsoft-idp"/>
+        <!-- Per-software administrator identities (see .env.template). -->
+        <to uri="direct:kc-ensure-moodle-admin-user"/>
+        <to uri="direct:kc-ensure-flowable-admin-user"/>
+        <to uri="direct:kc-get-flowable-client-uuid"/>
+        <setProperty name="kc.roleName"><constant>access-idm</constant></setProperty>
+        <to uri="direct:kc-ensure-and-grant-flowable-role"/>
+        <setProperty name="kc.roleName"><constant>access-admin</constant></setProperty>
+        <to uri="direct:kc-ensure-and-grant-flowable-role"/>
+        <setProperty name="kc.roleName"><constant>access-modeler</constant></setProperty>
+        <to uri="direct:kc-ensure-and-grant-flowable-role"/>
+        <setProperty name="kc.roleName"><constant>access-task</constant></setProperty>
+        <to uri="direct:kc-ensure-and-grant-flowable-role"/>
+        <setProperty name="kc.roleName"><constant>access-rest-api</constant></setProperty>
+        <to uri="direct:kc-ensure-and-grant-flowable-role"/>
+        <to uri="direct:kc-ensure-flowable-authorities-claim-mapper"/>
         <log message="[KC-SETUP] Provisioning complete."/>
         <doCatch>
           <exception>java.lang.Exception</exception>
@@ -407,6 +436,198 @@
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
+         GET FLOWABLE CLIENT UUID
+         Keycloak's client-role and role-mapping endpoints need the client's
+         internal UUID, not its clientId string. Stores it (or leaves it
+         unset, logging a warning) in exchange property 'kc.flowableClientUuid'
+         for the routes below.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-get-flowable-client-uuid">
+      <from uri="direct:kc-get-flowable-client-uuid"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_FLOWABLE_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <log message="[KC-SETUP] WARNING — client '{{FZL_FLOWABLE_CLIENT_ID}}' not found; cannot grant Flowable admin authorities."/>
+        </when>
+        <otherwise>
+          <setProperty name="kc.flowableClientUuid">
+            <jsonpath>$[0].id</jsonpath>
+          </setProperty>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE + GRANT ONE FLOWABLE CLIENT ROLE
+         Parameterized by exchange property 'kc.roleName' — the caller
+         (kc-setup-startup) invokes this once per authority name. Creates the
+         client role on {{FZL_FLOWABLE_CLIENT_ID}} if missing (a 409 on create
+         means it already exists — idempotent, not an error), then grants it
+         to FZL_FLOWABLE_ADMIN_USERNAME. Every other realm user never receives
+         these roles, so only that user's 'flowable_authorities' claim (see
+         kc-ensure-flowable-authorities-claim-mapper) carries them.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-and-grant-flowable-role">
+      <from uri="direct:kc-ensure-and-grant-flowable-role"/>
+
+      <setBody>
+        <simple>{"name":"${exchangeProperty.kc.roleName}"}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <setHeader name="Content-Type">
+        <constant>application/json</constant>
+      </setHeader>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients/${exchangeProperty.kc.flowableClientUuid}/roles?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <log message="[KC-SETUP] Flowable client role '${exchangeProperty.kc.roleName}' create returned ${header.CamelHttpResponseCode} — may already exist."/>
+
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients/${exchangeProperty.kc.flowableClientUuid}/roles/${exchangeProperty.kc.roleName}?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} != 200</simple>
+          <log message="[KC-SETUP] WARNING — could not read back Flowable role '${exchangeProperty.kc.roleName}'; skipping grant."/>
+        </when>
+        <otherwise>
+          <setProperty name="kc.roleId">
+            <jsonpath>$.id</jsonpath>
+          </setProperty>
+
+          <setBody><constant></constant></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZL_FLOWABLE_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${body} == '[]'</simple>
+              <log message="[KC-SETUP] WARNING — user '{{FZL_FLOWABLE_ADMIN_USERNAME}}' not found; cannot grant '${exchangeProperty.kc.roleName}'."/>
+            </when>
+            <otherwise>
+              <setProperty name="kc.flowableAdminUserId">
+                <jsonpath>$[0].id</jsonpath>
+              </setProperty>
+              <setBody>
+                <simple>[{"id":"${exchangeProperty.kc.roleId}","name":"${exchangeProperty.kc.roleName}"}]</simple>
+              </setBody>
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <setHeader name="Content-Type">
+                <constant>application/json</constant>
+              </setHeader>
+              <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.flowableAdminUserId}/role-mappings/clients/${exchangeProperty.kc.flowableClientUuid}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+              <log message="[KC-SETUP] Granted Flowable role '${exchangeProperty.kc.roleName}' to '{{FZL_FLOWABLE_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
+            </otherwise>
+          </choice>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE FLOWABLE AUTHORITIES CLAIM MAPPER
+         Client-level protocol mapper on {{FZL_FLOWABLE_CLIENT_ID}}: surfaces
+         the caller's client roles on that same client as a top-level
+         'flowable_authorities' array claim in the ID token / userinfo, which
+         Flowable UI reads via flowable.common.app.security.oauth2.authorities-
+         attribute (docker-compose.yml). A crude substring check on the raw
+         mapper list stands in for an exists-by-name lookup, matching this
+         file's existing idempotency style.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-flowable-authorities-claim-mapper">
+      <from uri="direct:kc-ensure-flowable-authorities-claim-mapper"/>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.flowableClientUuid} == null</simple>
+          <log message="[KC-SETUP] WARNING — no Flowable client uuid; skipping 'flowable_authorities' claim mapper."/>
+        </when>
+        <otherwise>
+          <setBody><constant></constant></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients/${exchangeProperty.kc.flowableClientUuid}/protocol-mappers/models?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${body} contains 'flowable-authorities-mapper'</simple>
+              <log message="[KC-SETUP] Protocol mapper 'flowable-authorities-mapper' already exists."/>
+            </when>
+            <otherwise>
+              <setBody>
+                <simple>{"name":"flowable-authorities-mapper","protocol":"openid-connect","protocolMapper":"oidc-usermodel-client-role-mapper","consentRequired":false,"config":{"usermodel.clientRoleMapping.clientId":"{{FZL_FLOWABLE_CLIENT_ID}}","claim.name":"flowable_authorities","jsonType.label":"String","multivalued":"true","id.token.claim":"true","access.token.claim":"true","userinfo.token.claim":"true"} }</simple>
+              </setBody>
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <setHeader name="Content-Type">
+                <constant>application/json</constant>
+              </setHeader>
+              <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients/${exchangeProperty.kc.flowableClientUuid}/protocol-mappers/models?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+              <log message="[KC-SETUP] Protocol mapper 'flowable-authorities-mapper' create returned ${header.CamelHttpResponseCode}."/>
+            </otherwise>
+          </choice>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE FLOWABLE ADMIN USER
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-flowable-admin-user">
+      <from uri="direct:kc-ensure-flowable-admin-user"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZL_FLOWABLE_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"username":"{{FZL_FLOWABLE_ADMIN_USERNAME}}","email":"{{FZL_FLOWABLE_ADMIN_USERNAME}}@fzlbpms.local","firstName":"Flowable","lastName":"Admin","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"{{FZL_FLOWABLE_ADMIN_PASSWORD}}","temporary":false}]}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] User '{{FZL_FLOWABLE_ADMIN_USERNAME}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Flowable admin user create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] User '{{FZL_FLOWABLE_ADMIN_USERNAME}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
          ENSURE THEIA CLIENT (confidential, browser-redirect)
          Used by fzl-oauth2-proxy, which nginx consults via auth_request
          before letting anyone reach the Theia IDE at /theia/. The redirect
@@ -641,6 +862,50 @@
               <log message="[KC-SETUP] Identity provider 'microsoft' already exists."/>
             </otherwise>
           </choice>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE MOODLE ADMIN USER
+         Promoted to Moodle site administrator via SSO by
+         bin/moodle/configure-oauth2-keycloak.php after this user's first
+         Keycloak login — see MOODLE_SITEADMIN_USERNAME in docker-compose.yml.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-moodle-admin-user">
+      <from uri="direct:kc-ensure-moodle-admin-user"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZL_MOODLE_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"username":"{{FZL_MOODLE_ADMIN_USERNAME}}","email":"{{FZL_MOODLE_ADMIN_USERNAME}}@fzlbpms.local","firstName":"Moodle","lastName":"Admin","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"{{FZL_MOODLE_ADMIN_PASSWORD}}","temporary":false}]}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] User '{{FZL_MOODLE_ADMIN_USERNAME}}' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Moodle admin user create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] User '{{FZL_MOODLE_ADMIN_USERNAME}}' already exists."/>
         </otherwise>
       </choice>
     </route>

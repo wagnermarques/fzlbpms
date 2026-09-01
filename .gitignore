@@ -241,3 +241,8 @@ bin/azure
 # and the web console. See users.properties.template alongside it.
 containers/fzl-karaf-camel-integration/custom_karaf_etc/etc-from-4.4.7/users.properties
 .playwright-mcp
+
+# Real student rosters (names/PII) — kept locally for coordination work but
+# never committed. Purged from git history entirely on 2026-09-01 after
+# being accidentally pushed; do not re-add.
+workspaces/fzlcoord/csvs-listas-de-alunos/

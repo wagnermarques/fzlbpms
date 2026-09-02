@@ -62,6 +62,7 @@ services:
       context: ./containers/fzl-php8.1-fpm/
       dockerfile: Dockerfile
     container_name: fzl-php8.1-fpm
+    restart: unless-stopped
     volumes:
       - ./src-projects/var_www/html:/var/www/html
     networks:
@@ -72,6 +73,7 @@ services:
       context: ./containers/fzl-php8.3-fpm/
       dockerfile: Dockerfile
     container_name: fzl-php8.3-fpm
+    restart: unless-stopped
     volumes:
       - ./src-projects/var_www/html:/var/www/html
       - ./src-projects/moodledata:/moodledata
@@ -185,6 +187,7 @@ services:
   fzl-mysql:
     image: mysql:8.4.6
     container_name: fzl-mysql
+    restart: unless-stopped
     ports:
       - "${FZL_MYSQL_PORT:?}:3306"
     environment:
@@ -458,6 +461,7 @@ services:
   fzl-keycloak:
     image: quay.io/keycloak/keycloak:26.0.0
     container_name: fzl-keycloak
+    restart: unless-stopped
     command: start-dev
     environment:
       KC_DB: postgres
@@ -499,6 +503,7 @@ services:
   fzl-flowable-db:
     image: postgres:15-alpine
     container_name: fzl-flowable-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${FZL_FLOWABLE_DB_NAME:?}
       POSTGRES_USER: ${FZL_FLOWABLE_DB_USER:?}
@@ -521,6 +526,7 @@ services:
   fzl-flowable-ui:
     image: flowable/flowable-ui:6.7.2
     container_name: fzl-flowable-ui
+    restart: unless-stopped
     depends_on:
       fzl-flowable-db:
         condition: service_healthy

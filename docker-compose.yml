@@ -746,6 +746,11 @@ services:
     command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run --token ${FZL_CLOUDFLARE_TUNNEL_TOKEN:?}
     volumes:
       - ./containers/fzl-cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+    # Lets the ssh.fzlbpms.com.br ingress rule (config.yml) reach the HOST's
+    # own sshd — Docker for Linux doesn't resolve host.docker.internal by
+    # default the way Docker Desktop does.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - fzl-network
 

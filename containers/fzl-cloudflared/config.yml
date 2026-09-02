@@ -12,4 +12,12 @@
 ingress:
   - hostname: fzlbpms.com.br
     service: http://fzl-nginx:80
+  # SSH into the host machine (not a container) via Cloudflare Access —
+  # gated by a Cloudflare Zero Trust "Self-hosted" Application + policy for
+  # this hostname (configured in the dashboard; the tunnel-routing side
+  # can't be, see the note above). host.docker.internal requires the
+  # extra_hosts entry on the fzl-cloudflared service in docker-compose.yml
+  # (Docker for Linux doesn't provide it by default).
+  - hostname: ssh.fzlbpms.com.br
+    service: ssh://host.docker.internal:22
   - service: http_status:404

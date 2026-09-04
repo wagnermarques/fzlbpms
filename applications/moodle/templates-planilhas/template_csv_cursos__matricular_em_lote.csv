@@ -1,0 +1,4 @@
+username,firstname,lastname,email,password,course1,role1
+20001,ALUNO,EXEMPLO UM,aluno.exemplo1@dominio.exemplo.com.br,Mudar@2026,curso_docker1,student
+20002,ALUNA,EXEMPLO DOIS,aluna.exemplo2@dominio.exemplo.com.br,Mudar@2026,curso_docker1,student
+20003,ESTUDANTE,EXEMPLO TRES,estudante.exemplo3@dominio.exemplo.com.br,Mudar@2026,curso_docker1,student

@@ -18,6 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gnupg \
     dirmngr \
+    # Ferramentas auxiliares do Moodle (system paths)
+    ghostscript \
+    poppler-utils \
+    graphviz \
+    aspell \
+    aspell-pt-br \
+    aspell-en \
     # Dependencias para extensoes PHP
     libpng-dev \
     libjpeg-dev \

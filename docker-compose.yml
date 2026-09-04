@@ -494,6 +494,7 @@ services:
       context: ./containers/fzl-bpmn-drawer
       dockerfile: Dockerfile
     container_name: fzl-bpmn-drawer
+    restart: unless-stopped
     ports:
       - "${FZL_BPMN_DRAWER_PORT:?}:80"
     networks:

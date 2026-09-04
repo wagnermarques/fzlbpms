@@ -1,0 +1,9 @@
+<div class="header">
+  <a routerLink="/appshomeview" class="back-link">← Back to Applications</a>
+  <h2>Process Diagram — {{ processKey() }}</h2>
+</div>
+
+<p *ngIf="loading()" class="status">Loading diagram…</p>
+<p *ngIf="errorMessage()" class="status error">{{ errorMessage() }}</p>
+
+<div #canvas class="diagram-canvas"></div>

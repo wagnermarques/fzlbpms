@@ -26,7 +26,7 @@
             </div>
 
             <div *ngIf="app.processes?.length" class="processes-section">
-              <strong>Processes:</strong>
+              <strong>Related Links:</strong>
               <ul>
                 <li *ngFor="let process of app.processes">
                   <a [href]="process.url" target="_blank" rel="noopener">{{ process.name }}</a>
@@ -40,7 +40,7 @@
               <mat-icon>open_in_new</mat-icon> Open in Browser
             </a>
             <a *ngFor="let process of app.processes" mat-stroked-button color="accent" [href]="process.url" target="_blank" rel="noopener">
-              <mat-icon>play_arrow</mat-icon> {{ process.name }}
+              <mat-icon>arrow_forward</mat-icon> {{ process.name }}
             </a>
           </mat-card-actions>
         </mat-card>

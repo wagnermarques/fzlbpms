@@ -1,0 +1,35 @@
+.header {
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-link {
+  color: #3f51b5;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.header h2 {
+  margin: 0;
+}
+
+.status {
+  padding: 0 20px;
+  color: #616161;
+}
+
+.status.error {
+  color: #c62828;
+}
+
+.diagram-canvas {
+  width: 100%;
+  height: calc(100vh - 80px);
+  background-color: #fafafa;
+}

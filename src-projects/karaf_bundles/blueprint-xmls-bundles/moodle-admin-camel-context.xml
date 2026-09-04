@@ -97,6 +97,9 @@
       <get path="/my-tasks">
         <to uri="direct:bpms-my-tasks"/>
       </get>
+      <get path="/process-diagram/{key}">
+        <to uri="direct:bpms-process-diagram"/>
+      </get>
     </rest>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -261,6 +264,33 @@
           <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
         </otherwise>
       </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         DIAGRAM XML — GET /fzlbpms/bpms/process-diagram/{key}
+         Fetches the raw BPMN 2.0 XML for the LATEST deployed version of a
+         process definition, for client-side rendering with bpmn-js in
+         fzlbpmsadmin-web. Two Flowable REST calls (Basic admin:test, same
+         credential every other bpms-* route uses): look up the latest
+         version's fully-qualified id by key, then fetch that definition's
+         resourcedata (the raw BPMN XML — confirmed directly against the
+         running stack, not documented elsewhere in this repo).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-process-diagram">
+      <from uri="direct:bpms-process-diagram"/>
+      <setProperty name="d.key"><simple>${header.key}</simple></setProperty>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/repository/process-definitions?key=${exchangeProperty.d.key}&amp;latest=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <convertBodyTo type="java.lang.String"/>
+      <setProperty name="d.definitionId"><jsonpath>$.data[0].id</jsonpath></setProperty>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/repository/process-definitions/${exchangeProperty.d.definitionId}/resourcedata?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/xml</constant></setHeader>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════

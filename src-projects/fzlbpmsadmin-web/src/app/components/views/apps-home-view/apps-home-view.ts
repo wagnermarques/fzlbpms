@@ -40,6 +40,13 @@ export class AppsHomeView {
       url: '/flowable-ui/',
       description: 'BPMN 2.0 Process engine — Modeler, Task, Admin and IDM apps bundled in a single UI (v6.7.2).',
       credentials: { user: 'admin', pass: 'test' },
+      processes: [
+        {
+          name: 'Ver diagrama do processo (create-moodle-user)',
+          url: '/fzlbpmsadmin/process-diagram/create-moodle-user',
+          description: 'Renders the deployed BPMN diagram graphically with bpmn-js, right here in fzlbpmsadmin.',
+        },
+      ],
     },
     {
       name: 'BPMN Drawer',

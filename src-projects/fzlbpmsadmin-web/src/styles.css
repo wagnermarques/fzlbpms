@@ -1,3 +1,10 @@
+/* bpmn-js viewer (ProcessDiagramView) — the "embedded" font variant inlines
+   the icon font as a data-uri, so no separate font-file copy step is needed.
+   @import rules must be first in the file. */
+@import "bpmn-js/dist/assets/diagram-js.css";
+@import "bpmn-js/dist/assets/bpmn-js.css";
+@import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
+
 /* You can add global styles to this file, and also import other style files */
 
 html, body { height: 100%; }

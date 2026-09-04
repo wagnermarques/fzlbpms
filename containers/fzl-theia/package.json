@@ -58,10 +58,17 @@
     "vscode-builtin-git": "https://open-vsx.org/api/vscode/git/1.95.3/file/vscode.git-1.95.3.vsix",
     "vscode-builtin-php": "https://open-vsx.org/api/vscode/php/1.95.3/file/vscode.php-1.95.3.vsix",
     "vscode-builtin-xml": "https://open-vsx.org/api/vscode/xml/1.95.3/file/vscode.xml-1.95.3.vsix",
-    "vscode-builtin-yaml": "https://open-vsx.org/api/vscode/yaml/1.95.3/file/vscode.yaml-1.95.3.vsix",
     "vscode-builtin-json": "https://open-vsx.org/api/vscode/json/1.95.3/file/vscode.json-1.95.3.vsix",
     "vscode-builtin-javascript": "https://open-vsx.org/api/vscode/javascript/1.95.3/file/vscode.javascript-1.95.3.vsix",
+    "vscode-builtin-typescript-language-features": "https://open-vsx.org/api/vscode/typescript-language-features/1.95.3/file/vscode.typescript-language-features-1.95.3.vsix",
+    "vscode-builtin-html-language-features": "https://open-vsx.org/api/vscode/html-language-features/1.95.3/file/vscode.html-language-features-1.95.3.vsix",
+    "vscode-builtin-css-language-features": "https://open-vsx.org/api/vscode/css-language-features/1.95.3/file/vscode.css-language-features-1.95.3.vsix",
+    "vscode-builtin-markdown-language-features": "https://open-vsx.org/api/vscode/markdown-language-features/1.95.3/file/vscode.markdown-language-features-1.95.3.vsix",
+    "vscode-builtin-npm": "https://open-vsx.org/api/vscode/npm/1.95.3/file/vscode.npm-1.95.3.vsix",
+    "vscode-builtin-shellscript": "https://open-vsx.org/api/vscode/shellscript/1.95.3/file/vscode.shellscript-1.95.3.vsix",
+    "vscode-builtin-docker": "https://open-vsx.org/api/vscode/docker/1.95.3/file/vscode.docker-1.95.3.vsix",
     "redhat-vscode-xml": "https://open-vsx.org/api/redhat/vscode-xml/0.29.2026061109/file/redhat.vscode-xml-0.29.2026061109.vsix",
+    "redhat-vscode-yaml": "https://open-vsx.org/api/redhat/vscode-yaml/1.25.2026090108/file/redhat.vscode-yaml-1.25.2026090108.vsix",
     "bpmn-modeler": "https://open-vsx.org/api/miragon-gmbh/vs-code-bpmn-modeler/1.5.0/file/miragon-gmbh.vs-code-bpmn-modeler-1.5.0.vsix"
   },
   "scripts": {

@@ -1,0 +1,139 @@
+#+TITLE: contatemeantes
+
+* Overview
+
+The =contatemeantes= bundle is the Camel/Jetty backend for the ContateMeAntes
+real-time family location app, deployed into the same =fzl-karaf-camel-integration=
+container as the other fzlbpms bundles.
+
+Location is persisted as "latest known position per device" in a dedicated
+=contatemeantes= database in =fzl-postgresql= (own role, isolated from
+=fzldb=/=moodle=). Device pairing and live-update broadcast (WebSocket/Redis)
+are not built yet — this is the smallest slice that proves data flows from a
+device to Postgres and back, and it has been exercised end to end (POST a
+location, GET it back, POST again and see it upsert, GET a device that never
+reported and get 404, POST with a missing field and get 400).
+
+* Endpoints
+
+- =GET /contatemeantes/ping= — returns ={"status":"ok","bundle":"contatemeantes"}=
+- =POST /contatemeantes/location= — upserts the caller's latest position.
+  Body:
+  #+begin_src json
+  {
+    "deviceId": "abc123",
+    "userName": "Wagner",
+    "latitude": -23.55,
+    "longitude": -46.63,
+    "accuracy": 5.0,
+    "batteryLevel": 80,
+    "isCharging": false
+  }
+  #+end_src
+  =deviceId=, =latitude= and =longitude= are required; a missing/invalid field
+  returns =400= with ={"error":"..."}=.
+- =GET /contatemeantes/device/{deviceId}= — returns the latest known position,
+  or =404= if the device has never reported.
+
+The Camel Jetty listener is configured on port =9093= (9090 and 9091 are
+already used by the main and Moodle REST APIs, 9092 by =aproveitamento-docs=).
+
+* Database
+
+Dedicated database + role, created once directly in =fzl-postgresql=
+(mirrors how =moodle= gets its own DB/role rather than sharing =fzldb=):
+
+#+begin_src text
+CREATE ROLE contatemeantes WITH LOGIN PASSWORD '...';
+CREATE DATABASE contatemeantes OWNER contatemeantes ENCODING 'UTF8';
+#+end_src
+
+Setting =OWNER= at creation matters on PostgreSQL 15+: the =public= schema is
+owned by the special =pg_database_owner= pseudo-role, which resolves to
+whichever role owns the database. Without =OWNER=, the app role would have
+=CONNECT= but no =CREATE= on the schema.
+
+Schema: see =src/main/resources/sql/schema.sql= (=device_status= table, one
+row per device — applied manually for now, no migration tool).
+
+Connection settings come from environment variables (see
+=docker-compose.yml=, service =fzl-karaf-camel-integration=):
+=CONTATEMEANTES_DB_HOST/PORT/NAME/USER/PASS=. =ContatemeantesDataSourceFactory=
+reads them with plain =System.getenv=, deliberately not Camel's
+=\{\{VAR_NAME\}\}= placeholder syntax used elsewhere in this container (e.g.
+=keycloak-admin-camel-context.xml=) — that syntax is only confirmed to resolve
+inside =<camelContext>= (URIs, =<simple>=, etc.); whether it also reaches a
+plain Blueprint =<bean>= property outside =<camelContext>= was not verified,
+so =System.getenv= sidesteps the question entirely.
+
+* Build and deploy
+
+=karaf_deploy_dir= (bind-mounted to Karaf's own hot-deploy folder,
+=/opt/karaf/deploy=) is polled by Felix fileinstall every 1s — the same
+mechanism that already auto-deploys the Blueprint XMLs in that folder also
+auto-installs/updates plain OSGi jars dropped there. =mvn install= copies
+the built jar there automatically (see the =maven-resources-plugin=
+=copy-to-karaf-deploy= execution in =pom.xml=):
+
+#+begin_src bash
+cd src-projects/karaf_bundles/blueprint-osgi-camel-bundles/contatemeantes
+mvn test
+mvn install
+#+end_src
+
+Within ~1s Felix logs (=docker logs fzl-karaf-camel-integration= or
+=/opt/karaf/data/log/karaf.log=) show either =Installing bundle
+fzlbpms.contatemeantes= (first time) or an in-place update (same bundle id,
+subsequent times — no restart, no manual =bundle:install=/=bundle:update=).
+Verified: this also survives a full =docker compose restart
+fzl-karaf-camel-integration= — Felix rescans the folder on every boot and
+the bundle comes back Active with no manual step.
+
+The PostgreSQL JDBC driver (=postgresql-42.7.4.jar=) needed by this bundle
+is deployed the same way — sitting in =karaf_deploy_dir= alongside it. It
+was fetched once from Maven Central and copied in manually; it isn't rebuilt
+by this project so there's no Maven step for it, just the file being present.
+
+Confirm with =bundle:list | grep -i contatemeantes= (state =Active=) and
+=camel:route-list= (context =contatemeantesContext=, routes =Started=), or
+just: =curl http://localhost:9093/contatemeantes/ping= from inside the
+container.
+
+The =mvn:fzlbpms/...= URL scheme documented for other bundles in this
+directory (=aproveitamento-docs=, =processadordearquivos=) does not actually
+resolve — =org.ops4j.pax.url.mvn.cfg= in this container only lists Maven
+Central / ASF / OPS4J repositories, nothing local — so don't follow their
+=osgi:install -s mvn:fzlbpms/...= instructions; they've never actually
+worked. Those two bundles also don't yet use the =karaf_deploy_dir=
+auto-deploy approach above and so still need manual =bundle:install= after
+every container restart.
+
+** Known gap: container restart chowns bundle source to appuser
+
+=entrypoint.sh= runs =chown -R appuser:appuser "$KARAF_HOME"= on every
+start. Because =docker-compose.yml= mounts both
+=./src-projects/karaf_bundles:/opt/karaf/deploy_bundles= and
+=./src-projects/karaf_deploy_dir:/opt/karaf/deploy= *inside* =$KARAF_HOME=,
+the recursive chown reaches through both bind mounts and reassigns the host
+source tree *and* the hot-deploy folder to uid 999 on every restart. This
+was hit twice while wiring up the auto-deploy step above: editing files
+under =src/= failed with "Permission denied", and separately =mvn install='s
+copy-to-=karaf_deploy_dir= step failed the same way. Both times the fix was,
+from the host:
+
+#+begin_src bash
+docker exec -u 0 fzl-karaf-camel-integration \
+  chown -R "$(id -u):$(id -g)" /opt/karaf/deploy_bundles /opt/karaf/deploy
+#+end_src
+
+Until =entrypoint.sh='s chown is scoped to exclude those two mounts, expect
+to run that after every container restart before editing code or running
+=mvn install= again. Not fixed here — it's shared startup behavior for every
+bundle in this container, so it deserves its own explicit decision rather
+than a silent change.
+
+* Exposing it publicly
+
+Port 9093 is only reachable inside the docker network until a matching
+=location= block is added to the =fzl-nginx= config and the nginx image is
+rebuilt (its config is baked in at build time, not live-mounted).

@@ -234,6 +234,9 @@ services:
     ports:
       - "${FZL_KARAF_REST_PORT:?}:9090"
       - "${FZL_KARAF_MOODLE_REST_PORT:-9091}:9091"
+      # Contatemeantes GPS tracking bundle — direct LAN access for mobile app
+      # testing, ahead of an nginx proxy. Plain HTTP; dev-only.
+      - "${FZL_KARAF_CONTATEMEANTES_PORT:-9093}:9093"
     environment:
       # Karaf's own JAAS realm — entrypoint.sh writes etc/users.properties from
       # these at container start, so the credential never lives in git. nginx
@@ -280,6 +283,13 @@ services:
       # CSV the moodle bundle reads for the "disciplinas" endpoint (path is
       # inside the container; karaf_input_dir is mounted at /opt/karaf/input_data).
       MOODLE_DISCIPLINAS_CSV: ${MOODLE_DISCIPLINAS_CSV:-/opt/karaf/input_data/disciplinas_modulos_desenvolvimento_sistemas.csv}
+      # Contatemeantes GPS tracking bundle — own database/role in fzl-postgresql,
+      # isolated from fzldb/moodle. See src-projects/karaf_bundles/blueprint-osgi-camel-bundles/contatemeantes.
+      CONTATEMEANTES_DB_HOST: fzl-postgresql
+      CONTATEMEANTES_DB_PORT: "5432"
+      CONTATEMEANTES_DB_NAME: ${CONTATEMEANTES_DB_NAME:?}
+      CONTATEMEANTES_DB_USER: ${CONTATEMEANTES_DB_USER:?}
+      CONTATEMEANTES_DB_PASS: ${CONTATEMEANTES_DB_PASS:?}
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy

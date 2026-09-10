@@ -88,6 +88,13 @@ export class AppsHomeView {
       url: '/hawtio/',
       description: 'Management console for Apache Camel routes, JMX mbeans, Jolokia, and OSGi runtime diagnostics.',
       credentials: { user: 'karaf', pass: 'karaf' },
+      processes: [
+        {
+          name: 'Contatemeantes location log (live)',
+          url: '/hawtio/logs?nid=camelContexts',
+          description: 'Hawtio\'s live log tail, landing straight on the Logs tab — watch "contatemeantes-upsert-location" entries as GPS locations come in from the mobile app. No text-filter query param exists (verified against this Hawtio version), only a Level dropdown in the UI — scan the Logger column or use that dropdown once here.',
+        },
+      ],
     },
     {
       name: 'Theia IDE',

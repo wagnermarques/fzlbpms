@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="pingServiceBean" class="fzlbpms.contatemeantes.PingServiceBean" />
+
+	<bean id="dataSource" class="fzlbpms.contatemeantes.ContatemeantesDataSourceFactory"
+		factory-method="create" />
+
+	<bean id="upsertDeviceStatusProcessor" class="fzlbpms.contatemeantes.UpsertDeviceStatusProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="getDeviceStatusProcessor" class="fzlbpms.contatemeantes.GetDeviceStatusProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<camelContext id="contatemeantesContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<onException>
+			<exception>java.lang.IllegalArgumentException</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<!-- The Jetty REST binding reuses the inbound request's Message for
+			     the response, so without this every original request header
+			     (Accept, User-Agent, any cookies, ...) would ride back out on
+			     the response too — harmless with curl, but big enough with a
+			     real browser to blow nginx's proxy header buffer (502 "upstream
+			     sent too big header"). -->
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>400</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<restConfiguration component="jetty"
+			port="9093"
+			bindingMode="off"
+			enableCORS="true" />
+
+		<rest path="/contatemeantes">
+			<get path="/ping">
+				<to uri="direct:ping" />
+			</get>
+			<post path="/location" consumes="application/json">
+				<to uri="direct:upsert-location" />
+			</post>
+			<get path="/device/{deviceId}">
+				<to uri="direct:get-device-status" />
+			</get>
+		</rest>
+
+		<route id="contatemeantes-ping">
+			<from uri="direct:ping" />
+			<removeHeaders pattern="*" />
+			<setBody>
+				<method ref="pingServiceBean" method="pingJson" />
+			</setBody>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+		</route>
+
+		<route id="contatemeantes-upsert-location">
+			<from uri="direct:upsert-location" />
+			<removeHeaders pattern="*" />
+			<setProperty name="deviceId">
+				<jsonpath suppressExceptions="true">$.deviceId</jsonpath>
+			</setProperty>
+			<setProperty name="userName">
+				<jsonpath suppressExceptions="true">$.userName</jsonpath>
+			</setProperty>
+			<setProperty name="latitude">
+				<jsonpath suppressExceptions="true">$.latitude</jsonpath>
+			</setProperty>
+			<setProperty name="longitude">
+				<jsonpath suppressExceptions="true">$.longitude</jsonpath>
+			</setProperty>
+			<setProperty name="accuracy">
+				<jsonpath suppressExceptions="true">$.accuracy</jsonpath>
+			</setProperty>
+			<setProperty name="batteryLevel">
+				<jsonpath suppressExceptions="true">$.batteryLevel</jsonpath>
+			</setProperty>
+			<setProperty name="isCharging">
+				<jsonpath suppressExceptions="true">$.isCharging</jsonpath>
+			</setProperty>
+			<log loggingLevel="INFO"
+				message="[CONTATEMEANTES] location received deviceId=${exchangeProperty.deviceId} lat=${exchangeProperty.latitude} lon=${exchangeProperty.longitude} battery=${exchangeProperty.batteryLevel} charging=${exchangeProperty.isCharging}" />
+			<process ref="upsertDeviceStatusProcessor" />
+		</route>
+
+		<route id="contatemeantes-get-device-status">
+			<from uri="direct:get-device-status" />
+			<process ref="getDeviceStatusProcessor" />
+		</route>
+	</camelContext>
+
+</blueprint>

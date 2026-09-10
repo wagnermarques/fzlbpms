@@ -24,6 +24,14 @@
 		<property name="dataSource" ref="dataSource" />
 	</bean>
 
+	<bean id="listGroupsProcessor" class="fzlbpms.contatemeantes.ListGroupsProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="listGroupLocationsProcessor" class="fzlbpms.contatemeantes.ListGroupLocationsProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
 	<camelContext id="contatemeantesContext"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
@@ -67,6 +75,12 @@
 			</get>
 			<get path="/group/{groupId}/devices">
 				<to uri="direct:list-group-devices" />
+			</get>
+			<get path="/groups">
+				<to uri="direct:list-groups" />
+			</get>
+			<get path="/group/{groupId}/locations">
+				<to uri="direct:list-group-locations" />
 			</get>
 		</rest>
 
@@ -122,6 +136,16 @@
 		<route id="contatemeantes-list-group-devices">
 			<from uri="direct:list-group-devices" />
 			<process ref="listGroupDevicesProcessor" />
+		</route>
+
+		<route id="contatemeantes-list-groups">
+			<from uri="direct:list-groups" />
+			<process ref="listGroupsProcessor" />
+		</route>
+
+		<route id="contatemeantes-list-group-locations">
+			<from uri="direct:list-group-locations" />
+			<process ref="listGroupLocationsProcessor" />
 		</route>
 	</camelContext>
 

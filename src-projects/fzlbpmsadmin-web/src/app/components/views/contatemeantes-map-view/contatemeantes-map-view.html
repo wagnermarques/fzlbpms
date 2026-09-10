@@ -1,0 +1,25 @@
+<div class="header">
+  <h2>Contatemeantes — Group Locations</h2>
+
+  <mat-form-field appearance="outline" class="group-select">
+    <mat-label>Group</mat-label>
+    <mat-select
+      [value]="selectedGroup()"
+      (selectionChange)="onGroupSelected($event.value)"
+    >
+      @for (group of groups(); track group) {
+        <mat-option [value]="group">{{ group }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  @if (selectedGroup() && !errorMessage()) {
+    <span class="status">{{ locations().length }} device(s) reporting</span>
+  }
+</div>
+
+@if (errorMessage()) {
+  <p class="status error">{{ errorMessage() }}</p>
+}
+
+<div #mapContainer class="map-canvas"></div>

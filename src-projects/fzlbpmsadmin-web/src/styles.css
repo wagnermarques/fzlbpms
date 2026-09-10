@@ -5,6 +5,13 @@
 @import "bpmn-js/dist/assets/bpmn-js.css";
 @import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 
+/* Leaflet (ContatemeantesMapView). Default marker icon images are pointed
+   at unpkg in the component instead of node_modules — Leaflet resolves
+   them at runtime via <script src> introspection, which doesn't exist
+   under a bundler, so the default local path silently 404s (broken
+   marker icons) unless overridden. */
+@import "leaflet/dist/leaflet.css";
+
 /* You can add global styles to this file, and also import other style files */
 
 html, body { height: 100%; }

@@ -1,0 +1,30 @@
+.header {
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.header h2 {
+  margin: 0;
+}
+
+.group-select {
+  width: 200px;
+}
+
+.status {
+  padding: 0 20px;
+  color: #616161;
+}
+
+.status.error {
+  color: #c62828;
+}
+
+.map-canvas {
+  width: 100%;
+  height: calc(100vh - 120px);
+  background-color: #fafafa;
+}

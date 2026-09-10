@@ -20,6 +20,10 @@
 		<property name="dataSource" ref="dataSource" />
 	</bean>
 
+	<bean id="listGroupDevicesProcessor" class="fzlbpms.contatemeantes.ListGroupDevicesProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
 	<camelContext id="contatemeantesContext"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
@@ -61,6 +65,9 @@
 			<get path="/device/{deviceId}">
 				<to uri="direct:get-device-status" />
 			</get>
+			<get path="/group/{groupId}/devices">
+				<to uri="direct:list-group-devices" />
+			</get>
 		</rest>
 
 		<route id="contatemeantes-ping">
@@ -99,6 +106,9 @@
 			<setProperty name="isCharging">
 				<jsonpath suppressExceptions="true">$.isCharging</jsonpath>
 			</setProperty>
+			<setProperty name="groupId">
+				<jsonpath suppressExceptions="true">$.groupId</jsonpath>
+			</setProperty>
 			<log loggingLevel="INFO"
 				message="[CONTATEMEANTES] location received deviceId=${exchangeProperty.deviceId} lat=${exchangeProperty.latitude} lon=${exchangeProperty.longitude} battery=${exchangeProperty.batteryLevel} charging=${exchangeProperty.isCharging}" />
 			<process ref="upsertDeviceStatusProcessor" />
@@ -107,6 +117,11 @@
 		<route id="contatemeantes-get-device-status">
 			<from uri="direct:get-device-status" />
 			<process ref="getDeviceStatusProcessor" />
+		</route>
+
+		<route id="contatemeantes-list-group-devices">
+			<from uri="direct:list-group-devices" />
+			<process ref="listGroupDevicesProcessor" />
 		</route>
 	</camelContext>
 

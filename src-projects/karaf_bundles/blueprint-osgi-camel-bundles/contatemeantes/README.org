@@ -27,13 +27,24 @@ reported and get 404, POST with a missing field and get 400).
     "longitude": -46.63,
     "accuracy": 5.0,
     "batteryLevel": 80,
-    "isCharging": false
+    "isCharging": false,
+    "groupId": "1001"
   }
   #+end_src
   =deviceId=, =latitude= and =longitude= are required; a missing/invalid field
-  returns =400= with ={"error":"..."}=.
+  returns =400= with ={"error":"..."}=. Every field except =groupId= is fully
+  overwritten on each call (omit =accuracy= and it becomes =null=, same as
+  before). =groupId= is the one exception: it's group *membership*, set once
+  at pairing time rather than re-sent on every ping, so a call that omits it
+  keeps whatever group the device was already in (SQL =COALESCE=, not a plain
+  overwrite) — only an explicit non-empty =groupId= changes it.
 - =GET /contatemeantes/device/{deviceId}= — returns the latest known position,
   or =404= if the device has never reported.
+- =GET /contatemeantes/group/{groupId}/devices= — returns
+  =[{"deviceId":"...","userName":"..."}, ...]= for every device currently in
+  that group, ordered by =deviceId=. An unknown/empty group returns =200 []=,
+  not =404= — a group having no members is a valid answer, unlike a specific
+  device never having reported.
 
 The Camel Jetty listener is configured on port =9093= (9090 and 9091 are
 already used by the main and Moodle REST APIs, 9092 by =aproveitamento-docs=).

@@ -12,12 +12,17 @@ import org.apache.camel.Processor;
 
 public class UpsertDeviceStatusProcessor implements Processor {
 
+	// group_id is COALESCEd rather than fully overwritten like the other
+	// fields: it's group *membership*, set once at pairing time, not
+	// per-ping telemetry — a POST that omits it (the common case) must not
+	// silently drop the device out of its group.
 	private static final String UPSERT_SQL = "INSERT INTO device_status "
-			+ "(device_id, user_name, latitude, longitude, accuracy, battery_level, is_charging, last_seen) "
-			+ "VALUES (?, ?, ?, ?, ?, ?, ?, now()) " + "ON CONFLICT (device_id) DO UPDATE SET "
+			+ "(device_id, user_name, latitude, longitude, accuracy, battery_level, is_charging, last_seen, group_id) "
+			+ "VALUES (?, ?, ?, ?, ?, ?, ?, now(), ?) " + "ON CONFLICT (device_id) DO UPDATE SET "
 			+ "user_name = EXCLUDED.user_name, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, "
 			+ "accuracy = EXCLUDED.accuracy, battery_level = EXCLUDED.battery_level, "
-			+ "is_charging = EXCLUDED.is_charging, last_seen = now()";
+			+ "is_charging = EXCLUDED.is_charging, last_seen = now(), "
+			+ "group_id = COALESCE(EXCLUDED.group_id, device_status.group_id)";
 
 	private DataSource dataSource;
 
@@ -30,6 +35,7 @@ public class UpsertDeviceStatusProcessor implements Processor {
 		Double accuracy = optionalDouble(exchange, "accuracy");
 		Integer batteryLevel = optionalInt(exchange, "batteryLevel");
 		Boolean isCharging = optionalBoolean(exchange, "isCharging");
+		String groupId = optionalString(exchange, "groupId");
 
 		try (Connection conn = dataSource.getConnection(); PreparedStatement ps = conn.prepareStatement(UPSERT_SQL)) {
 			ps.setString(1, deviceId);
@@ -39,6 +45,7 @@ public class UpsertDeviceStatusProcessor implements Processor {
 			setNullableDouble(ps, 5, accuracy);
 			setNullableInt(ps, 6, batteryLevel);
 			setNullableBoolean(ps, 7, isCharging);
+			ps.setString(8, groupId);
 			ps.executeUpdate();
 		}
 

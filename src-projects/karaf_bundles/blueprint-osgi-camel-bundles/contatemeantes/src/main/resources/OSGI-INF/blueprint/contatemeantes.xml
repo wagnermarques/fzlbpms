@@ -76,6 +76,7 @@
 
 		<route id="contatemeantes-upsert-location">
 			<from uri="direct:upsert-location" />
+			<log loggingLevel="INFO" message="[CONTATEMEANTES] raw payload: ${body}" />
 			<removeHeaders pattern="*" />
 			<setProperty name="deviceId">
 				<jsonpath suppressExceptions="true">$.deviceId</jsonpath>

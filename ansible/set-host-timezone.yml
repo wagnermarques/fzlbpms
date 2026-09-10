@@ -1,0 +1,67 @@
+---
+# =============================================================================
+# set-host-timezone.yml — Set the host's system timezone to America/Sao_Paulo
+#
+# This is the HOST-level half of "official Brazilian time" for this stack.
+# The other two halves live elsewhere and are NOT touched by this playbook:
+#   - fzl-karaf-camel-integration gets TZ=America/Sao_Paulo directly in
+#     docker-compose.yml (containers don't inherit the host's timezone
+#     automatically, and a bind-mounted /etc/localtime silently fails for
+#     JVM apps — the host's /etc/localtime is a symlink, and the JVM resolves
+#     the timezone by that symlink's target NAME, not the shadowed file's
+#     content, so the bind mount looked like it worked (`date` was correct)
+#     while Camel/log4j2 timestamps stayed on UTC. TZ sidesteps that.)
+#   - the `contatemeantes` Postgres database has
+#     `ALTER DATABASE contatemeantes SET timezone TO 'America/Sao_Paulo'`
+#     applied directly (a display-only setting — TIMESTAMPTZ columns are
+#     still stored as real UTC instants either way).
+#
+# Usage:
+#   cd ansible
+#   ansible-playbook -i inventory.ini set-host-timezone.yml -K   # -K: sudo password
+# =============================================================================
+- name: Set host timezone to America/Sao_Paulo (Brasília time)
+  hosts: docker_hosts
+  become: true
+  vars:
+    target_timezone: America/Sao_Paulo
+
+  tasks:
+    - name: Set system timezone
+      ansible.builtin.timezone:
+        name: "{{ target_timezone }}"
+      register: timezone_result
+
+    # Brazil has had no DST since 2019, so America/Sao_Paulo is a fixed
+    # UTC-3 offset — but the actual clock still needs to be correct for that
+    # to mean anything. timedatectl is systemd-specific; Alpine hosts manage
+    # NTP through a different service and are left alone here.
+    - name: Ensure NTP time sync is enabled
+      ansible.builtin.command: timedatectl set-ntp true
+      changed_when: false
+      when: ansible_facts.os_family in ["Debian", "RedHat"]
+
+    - name: Read back timedatectl status
+      # Comma-separated --property=A,B,C silently returns nothing on some
+      # systemd versions (confirmed on this Fedora host) — the flag must be
+      # repeated instead.
+      ansible.builtin.command: >-
+        timedatectl show
+        --property=Timezone
+        --property=NTP
+        --property=NTPSynchronized
+      register: timedatectl_status
+      changed_when: false
+      when: ansible_facts.os_family in ["Debian", "RedHat"]
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "=================================================================="
+          - "{{ 'Timezone changed to ' ~ target_timezone if timezone_result.changed else 'Timezone already ' ~ target_timezone ~ ' — no change needed.' }}"
+          - "{{ timedatectl_status.stdout_lines | default(['(timedatectl not queried — non-systemd host)']) }}"
+          - "=================================================================="
+          - "Reminder: this only affects the HOST clock/timezone label."
+          - "Containers do not inherit it automatically — see the header"
+          - "comment in this file for where the container/DB halves live."
+          - "=================================================================="

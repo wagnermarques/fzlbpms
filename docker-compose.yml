@@ -238,6 +238,14 @@ services:
       # testing, ahead of an nginx proxy. Plain HTTP; dev-only.
       - "${FZL_KARAF_CONTATEMEANTES_PORT:-9093}:9093"
     environment:
+      # Host is already NTP-synced and set to America/Sao_Paulo. Containers
+      # share the host's clock but default to UTC for timezone *rendering*
+      # (log timestamps). TZ (not an /etc/localtime bind mount — the host's
+      # /etc/localtime is a symlink, and the JVM resolves the timezone by
+      # that symlink's target NAME rather than the shadowed file's content,
+      # so a bind mount silently doesn't affect Camel/log4j2 timestamps)
+      # is read directly by both glibc and the JVM.
+      TZ: America/Sao_Paulo
       # Karaf's own JAAS realm — entrypoint.sh writes etc/users.properties from
       # these at container start, so the credential never lives in git. nginx
       # reads the SAME two variables to build the Authorization header it

@@ -1,0 +1,490 @@
+---
+# =============================================================================
+# keycloak-playbook--realms-and-clients-creation.yml
+#
+# Idempotent Keycloak provisioning playbook for the entire FZLBPMS stack:
+#   - Realm: fzlbpms
+#   - Realm Roles: admin, theia-user, chamadas-user, moodle-student
+#   - Clients:
+#       1. fzlbpms-camel        (Confidential - Backend REST proxy)
+#       2. fzlbpmsadmin-web     (Public - Angular Web UI with PKCE)
+#       3. moodle               (Confidential - Moodle OAuth2 SSO)
+#       4. flowable             (Confidential - Flowable BPM UI SSO)
+#       5. theia                (Confidential - Theia IDE OAuth2 Proxy)
+#       6. fzl-chamadasonline   (Public - GitHub Pages SPA with PKCE)
+#   - Users:
+#       1. fzlbpmsadmin         (Stack Admin)
+#       2. moodle-admin         (Moodle Site Administrator)
+#       3. flowable-admin       (Flowable Administrator with client roles)
+#
+# Variable Precedence:
+#   1. CLI Extra Vars:          -e "keycloak_admin_password=..."
+#   2. Environment Variables:   export FZL_KEYCLOAK_ADMIN_PASSWORD=...
+#   3. .env file:               Read automatically from repo root or -e env_file=...
+#   4. Default fallback values
+#
+# Usage:
+#   ansible-playbook ansible/keycloak-playbook--realms-and-clients-creation.yml
+# =============================================================================
+- name: Provision All Keycloak Realms, Roles, Clients, and Bootstrap Users
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    env_file_path: "{{ env_file | default(playbook_dir + '/../.env') }}"
+
+    # 1. Realm Roles definition
+    realm_roles:
+      - name: "admin"
+        description: "Stack-wide Administrator"
+      - name: "theia-user"
+        description: "Permissao de acesso a IDE Theia no navegador (/theia/)"
+      - name: "chamadas-user"
+        description: "Permite login e acesso ao sistema Chamadas Online (GitHub Pages)"
+      - name: "moodle-student"
+        description: "Permite login e acesso de estudante ao Moodle LMS"
+
+    # 2. Flowable Client Roles definition
+    flowable_client_roles:
+      - "access-idm"
+      - "access-admin"
+      - "access-modeler"
+      - "access-task"
+      - "access-rest-api"
+
+  pre_tasks:
+    - name: Check if .env file exists
+      ansible.builtin.stat:
+        path: "{{ env_file_path }}"
+      register: env_file_stat
+
+    - name: Parse .env file if present
+      when: env_file_stat.stat.exists
+      block:
+        - name: Read .env content
+          ansible.builtin.slurp:
+            src: "{{ env_file_path }}"
+          register: env_file_content
+
+        - name: Set facts from parsed .env
+          ansible.builtin.set_fact:
+            parsed_env_vars: "{{ parsed_env_vars | default({}) | combine({ item.split('=', 1)[0].strip(): item.split('=', 1)[1].strip() }) }}"
+          loop: "{{ (env_file_content.content | b64decode).splitlines() }}"
+          when:
+            - item is defined
+            - item | trim | length > 0
+            - not (item | trim).startswith('#')
+            - "'=' in item"
+
+    - name: Resolve Environment & Stack Variables
+      ansible.builtin.set_fact:
+        keycloak_url: "{{ keycloak_url | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_URL') | default('http://localhost:' ~ (parsed_env_vars.FZL_KEYCLOAK_PORT | default('8083')), true)) }}"
+        keycloak_admin_user: "{{ keycloak_admin_user | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_ADMIN_USER') | default(parsed_env_vars.FZL_KEYCLOAK_ADMIN_USER | default('admin'), true)) }}"
+        keycloak_admin_password: "{{ keycloak_admin_password | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_ADMIN_PASSWORD') | default(parsed_env_vars.FZL_KEYCLOAK_ADMIN_PASSWORD | default('admin'), true)) }}"
+        target_realm: "{{ target_realm | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_REALM') | default('fzlbpms', true)) }}"
+        public_hostname: "{{ fzl_public_hostname | default(lookup('ansible.builtin.env', 'FZL_PUBLIC_HOSTNAME') | default(parsed_env_vars.FZL_PUBLIC_HOSTNAME | default('fzlbpms.local'), true)) }}"
+        public_proto: "{{ fzl_public_proto | default(lookup('ansible.builtin.env', 'FZL_PUBLIC_PROTO') | default(parsed_env_vars.FZL_PUBLIC_PROTO | default('https'), true)) }}"
+
+        # Passwords & Secrets
+        admin_username: "{{ fzlbpms_admin_username | default(lookup('ansible.builtin.env', 'FZLBPMS_ADMIN_USERNAME') | default(parsed_env_vars.FZLBPMS_ADMIN_USERNAME | default('fzlbpmsadmin'), true)) }}"
+        admin_password: "{{ fzlbpms_admin_password | default(lookup('ansible.builtin.env', 'FZLBPMS_ADMIN_PASSWORD') | default(parsed_env_vars.FZLBPMS_ADMIN_PASSWORD | default('Admin@fzlbpms1'), true)) }}"
+        camel_client_secret: "{{ fzl_camel_client_secret | default(lookup('ansible.builtin.env', 'FZL_CAMEL_CLIENT_SECRET') | default(parsed_env_vars.FZL_CAMEL_CLIENT_SECRET | default('fzlbpmsCamelSecret01'), true)) }}"
+        moodle_client_secret: "{{ fzl_moodle_client_secret | default(lookup('ansible.builtin.env', 'FZL_MOODLE_CLIENT_SECRET') | default(parsed_env_vars.FZL_MOODLE_CLIENT_SECRET | default('3fe9f123c0cd7191c77d1e095ecaa75f'), true)) }}"
+        flowable_client_secret: "{{ fzl_flowable_client_secret | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_CLIENT_SECRET') | default(parsed_env_vars.FZL_FLOWABLE_CLIENT_SECRET | default('1934cf6ca904710af9cfb20840b620b6'), true)) }}"
+        theia_client_secret: "{{ fzl_theia_client_secret | default(lookup('ansible.builtin.env', 'FZL_THEIA_CLIENT_SECRET') | default(parsed_env_vars.FZL_THEIA_CLIENT_SECRET | default('68e132f26236818f078e360e8e730fbd'), true)) }}"
+        moodle_admin_username: "{{ fzl_moodle_admin_username | default(lookup('ansible.builtin.env', 'FZL_MOODLE_ADMIN_USERNAME') | default(parsed_env_vars.FZL_MOODLE_ADMIN_USERNAME | default('moodle-admin'), true)) }}"
+        moodle_admin_password: "{{ fzl_moodle_admin_password | default(lookup('ansible.builtin.env', 'FZL_MOODLE_ADMIN_PASSWORD') | default(parsed_env_vars.FZL_MOODLE_ADMIN_PASSWORD | default('Admin@fzlbpms1-moodle'), true)) }}"
+        flowable_admin_username: "{{ fzl_flowable_admin_username | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_ADMIN_USERNAME') | default(parsed_env_vars.FZL_FLOWABLE_ADMIN_USERNAME | default('flowable-admin'), true)) }}"
+        flowable_admin_password: "{{ fzl_flowable_admin_password | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_ADMIN_PASSWORD') | default(parsed_env_vars.FZL_FLOWABLE_ADMIN_PASSWORD | default('Admin@fzlbpms1-flowable'), true)) }}"
+
+    - name: Build Clients Specification
+      ansible.builtin.set_fact:
+        stack_clients:
+          # 1. fzlbpms-camel (Confidential - Backend REST proxy)
+          - clientId: "fzlbpms-camel"
+            name: "FZLBPMS Camel Backend REST Client"
+            enabled: true
+            publicClient: false
+            secret: "{{ camel_client_secret }}"
+            standardFlowEnabled: false
+            directAccessGrantsEnabled: true
+            serviceAccountsEnabled: true
+
+          # 2. fzlbpmsadmin-web (Public - Angular Web UI with PKCE)
+          - clientId: "fzlbpmsadmin-web"
+            name: "FZLBPMS Admin Web UI"
+            enabled: true
+            publicClient: true
+            standardFlowEnabled: true
+            directAccessGrantsEnabled: false
+            rootUrl: "{{ public_proto }}://{{ public_hostname }}"
+            baseUrl: "{{ public_proto }}://{{ public_hostname }}/"
+            redirectUris:
+              - "{{ public_proto }}://{{ public_hostname }}/*"
+              - "http://localhost:*"
+              - "http://127.0.0.1:*"
+            webOrigins:
+              - "{{ public_proto }}://{{ public_hostname }}"
+              - "http://localhost:*"
+              - "+"
+            attributes:
+              "pkce.code.challenge.method": "S256"
+
+          # 3. moodle (Confidential - Moodle OAuth2 SSO)
+          - clientId: "moodle"
+            name: "Moodle LMS SSO Client"
+            enabled: true
+            publicClient: false
+            secret: "{{ moodle_client_secret }}"
+            standardFlowEnabled: true
+            directAccessGrantsEnabled: false
+            redirectUris:
+              - "{{ public_proto }}://{{ public_hostname }}/moodle/admin/oauth2callback.php*"
+              - "{{ public_proto }}://{{ public_hostname }}/*"
+              - "http://localhost:*"
+
+          # 4. flowable (Confidential - Flowable UI Spring Security OIDC SSO)
+          - clientId: "flowable"
+            name: "Flowable BPM UI SSO Client"
+            enabled: true
+            publicClient: false
+            secret: "{{ flowable_client_secret }}"
+            standardFlowEnabled: true
+            directAccessGrantsEnabled: false
+            redirectUris:
+              - "{{ public_proto }}://{{ public_hostname }}/flowable-ui/login/oauth2/code/keycloak*"
+              - "{{ public_proto }}://{{ public_hostname }}/*"
+              - "http://localhost:*"
+
+          # 5. theia (Confidential - Theia IDE OAuth2 Proxy)
+          - clientId: "theia"
+            name: "Theia IDE OAuth2 Proxy Gate"
+            enabled: true
+            publicClient: false
+            secret: "{{ theia_client_secret }}"
+            standardFlowEnabled: true
+            directAccessGrantsEnabled: false
+            redirectUris:
+              - "{{ public_proto }}://{{ public_hostname }}/theia/oauth2/callback*"
+              - "{{ public_proto }}://{{ public_hostname }}/*"
+              - "http://localhost:*"
+
+          # 6. fzl-chamadasonline (Public - GitHub Pages SPA with PKCE)
+          - clientId: "fzl-chamadasonline"
+            name: "FZL Chamadas Online (GitHub Pages)"
+            enabled: true
+            publicClient: true
+            standardFlowEnabled: true
+            directAccessGrantsEnabled: false
+            rootUrl: "https://wagnermarques.github.io/fzl-chamadasonline"
+            baseUrl: "https://wagnermarques.github.io/fzl-chamadasonline/"
+            redirectUris:
+              - "https://wagnermarques.github.io/fzl-chamadasonline/*"
+              - "http://localhost:*"
+              - "http://127.0.0.1:*"
+            webOrigins:
+              - "https://wagnermarques.github.io"
+              - "http://localhost:*"
+              - "+"
+            attributes:
+              "pkce.code.challenge.method": "S256"
+              "post.logout.redirect.uris": "https://wagnermarques.github.io/fzl-chamadasonline/*##http://localhost:*"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. Admin Authentication
+    # -------------------------------------------------------------------------
+    - name: 1. Obtain Keycloak Admin OAuth2 Token
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/realms/master/protocol/openid-connect/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          client_id: "admin-cli"
+          grant_type: "password"
+          username: "{{ keycloak_admin_user }}"
+          password: "{{ keycloak_admin_password }}"
+        status_code: 200
+      register: admin_token_res
+
+    - name: Set Auth Header Fact
+      ansible.builtin.set_fact:
+        auth_header:
+          Authorization: "Bearer {{ admin_token_res.json.access_token }}"
+          Content-Type: "application/json"
+
+    # -------------------------------------------------------------------------
+    # 2. Realm Provisioning
+    # -------------------------------------------------------------------------
+    - name: 2. Check if Target Realm exists
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: [200, 404]
+      register: realm_check_res
+
+    - name: Create Target Realm if not exists
+      when: realm_check_res.status == 404
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          realm: "{{ target_realm }}"
+          enabled: true
+          displayName: "FZL BPMS Realm"
+          sslRequired: "external"
+        status_code: 201
+
+    # -------------------------------------------------------------------------
+    # 3. Realm Roles Provisioning
+    # -------------------------------------------------------------------------
+    - name: 3. Fetch existing Realm Roles
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/roles"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: existing_roles_res
+
+    - name: Ensure Realm Roles exist
+      loop: "{{ realm_roles }}"
+      loop_control:
+        label: "{{ item.name }}"
+      vars:
+        existing_role_names: "{{ existing_roles_res.json | map(attribute='name') | list }}"
+      when: item.name not in existing_role_names
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/roles"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          description: "{{ item.description }}"
+        status_code: 201
+
+    # -------------------------------------------------------------------------
+    # 4. Clients Provisioning
+    # -------------------------------------------------------------------------
+    - name: 4. Fetch all existing Clients in Realm
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: all_clients_res
+
+    - name: Ensure Stack Clients are created or updated
+      loop: "{{ stack_clients }}"
+      loop_control:
+        label: "{{ item.clientId }}"
+      vars:
+        client_matches: "{{ all_clients_res.json | selectattr('clientId', 'equalto', item.clientId) | list }}"
+      block:
+        - name: Create client if missing
+          when: client_matches | length == 0
+          ansible.builtin.uri:
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients"
+            method: POST
+            headers: "{{ auth_header }}"
+            body_format: json
+            body: "{{ item }}"
+            status_code: 201
+
+        - name: Update client if already exists
+          when: client_matches | length > 0
+          ansible.builtin.uri:
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ client_matches[0].id }}"
+            method: PUT
+            headers: "{{ auth_header }}"
+            body_format: json
+            body: "{{ item }}"
+            status_code: [200, 204]
+
+    # -------------------------------------------------------------------------
+    # 5. Flowable Client Roles Provisioning
+    # -------------------------------------------------------------------------
+    - name: Re-fetch clients to get Flowable internal ID
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients?clientId=flowable"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: flowable_client_info
+
+    - name: Fetch existing Flowable client roles
+      when: flowable_client_info.json | length > 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ flowable_client_info.json[0].id }}/roles"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: existing_flowable_roles_res
+
+    - name: Create Flowable client roles if missing
+      when: flowable_client_info.json | length > 0
+      loop: "{{ flowable_client_roles }}"
+      loop_control:
+        label: "{{ item }}"
+      vars:
+        flowable_id: "{{ flowable_client_info.json[0].id }}"
+        existing_names: "{{ existing_flowable_roles_res.json | map(attribute='name') | list }}"
+      when: item not in existing_names
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ flowable_id }}/roles"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          name: "{{ item }}"
+        status_code: 201
+
+    # -------------------------------------------------------------------------
+    # 6. Users Provisioning
+    # -------------------------------------------------------------------------
+    - name: Fetch existing Users in Realm
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: existing_users_res
+
+    - name: Define Bootstrap Users specification
+      ansible.builtin.set_fact:
+        bootstrap_users:
+          - username: "{{ admin_username }}"
+            firstName: "FZLBPMS"
+            lastName: "Administrator"
+            email: "{{ admin_username }}@fzlbpms.local"
+            password: "{{ admin_password }}"
+            realm_roles: ["admin", "theia-user"]
+          - username: "{{ moodle_admin_username }}"
+            firstName: "Moodle"
+            lastName: "Administrator"
+            email: "{{ moodle_admin_username }}@fzlbpms.local"
+            password: "{{ moodle_admin_password }}"
+            realm_roles: []
+          - username: "{{ flowable_admin_username }}"
+            firstName: "Flowable"
+            lastName: "Administrator"
+            email: "{{ flowable_admin_username }}@fzlbpms.local"
+            password: "{{ flowable_admin_password }}"
+            realm_roles: []
+            flowable_client_roles: "{{ flowable_client_roles }}"
+
+    - name: Ensure Users exist
+      loop: "{{ bootstrap_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+      vars:
+        existing_user_matches: "{{ existing_users_res.json | selectattr('username', 'equalto', item.username) | list }}"
+      block:
+        - name: Create User if missing
+          when: existing_user_matches | length == 0
+          ansible.builtin.uri:
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users"
+            method: POST
+            headers: "{{ auth_header }}"
+            body_format: json
+            body:
+              username: "{{ item.username }}"
+              firstName: "{{ item.firstName }}"
+              lastName: "{{ item.lastName }}"
+              email: "{{ item.email }}"
+              enabled: true
+              emailVerified: true
+              credentials:
+                - type: "password"
+                  value: "{{ item.password }}"
+                  temporary: false
+            status_code: 201
+
+        - name: Reset password for existing user
+          when: existing_user_matches | length > 0
+          vars:
+            user_id: "{{ existing_user_matches[0].id }}"
+          ansible.builtin.uri:
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ user_id }}/reset-password"
+            method: PUT
+            headers: "{{ auth_header }}"
+            body_format: json
+            body:
+              type: "password"
+              value: "{{ item.password }}"
+              temporary: false
+            status_code: 204
+
+    # -------------------------------------------------------------------------
+    # 7. Role Mappings for Users
+    # -------------------------------------------------------------------------
+    - name: Re-fetch users to retrieve all internal IDs
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: updated_users_res
+
+    - name: Re-fetch realm roles to map IDs
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/roles"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: all_realm_roles_res
+
+    - name: Assign Realm Roles to Admin User
+      vars:
+        admin_user_obj: "{{ updated_users_res.json | selectattr('username', 'equalto', admin_username) | list | first }}"
+        admin_roles_to_assign: "{{ all_realm_roles_res.json | selectattr('name', 'in', ['admin', 'theia-user']) | list }}"
+      when: admin_user_obj is defined and admin_roles_to_assign | length > 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ admin_user_obj.id }}/role-mappings/realm"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body: "{{ admin_roles_to_assign }}"
+        status_code: 204
+
+    - name: Assign Flowable Client Roles to flowable-admin User
+      when: flowable_client_info.json | length > 0
+      vars:
+        flowable_user_obj: "{{ updated_users_res.json | selectattr('username', 'equalto', flowable_admin_username) | list | first }}"
+        flowable_id: "{{ flowable_client_info.json[0].id }}"
+      block:
+        - name: Fetch latest flowable client roles
+          ansible.builtin.uri:
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ flowable_id }}/roles"
+            method: GET
+            headers: "{{ auth_header }}"
+            status_code: 200
+          register: fresh_flowable_roles_res
+
+        - name: Map Flowable roles to flowable-admin
+          when: flowable_user_obj is defined
+          ansible.builtin.uri:
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ flowable_user_obj.id }}/role-mappings/clients/{{ flowable_id }}"
+            method: POST
+            headers: "{{ auth_header }}"
+            body_format: json
+            body: "{{ fresh_flowable_roles_res.json }}"
+            status_code: 204
+
+    # -------------------------------------------------------------------------
+    # 8. Summary Output
+    # -------------------------------------------------------------------------
+    - name: Display Execution Summary
+      ansible.builtin.debug:
+        msg:
+          - "================================================================"
+          - "FZLBPMS Keycloak Idempotent Provisioning Finished Successfully!"
+          - "Target Realm: {{ target_realm }}"
+          - "Realm Roles:  {{ realm_roles | map(attribute='name') | list }}"
+          - "Clients:      {{ stack_clients | map(attribute='clientId') | list }}"
+          - "Users:        {{ bootstrap_users | map(attribute='username') | list }}"
+          - "================================================================"

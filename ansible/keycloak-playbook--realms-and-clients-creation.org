@@ -1,0 +1,93 @@
+#+TITLE: FZLBPMS Stack — Keycloak Realms, Roles, Clients & Users Provisioning
+#+AUTHOR: FzlSoft
+#+DATE: [2026-09-11]
+#+OPTIONS: toc:2 num:nil
+
+* Overview
+
+This Ansible playbook (=keycloak-playbook--realms-and-clients-creation.yml=) is a fully idempotent Keycloak infrastructure-as-code automation tool. It configures and reconciles all realms, clients, realm/client roles, and bootstrap administrators required across the *FZLBPMS* ecosystem.
+
+* Architecture & Managed Entities
+
+#+begin_example
+                                 +-------------------------+
+                                 |  Keycloak (IAM Master)  |
+                                 |      Realm: fzlbpms     |
+                                 +------------+------------+
+                                              |
+        +------------------+------------------+------------------+------------------+
+        |                  |                  |                  |                  |
+        v                  v                  v                  v                  v
++---------------+  +---------------+  +---------------+  +---------------+  +---------------+
+|  fzlbpms-camel|  |fzlbpmsadmin-  |  |     moodle    |  |    flowable   |  |fzl-chamadas-  |
+|  (BFF Proxy)  |  |web (PKCE SPA) |  |  (OAuth2 SSO) |  | (Spring SSO)  |  |online (PKCE)  |
++---------------+  +---------------+  +---------------+  +---------------+  +---------------+
+#+end_example
+
+* Managed Entities Catalog
+
+** 1. Realm
+- *fzlbpms*: Main multi-tenant business process & LMS realm.
+
+** 2. Realm Roles
+| Role Name | Scope / Purpose |
+|---------------+-------------------------------------------------------------|
+| =admin= | Stack-wide administrator with full privileges |
+| =theia-user= | Grants access through oauth2-proxy to Theia IDE (=/theia/=) |
+| =chamadas-user=| Grants login permission to the Chamadas Online GitHub Pages app |
+| =moodle-student=| Standard LMS student role |
+
+** 3. Clients
+| Client ID | Type | Protocol / Flow | Target System |
+|-----------------------+--------------+-------------------+-----------------------------------|
+| =fzlbpms-camel= | Confidential | Password Grant / SA | Apache Camel Backend / Karaf REST |
+| =fzlbpmsadmin-web= | Public | OIDC + PKCE (S256) | Angular Administrative Web UI |
+| =moodle= | Confidential | OAuth2 / OIDC | Moodle LMS SSO integration |
+| =flowable= | Confidential | OIDC Spring Sec | Flowable BPM UI |
+| =theia= | Confidential | OIDC Auth Code | Theia IDE OAuth2-Proxy Gate |
+| =fzl-chamadasonline= | Public | OIDC + PKCE (S256) | GitHub Pages Student Attendance |
+
+** 4. Flowable Client Roles
+Defined on the =flowable= client:
+- =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api=
+
+** 5. Bootstrap Users & Role Mappings
+| Username | Purpose | Assigned Roles |
+|------------------+--------------------------------+---------------------------------------------------|
+| =fzlbpmsadmin= | Stack Superadmin | Realm Roles: =admin=, =theia-user= |
+| =moodle-admin= | Dedicated Moodle Site Admin | Site administrator via Moodle OAuth2 SSO |
+| =flowable-admin= | Dedicated Flowable Admin | Flowable Client Roles: =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api= |
+
+* Variable Precedence & Configuration
+
+The playbook dynamically parses and resolves credentials in this order:
+1. *CLI Extra Vars* (=-e "keycloak_admin_password=..."=)
+2. *Environment Variables* (=export FZL_KEYCLOAK_ADMIN_PASSWORD=...=)
+3. *.env File* (Root =.env= parsed automatically or specified via =-e env_file=...=)
+4. *Safe Default Fallbacks*
+
+* Usage Examples
+
+** 1. Standard Run (Zero arguments — loads =.env= automatically)
+#+begin_src bash
+ansible-playbook ansible/keycloak-playbook--realms-and-clients-creation.yml
+#+end_src
+
+** 2. Custom Environment File
+#+begin_src bash
+ansible-playbook ansible/keycloak-playbook--realms-and-clients-creation.yml \
+  -e "env_file=/path/to/custom.env"
+#+end_src
+
+** 3. CLI Overrides
+#+begin_src bash
+ansible-playbook ansible/keycloak-playbook--realms-and-clients-creation.yml \
+  -e "keycloak_url=https://auth.fzlbpms.com.br" \
+  -e "keycloak_admin_password=YourAdminPassword"
+#+end_src
+
+* Idempotency Guarantee
+Running this playbook multiple times:
+- Will *never* create duplicate realms, clients, roles, or users.
+- Will update client configurations (URIs, CORS origins) if changed in the vars.
+- Synchronizes user passwords and role mappings reliably.

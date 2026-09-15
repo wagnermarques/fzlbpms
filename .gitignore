@@ -1,5 +1,6 @@
 # Karaf downloads
 containers/fzl-karaf-camel-integration/downloads/
+temp/
 
 # Diretorios gerados por sistemas operacionais
 containers/fzl-karaf-camel-integration/karaf-data/

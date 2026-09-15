@@ -8,5 +8,7 @@ export const routes: Routes = [
   { path: '', component: ViewHome },
   { path: 'appshomeview', component: AppsHomeView },
   { path: 'auth-callback', component: AuthCallbackView },
+  { path: 'process-diagram', component: ProcessDiagramView },
   { path: 'process-diagram/:key', component: ProcessDiagramView },
+  { path: 'process-instances', component: ProcessDiagramView },
 ];

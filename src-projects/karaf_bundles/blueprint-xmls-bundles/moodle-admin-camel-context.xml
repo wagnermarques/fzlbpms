@@ -100,6 +100,36 @@
       <get path="/process-diagram/{key}">
         <to uri="direct:bpms-process-diagram"/>
       </get>
+      <get path="/definitions">
+        <to uri="direct:bpms-list-definitions"/>
+      </get>
+      <get path="/instances">
+        <to uri="direct:bpms-list-instances"/>
+      </get>
+      <get path="/historic-instances">
+        <to uri="direct:bpms-list-historic-instances"/>
+      </get>
+      <get path="/instances/{id}/current-activities">
+        <to uri="direct:bpms-instance-current-activities"/>
+      </get>
+      <get path="/instances/{id}/executed-path">
+        <to uri="direct:bpms-instance-executed-path"/>
+      </get>
+      <get path="/instances/{id}/variables">
+        <to uri="direct:bpms-instance-variables"/>
+      </get>
+      <get path="/tasks">
+        <to uri="direct:bpms-list-tasks"/>
+      </get>
+      <post path="/instances/start" consumes="application/json">
+        <to uri="direct:bpms-start-instance"/>
+      </post>
+      <put path="/instances/{id}/action" consumes="application/json">
+        <to uri="direct:bpms-instance-action"/>
+      </put>
+      <delete path="/instances/{id}">
+        <to uri="direct:bpms-delete-instance"/>
+      </delete>
     </rest>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -291,6 +321,136 @@
       <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/repository/process-definitions/${exchangeProperty.d.definitionId}/resourcedata?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
       <removeHeaders pattern="*"/>
       <setHeader name="Content-Type"><constant>application/xml</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PROCESS DEFINITIONS — GET /fzlbpms/bpms/definitions
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-list-definitions">
+      <from uri="direct:bpms-list-definitions"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/repository/process-definitions?latest=true&amp;size=1000&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         RUNNING PROCESS INSTANCES — GET /fzlbpms/bpms/instances
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-list-instances">
+      <from uri="direct:bpms-list-instances"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances?includeProcessVariables=true&amp;size=1000&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         HISTORIC PROCESS INSTANCES — GET /fzlbpms/bpms/historic-instances
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-list-historic-instances">
+      <from uri="direct:bpms-list-historic-instances"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/history/historic-process-instances?finished=true&amp;sort=endTime&amp;order=desc&amp;includeProcessVariables=true&amp;size=1000&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CURRENT ACTIVITIES — GET /fzlbpms/bpms/instances/{id}/current-activities
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-instance-current-activities">
+      <from uri="direct:bpms-instance-current-activities"/>
+      <setProperty name="i.id"><simple>${header.id}</simple></setProperty>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/executions?processInstanceId=${exchangeProperty.i.id}&amp;size=1000&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         EXECUTED PATH — GET /fzlbpms/bpms/instances/{id}/executed-path
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-instance-executed-path">
+      <from uri="direct:bpms-instance-executed-path"/>
+      <setProperty name="i.id"><simple>${header.id}</simple></setProperty>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/history/historic-activity-instances?processInstanceId=${exchangeProperty.i.id}&amp;size=1000&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         INSTANCE VARIABLES — GET /fzlbpms/bpms/instances/{id}/variables
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-instance-variables">
+      <from uri="direct:bpms-instance-variables"/>
+      <setProperty name="i.id"><simple>${header.id}</simple></setProperty>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances/${exchangeProperty.i.id}/variables?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         TASKS — GET /fzlbpms/bpms/tasks
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-list-tasks">
+      <from uri="direct:bpms-list-tasks"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/tasks?size=1000&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         START PROCESS INSTANCE — POST /fzlbpms/bpms/instances/start
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-start-instance">
+      <from uri="direct:bpms-start-instance"/>
+      <setProperty name="s.body"><simple>${body}</simple></setProperty>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <setBody><simple>${exchangeProperty.s.body}</simple></setBody>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PROCESS INSTANCE ACTION (suspend/activate) — PUT /fzlbpms/bpms/instances/{id}/action
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-instance-action">
+      <from uri="direct:bpms-instance-action"/>
+      <setProperty name="i.id"><simple>${header.id}</simple></setProperty>
+      <setProperty name="a.body"><simple>${body}</simple></setProperty>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <setBody><simple>${exchangeProperty.a.body}</simple></setBody>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances/${exchangeProperty.i.id}?httpMethod=PUT&amp;throwExceptionOnFailure=false"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         DELETE PROCESS INSTANCE — DELETE /fzlbpms/bpms/instances/{id}
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="bpms-delete-instance">
+      <from uri="direct:bpms-delete-instance"/>
+      <setProperty name="i.id"><simple>${header.id}</simple></setProperty>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization"><constant>Basic YWRtaW46dGVzdA==</constant></setHeader>
+      <setBody><constant></constant></setBody>
+      <toD uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances/${exchangeProperty.i.id}?deleteReason=Cancelled+via+Dashboard&amp;httpMethod=DELETE&amp;throwExceptionOnFailure=false"/>
+      <setBody><constant>{"status":"deleted"}</constant></setBody>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════

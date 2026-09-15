@@ -42,6 +42,11 @@ export class AppsHomeView {
       credentials: { user: 'admin', pass: 'test' },
       processes: [
         {
+          name: 'Painel de Instâncias & Diagramas BPMS (Camel)',
+          url: '/fzlbpmsadmin/process-instances',
+          description: 'Painel completo de controle, execução e visualização gráfica com bpmn-js via Apache Camel.',
+        },
+        {
           name: 'Ver diagrama do processo (create-moodle-user)',
           url: '/fzlbpmsadmin/process-diagram/create-moodle-user',
           description: 'Renders the deployed BPMN diagram graphically with bpmn-js, right here in fzlbpmsadmin.',

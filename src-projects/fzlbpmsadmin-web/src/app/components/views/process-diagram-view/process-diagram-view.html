@@ -1,9 +1,362 @@
-<div class="header">
-  <a routerLink="/appshomeview" class="back-link">← Back to Applications</a>
-  <h2>Process Diagram — {{ processKey() }}</h2>
+<div class="dashboard-wrapper">
+  <!-- Top Navigation / Controls Header -->
+  <header class="dashboard-header">
+    <div class="brand-section">
+      <a routerLink="/appshomeview" class="back-btn" title="Voltar para Aplicativos">
+        <mat-icon>arrow_back</mat-icon>
+      </a>
+      <div class="brand-info">
+        <h1>Painel de Instâncias & Diagramas BPMS</h1>
+        <p>Monitoramento e controle de instâncias em tempo real via Apache Camel</p>
+      </div>
+    </div>
+
+    <!-- Process Definition Selector -->
+    <div class="process-selector">
+      <label for="procDefSelect">Processo:</label>
+      <select
+        id="procDefSelect"
+        [ngModel]="selectedProcessKey()"
+        (ngModelChange)="onProcessDefinitionChange($event)"
+      >
+        <option *ngFor="let def of definitions()" [value]="def.key">
+          {{ def.name || def.key }} (v{{ def.version }})
+        </option>
+      </select>
+    </div>
+
+    <!-- Actions & External Links -->
+    <div class="header-actions">
+      <button class="btn btn-primary" (click)="openStartModal()">
+        <mat-icon>play_arrow</mat-icon>
+        <span>Iniciar Instância</span>
+      </button>
+
+      <button
+        class="btn"
+        [class.btn-active]="autoRefreshEnabled()"
+        (click)="toggleAutoRefresh()"
+        title="Atualiza status a cada 3 segundos"
+      >
+        <mat-icon>{{ autoRefreshEnabled() ? 'sync' : 'sync_disabled' }}</mat-icon>
+        <span>Auto-refresh: {{ autoRefreshEnabled() ? 'Ligado' : 'Desligado' }}</span>
+      </button>
+
+      <div class="ext-links">
+        <a href="/flowable-ui/workflow/#/tasks" target="_blank" class="nav-btn" title="Tarefas Flowable">
+          <mat-icon>task_alt</mat-icon> Tasks
+        </a>
+        <a href="/flowable-ui/modeler/" target="_blank" class="nav-btn" title="Modelador BPMN">
+          <mat-icon>account_tree</mat-icon> Modeler
+        </a>
+        <a href="/flowable-ui/admin/" target="_blank" class="nav-btn" title="Administração Flowable">
+          <mat-icon>admin_panel_settings</mat-icon> Admin
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Banner -->
+  <div *ngIf="successMessage()" class="alert-banner success">
+    <mat-icon>check_circle</mat-icon>
+    <span>{{ successMessage() }}</span>
+  </div>
+  <div *ngIf="errorMessage()" class="alert-banner error">
+    <mat-icon>error</mat-icon>
+    <span>{{ errorMessage() }}</span>
+  </div>
+
+  <!-- Main Content Layout -->
+  <div class="main-content">
+    <!-- Left Sidebar: Instances Lists -->
+    <aside class="instances-sidebar">
+      <div class="sidebar-header">
+        <div class="tab-buttons">
+          <button
+            class="tab-btn"
+            [class.active]="activeTab() === 'running'"
+            (click)="activeTab.set('running')"
+          >
+            <span>Em Execução</span>
+            <span class="count-badge active-badge">{{ runningInstances().length }}</span>
+          </button>
+          <button
+            class="tab-btn"
+            [class.active]="activeTab() === 'historic'"
+            (click)="activeTab.set('historic')"
+          >
+            <span>Finalizadas</span>
+            <span class="count-badge">{{ historicInstances().length }}</span>
+          </button>
+        </div>
+
+        <div class="search-box">
+          <mat-icon>search</mat-icon>
+          <input
+            type="text"
+            placeholder="Filtrar instâncias por ID ou chave..."
+            [ngModel]="filterQuery()"
+            (ngModelChange)="filterQuery.set($event)"
+          />
+        </div>
+      </div>
+
+      <div class="sidebar-body">
+        <div *ngIf="loadingInstances()" class="loading-state">
+          <mat-icon class="spin">sync</mat-icon>
+          <span>Carregando instâncias...</span>
+        </div>
+
+        <!-- Running Instances Tab -->
+        <div *ngIf="!loadingInstances() && activeTab() === 'running'" class="instances-list">
+          <div *ngIf="filteredRunningInstances().length === 0" class="empty-state">
+            <mat-icon>inbox</mat-icon>
+            <p>Nenhuma instância em execução no momento.</p>
+          </div>
+
+          <div
+            *ngFor="let inst of filteredRunningInstances()"
+            class="instance-card"
+            [class.selected]="selectedInstance()?.id === inst.id"
+            [class.card-error]="inst.hasError"
+            [class.card-conflict]="inst.hasConflict"
+            (click)="selectInstance(inst)"
+          >
+            <div class="card-header">
+              <span class="instance-id">#{{ inst.id }}</span>
+              <span class="status-badge" [class.suspended]="inst.suspended">
+                {{ inst.suspended ? '⏸ Suspensa' : '🟢 Em Execução' }}
+              </span>
+            </div>
+
+            <div class="card-title">
+              {{ inst.name || inst.businessKey || ('Processo ' + (inst.processDefinitionKey || '')) }}
+            </div>
+
+            <div class="card-meta">
+              <span class="meta-item" *ngIf="inst.businessKey">
+                <mat-icon>tag</mat-icon> {{ inst.businessKey }}
+              </span>
+              <span class="meta-item">
+                <mat-icon>schedule</mat-icon> {{ formatDate(inst.startTime) }}
+              </span>
+            </div>
+
+            <!-- Current Activities / Tasks Badges -->
+            <div *ngIf="inst.currentActivities && inst.currentActivities.length > 0" class="activities-badges">
+              <span class="activity-label">Parado em:</span>
+              <span *ngFor="let act of inst.currentActivities" class="activity-pill">
+                {{ act }}
+              </span>
+            </div>
+
+            <!-- Card Actions -->
+            <div class="card-actions">
+              <button
+                class="btn-sm"
+                [title]="inst.suspended ? 'Reativar Instância' : 'Suspender Instância'"
+                (click)="toggleInstanceStatus(inst, $event)"
+              >
+                <mat-icon>{{ inst.suspended ? 'play_arrow' : 'pause' }}</mat-icon>
+                <span>{{ inst.suspended ? 'Reativar' : 'Suspender' }}</span>
+              </button>
+
+              <button
+                class="btn-sm"
+                title="Ver Variáveis"
+                (click)="viewVariables(inst, $event)"
+              >
+                <mat-icon>data_object</mat-icon>
+                <span>Variáveis</span>
+              </button>
+
+              <button
+                class="btn-sm btn-danger"
+                title="Cancelar Instância"
+                (click)="deleteInstance(inst, $event)"
+              >
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Historic / Finished Instances Tab -->
+        <div *ngIf="!loadingInstances() && activeTab() === 'historic'" class="instances-list">
+          <div *ngIf="filteredHistoricInstances().length === 0" class="empty-state">
+            <mat-icon>history</mat-icon>
+            <p>Nenhuma instância finalizada encontrada.</p>
+          </div>
+
+          <div
+            *ngFor="let inst of filteredHistoricInstances()"
+            class="instance-card finished"
+            [class.selected]="selectedInstance()?.id === inst.id"
+            (click)="selectInstance(inst)"
+          >
+            <div class="card-header">
+              <span class="instance-id">#{{ inst.id }}</span>
+              <span class="status-badge finished">✔ Concluída</span>
+            </div>
+
+            <div class="card-title">
+              {{ inst.name || inst.businessKey || ('Processo ' + (inst.processDefinitionKey || '')) }}
+            </div>
+
+            <div class="card-meta">
+              <span class="meta-item">
+                <mat-icon>timer</mat-icon> Duração: {{ formatDuration(inst.durationInMillis) }}
+              </span>
+              <span class="meta-item">
+                <mat-icon>event</mat-icon> Fim: {{ formatDate(inst.endTime) }}
+              </span>
+            </div>
+
+            <div class="card-actions">
+              <button
+                class="btn-sm"
+                title="Ver Variáveis Históricas"
+                (click)="viewVariables(inst, $event)"
+              >
+                <mat-icon>data_object</mat-icon>
+                <span>Variáveis</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center/Right Diagram Area -->
+    <main class="diagram-main">
+      <!-- Subprocesses Fold/Unfold Toolbar -->
+      <div *ngIf="subProcessInfos.length > 0" class="subprocess-toolbar">
+        <span class="toolbar-title"><mat-icon>folder_open</mat-icon> Subprocessos:</span>
+        <div class="subproc-buttons">
+          <button
+            *ngFor="let info of subProcessInfos"
+            class="subproc-btn"
+            [class.collapsed]="collapsedSubProcessIds.has(info.id)"
+            (click)="toggleSubProcess(info.id)"
+            [title]="collapsedSubProcessIds.has(info.id) ? 'Clique para expandir' : 'Clique para recolher'"
+          >
+            {{ collapsedSubProcessIds.has(info.id) ? '▸' : '▾' }} {{ info.name }}
+          </button>
+          <button class="subproc-btn toggle-all-btn" (click)="toggleAllSubProcesses()">
+            {{ collapsedSubProcessIds.size === subProcessInfos.length ? 'Expandir todos' : 'Recolher todos' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Errors/Conflicts Details Banner -->
+      <div *ngIf="activeErrors().length > 0" class="errors-banner">
+        <div *ngFor="let err of activeErrors()" class="error-row" [class.conflict]="err.status === 'conflict'">
+          <mat-icon>{{ err.status === 'conflict' ? 'warning' : 'cancel' }}</mat-icon>
+          <strong>{{ err.activityId }}:</strong> {{ err.message }}
+        </div>
+      </div>
+
+      <!-- Selected Instance Info Bar -->
+      <div *ngIf="selectedInstance()" class="instance-infobar">
+        <div class="infobar-left">
+          <span class="infobar-pill">Instância #{{ selectedInstance()?.id }}</span>
+          <span *ngIf="selectedInstance()?.businessKey" class="infobar-meta">
+            Chave: <strong>{{ selectedInstance()?.businessKey }}</strong>
+          </span>
+          <span class="infobar-meta" *ngIf="selectedInstance()?.currentActivities?.length">
+            Aguardando em: <em>{{ selectedInstance()?.currentActivities?.join(', ') }}</em>
+          </span>
+        </div>
+        <div class="infobar-right">
+          <button class="btn-sm" (click)="clearHighlights(); selectedInstance.set(null)">
+            <mat-icon>close</mat-icon> Limpar Seleção
+          </button>
+        </div>
+      </div>
+
+      <!-- Diagram Canvas -->
+      <div class="canvas-container">
+        <div #canvas class="bpmn-canvas"></div>
+
+        <!-- Floating Zoom Controls -->
+        <div class="zoom-controls">
+          <button (click)="zoomIn()" title="Aumentar zoom"><mat-icon>add</mat-icon></button>
+          <button (click)="zoomFit()" title="Ajustar ao centro"><mat-icon>fit_screen</mat-icon></button>
+          <button (click)="zoomOut()" title="Diminuir zoom"><mat-icon>remove</mat-icon></button>
+        </div>
+      </div>
+    </main>
+  </div>
 </div>
 
-<p *ngIf="loading()" class="status">Loading diagram…</p>
-<p *ngIf="errorMessage()" class="status error">{{ errorMessage() }}</p>
+<!-- Modal: Iniciar Processo -->
+<div *ngIf="showStartModal()" class="modal-backdrop" (click)="closeStartModal()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Iniciar Nova Instância de Processo</h3>
+      <button class="icon-btn" (click)="closeStartModal()"><mat-icon>close</mat-icon></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Definição de Processo:</label>
+        <select [(ngModel)]="startProcessKey">
+          <option *ngFor="let def of definitions()" [value]="def.key">
+            {{ def.name || def.key }} (v{{ def.version }})
+          </option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Chave de Negócio (Business Key):</label>
+        <input type="text" [(ngModel)]="startBusinessKey" placeholder="Ex: Issue #301 ou Pedido-45" />
+      </div>
+      <div class="form-group">
+        <label>Variáveis Iniciais (JSON):</label>
+        <textarea rows="6" [(ngModel)]="startVariablesJson"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" (click)="closeStartModal()">Cancelar</button>
+      <button class="btn btn-primary" [disabled]="startingProcess()" (click)="submitStartInstance()">
+        <mat-icon *ngIf="!startingProcess()">play_arrow</mat-icon>
+        <mat-icon *ngIf="startingProcess()" class="spin">sync</mat-icon>
+        <span>{{ startingProcess() ? 'Iniciando...' : 'Iniciar Processo' }}</span>
+      </button>
+    </div>
+  </div>
+</div>
 
-<div #canvas class="diagram-canvas"></div>
+<!-- Modal: Variáveis da Instância -->
+<div *ngIf="showVariablesModal()" class="modal-backdrop" (click)="closeVariablesModal()">
+  <div class="modal-card" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Variáveis da Instância</h3>
+      <button class="icon-btn" (click)="closeVariablesModal()"><mat-icon>close</mat-icon></button>
+    </div>
+    <div class="modal-body">
+      <div *ngIf="instanceVariables().length === 0" class="empty-state">
+        <p>Nenhuma variável registrada para esta instância.</p>
+      </div>
+      <table *ngIf="instanceVariables().length > 0" class="vars-table">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Tipo</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let v of instanceVariables()">
+            <td class="var-name">{{ v.name }}</td>
+            <td class="var-type">{{ v.type || 'string' }}</td>
+            <td class="var-value">
+              <code>{{ v.value }}</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" (click)="closeVariablesModal()">Fechar</button>
+    </div>
+  </div>
+</div>

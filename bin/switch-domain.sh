@@ -28,7 +28,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 log() { echo "[switch-domain] $*"; }
 
-DOMAIN="${1:?Usage: $0 <domain>  (e.g. localhost or fzlbpms.com.br)}"
+DOMAIN="${1:-fzlbpms.local}"
+# Remap 'localhost' input to default development domain 'fzlbpms.local'
+if [ "$DOMAIN" = "localhost" ]; then
+    DOMAIN="fzlbpms.local"
+fi
+
 ENV_FILE=".env"
 CONFIG_PHP="src-projects/var_www/html/moodle/config.php"
 
@@ -37,7 +42,28 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-if [ "$DOMAIN" = "localhost" ]; then
+ensure_etc_hosts() {
+    local host="$1"
+    if ! grep -qE "^\s*127\.0\.0\.1\s+.*(^|\s)${host}(\s|$)" /etc/hosts 2>/dev/null; then
+        log "/etc/hosts does not have '${host}'. Adding entry..."
+        if [ -w /etc/hosts ]; then
+            echo "127.0.0.1  ${host}" >> /etc/hosts
+            log "Added '127.0.0.1  ${host}' to /etc/hosts."
+        elif command -v sudo >/dev/null 2>&1; then
+            echo "127.0.0.1  ${host}" | sudo tee -a /etc/hosts >/dev/null
+            log "Added '127.0.0.1  ${host}' to /etc/hosts via sudo."
+        else
+            log "WARNING — Cannot write to /etc/hosts (need root/sudo). Please add manually: 127.0.0.1 ${host}"
+        fi
+    fi
+}
+
+if [[ "$DOMAIN" == *".local"* ]] || [ "$DOMAIN" = "fzlbpms.local" ]; then
+    ensure_etc_hosts "$DOMAIN"
+fi
+
+# fzlbpms.local and public domains use https (via mkcert / public TLS)
+if [ "$DOMAIN" = "127.0.0.1" ]; then
     PROTO="http"
 else
     PROTO="https"
@@ -198,6 +224,26 @@ docker compose up -d fzl-oauth2-proxy 2>/dev/null \
 log "Re-running the Moodle OAuth2 issuer configurator against the new domain..."
 docker compose up moodle-oauth2-configurator
 
-log "Done. fzlbpmsadmin-web needs no rebuild — reload the page at:"
-log "  ${PROTO}://${DOMAIN}/fzlbpmsadmin"
-log "  ${PROTO}://${DOMAIN}/moodle"
+FZLBPMS_ADMIN_USER="$(env_get FZLBPMS_ADMIN_USERNAME)"
+FZLBPMS_ADMIN_PASS="$(env_get FZLBPMS_ADMIN_PASSWORD)"
+FLOWABLE_ADMIN_USER="$(env_get FZL_FLOWABLE_ADMIN_USERNAME)"
+FLOWABLE_ADMIN_PASS="$(env_get FZL_FLOWABLE_ADMIN_PASSWORD)"
+MOODLE_ADMIN_USER="$(env_get FZL_MOODLE_ADMIN_USERNAME)"
+MOODLE_ADMIN_PASS="$(env_get FZL_MOODLE_ADMIN_PASSWORD)"
+
+log "================================================================="
+log "Stack is ready on: ${PROTO}://${DOMAIN}"
+log "-----------------------------------------------------------------"
+log "Apps & Portal (Realm: fzlbpms):"
+log "  - Apps Home:  ${PROTO}://${DOMAIN}/fzlbpmsadmin"
+log "  - Moodle:     ${PROTO}://${DOMAIN}/moodle"
+log "  - Flowable:   ${PROTO}://${DOMAIN}/flowable-ui"
+log "  Users:"
+log "    * Stack Superadmin: ${FZLBPMS_ADMIN_USER} / ${FZLBPMS_ADMIN_PASS}"
+log "    * Flowable Admin:   ${FLOWABLE_ADMIN_USER} / ${FLOWABLE_ADMIN_PASS}"
+log "    * Moodle Admin:     ${MOODLE_ADMIN_USER} / ${MOODLE_ADMIN_PASS}"
+log ""
+log "Keycloak Master Administration (Realm: master):"
+log "  - Master Console: ${PROTO}://${DOMAIN}/auth/admin/master/console/"
+log "    * Master Admin: ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}"
+log "================================================================="

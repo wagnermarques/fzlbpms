@@ -93,6 +93,8 @@ tramp
 .env.development
 .env.test
 .env.production
+.env.dev
+.env.prod
 
 # Java
 *.class

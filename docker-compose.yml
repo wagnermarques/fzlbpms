@@ -237,9 +237,6 @@ services:
       # Contatemeantes GPS tracking bundle — direct LAN access for mobile app
       # testing, ahead of an nginx proxy. Plain HTTP; dev-only.
       - "${FZL_KARAF_CONTATEMEANTES_PORT:-9093}:9093"
-      # ChamadasOnline attendance bundle — direct access for local testing,
-      # ahead of nginx's /chamadasonline/ proxy. Plain HTTP; dev-only.
-      - "${FZL_KARAF_CHAMADASONLINE_PORT:-9094}:9094"
     environment:
       # Host is already NTP-synced and set to America/Sao_Paulo. Containers
       # share the host's clock but default to UTC for timezone *rendering*
@@ -279,7 +276,6 @@ services:
       FZL_FLOWABLE_CLIENT_SECRET: ${FZL_FLOWABLE_CLIENT_SECRET:?}
       FZL_THEIA_CLIENT_ID: ${FZL_THEIA_CLIENT_ID:?}
       FZL_THEIA_CLIENT_SECRET: ${FZL_THEIA_CLIENT_SECRET:?}
-      FZL_CHAMADASONLINE_CLIENT_ID: ${FZL_CHAMADASONLINE_CLIENT_ID:-fzl-chamadasonline}
       # Microsoft (Azure/Entra ID) identity provider — opt-in, empty by
       # default. Only FZL_MICROSOFT_CLIENT_ID gates whether kc-setup creates
       # it; must always be *set* (even empty) so the Camel property
@@ -302,15 +298,6 @@ services:
       CONTATEMEANTES_DB_NAME: ${CONTATEMEANTES_DB_NAME:?}
       CONTATEMEANTES_DB_USER: ${CONTATEMEANTES_DB_USER:?}
       CONTATEMEANTES_DB_PASS: ${CONTATEMEANTES_DB_PASS:?}
-      # ChamadasOnline attendance bundle — own database/role in fzl-postgresql,
-      # isolated from fzldb/moodle/contatemeantes. See src-projects/karaf_bundles/
-      # blueprint-osgi-camel-bundles/chamadasonline.
-      CHAMADASONLINE_DB_HOST: fzl-postgresql
-      CHAMADASONLINE_DB_PORT: "5432"
-      CHAMADASONLINE_DB_NAME: ${CHAMADASONLINE_DB_NAME:?}
-      CHAMADASONLINE_DB_USER: ${CHAMADASONLINE_DB_USER:?}
-      CHAMADASONLINE_DB_PASS: ${CHAMADASONLINE_DB_PASS:?}
-      CHAMADASONLINE_JWT_SECRET: ${CHAMADASONLINE_JWT_SECRET:?}
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy

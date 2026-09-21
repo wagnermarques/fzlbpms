@@ -35,14 +35,6 @@
        roles as an ID-token claim. Flowable UI (docker-compose.yml) reads
        that claim to grant admin authorities ONLY to this user — every other
        realm user gets just 'access-task' by default.
-    10. Creates the {{FZL_CHAMADASONLINE_CLIENT_ID}} public client
-       (Authorization Code + PKCE), used by fzl-chamadasonline's PWA
-       (apps/web/src/lib/keycloak.ts) for staff/student login, plus its two
-       client roles 'chamadas-staff'/'chamadas-student' — checked by the
-       chamadasonline Karaf bundle's POST /chamadasonline/auth/keycloak
-       (src-projects/karaf_bundles/blueprint-osgi-camel-bundles/
-       chamadasonline). Actual role grants to real staff/student users are a
-       manual Keycloak admin task, not done here.
 
   Auth endpoints (port 9090):
     POST /fzlbpms/auth/login    {username, password}  → tokens
@@ -74,7 +66,6 @@
     FZL_MOODLE_CLIENT_SECRET — secret for the Moodle confidential client
     FZL_FLOWABLE_CLIENT_ID — confidential client id for Flowable UI's OIDC login
     FZL_FLOWABLE_CLIENT_SECRET — secret for the Flowable confidential client
-    FZL_CHAMADASONLINE_CLIENT_ID — public client id for fzl-chamadasonline's PKCE login
     FZL_MICROSOFT_CLIENT_ID — Azure/Entra App Registration's Application (client) ID.
                              Optional — the Microsoft identity provider is skipped
                              entirely if unset.
@@ -163,12 +154,6 @@
         <to uri="direct:kc-ensure-webapp-client"/>
         <to uri="direct:kc-ensure-moodle-client"/>
         <to uri="direct:kc-ensure-flowable-client"/>
-        <to uri="direct:kc-ensure-chamadasonline-client"/>
-        <to uri="direct:kc-get-chamadasonline-client-uuid"/>
-        <setProperty name="kc.roleName"><constant>chamadas-staff</constant></setProperty>
-        <to uri="direct:kc-ensure-chamadasonline-role"/>
-        <setProperty name="kc.roleName"><constant>chamadas-student</constant></setProperty>
-        <to uri="direct:kc-ensure-chamadasonline-role"/>
         <to uri="direct:kc-ensure-theia-client"/>
         <to uri="direct:kc-ensure-theia-role"/>
         <to uri="direct:kc-ensure-admin-user"/>
@@ -354,114 +339,6 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] Client '{{FZL_WEBAPP_CLIENT_ID}}' already exists."/>
-        </otherwise>
-      </choice>
-    </route>
-
-    <!-- ═══════════════════════════════════════════════════════════════════
-         ENSURE CHAMADASONLINE CLIENT (public, Authorization Code + PKCE)
-         Same shape as kc-ensure-webapp-client above — a browser SPA client,
-         not a confidential/server one — since fzl-chamadasonline's PWA
-         (apps/web, keycloak-js) runs entirely client-side from GitHub Pages.
-         redirectUris/webOrigins cover both the GH Pages deployment and a
-         local `npm run dev` (Vite default port 5173).
-         ═══════════════════════════════════════════════════════════════════ -->
-    <route id="kc-ensure-chamadasonline-client">
-      <from uri="direct:kc-ensure-chamadasonline-client"/>
-      <setBody><constant></constant></setBody>
-      <removeHeaders pattern="*"/>
-      <setHeader name="Authorization">
-        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
-      </setHeader>
-      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_CHAMADASONLINE_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
-      <choice>
-        <when>
-          <simple>${body} == '[]'</simple>
-          <setBody>
-            <simple>{"clientId":"{{FZL_CHAMADASONLINE_CLIENT_ID}}","name":"ChamadasOnline","description":"School attendance PWA — Authorization Code + PKCE login for staff/students","enabled":true,"publicClient":true,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"serviceAccountsEnabled":false,"attributes":{"pkce.code.challenge.method":"S256","post.logout.redirect.uris":"+"},"redirectUris":["https://wagnermarques.github.io/fzl-chamadasonline/*","http://localhost:5173/*"],"webOrigins":["https://wagnermarques.github.io","http://localhost:5173"]}</simple>
-          </setBody>
-          <removeHeaders pattern="*"/>
-          <setHeader name="Authorization">
-            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
-          </setHeader>
-          <setHeader name="Content-Type">
-            <constant>application/json</constant>
-          </setHeader>
-          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
-          <choice>
-            <when>
-              <simple>${header.CamelHttpResponseCode} == 201</simple>
-              <log message="[KC-SETUP] Public client '{{FZL_CHAMADASONLINE_CLIENT_ID}}' created."/>
-            </when>
-            <otherwise>
-              <log message="[KC-SETUP] ChamadasOnline client create returned ${header.CamelHttpResponseCode} — may already exist."/>
-            </otherwise>
-          </choice>
-        </when>
-        <otherwise>
-          <log message="[KC-SETUP] Client '{{FZL_CHAMADASONLINE_CLIENT_ID}}' already exists."/>
-        </otherwise>
-      </choice>
-    </route>
-
-    <!-- ═══════════════════════════════════════════════════════════════════
-         GET CHAMADASONLINE CLIENT UUID — direct:kc-get-chamadasonline-client-uuid
-         Same pattern as kc-get-flowable-client-uuid: the roles endpoint below
-         needs Keycloak's internal client uuid, not the clientId string.
-         ═══════════════════════════════════════════════════════════════════ -->
-    <route id="kc-get-chamadasonline-client-uuid">
-      <from uri="direct:kc-get-chamadasonline-client-uuid"/>
-      <setBody><constant></constant></setBody>
-      <removeHeaders pattern="*"/>
-      <setHeader name="Authorization">
-        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
-      </setHeader>
-      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId={{FZL_CHAMADASONLINE_CLIENT_ID}}&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
-      <choice>
-        <when>
-          <simple>${body} == '[]'</simple>
-          <log message="[KC-SETUP] WARNING — client '{{FZL_CHAMADASONLINE_CLIENT_ID}}' not found; cannot create its roles."/>
-        </when>
-        <otherwise>
-          <setProperty name="kc.chamadasonlineClientUuid">
-            <jsonpath>$[0].id</jsonpath>
-          </setProperty>
-        </otherwise>
-      </choice>
-    </route>
-
-    <!-- ═══════════════════════════════════════════════════════════════════
-         ENSURE ONE CHAMADASONLINE CLIENT ROLE
-         Parameterized by exchange property 'kc.roleName' (the caller invokes
-         this once per role: chamadas-staff, chamadas-student). Create-only,
-         idempotent (a 409 means it already exists) — unlike
-         kc-ensure-and-grant-flowable-role, this does NOT grant the role to
-         any user; real staff/student accounts get these roles assigned
-         manually in the Keycloak admin console (or via SSO auto-provisioning
-         in the chamadasonline bundle's POST /auth/keycloak, which promotes a
-         user to STAFF locally when the token already carries a staff-ish
-         role — see KeycloakLoginProcessor.java).
-         ═══════════════════════════════════════════════════════════════════ -->
-    <route id="kc-ensure-chamadasonline-role">
-      <from uri="direct:kc-ensure-chamadasonline-role"/>
-      <choice>
-        <when>
-          <simple>${exchangeProperty.kc.chamadasonlineClientUuid} == null</simple>
-          <log message="[KC-SETUP] WARNING — no ChamadasOnline client uuid; skipping role '${exchangeProperty.kc.roleName}'."/>
-        </when>
-        <otherwise>
-          <setBody>
-            <simple>{"name":"${exchangeProperty.kc.roleName}"}</simple>
-          </setBody>
-          <removeHeaders pattern="*"/>
-          <setHeader name="Authorization">
-            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
-          </setHeader>
-          <setHeader name="Content-Type">
-            <constant>application/json</constant>
-          </setHeader>
-          <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients/${exchangeProperty.kc.chamadasonlineClientUuid}/roles?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
-          <log message="[KC-SETUP] ChamadasOnline client role '${exchangeProperty.kc.roleName}' create returned ${header.CamelHttpResponseCode} — may already exist."/>
         </otherwise>
       </choice>
     </route>

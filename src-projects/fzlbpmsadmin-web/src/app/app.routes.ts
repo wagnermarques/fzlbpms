@@ -3,7 +3,6 @@ import { ViewHome } from './components/views/view-home/view-home';
 import { AppsHomeView } from './components/views/apps-home-view/apps-home-view';
 import { AuthCallbackView } from './components/views/auth-callback-view/auth-callback-view';
 import { ProcessDiagramView } from './components/views/process-diagram-view/process-diagram-view';
-import { ContatemeantesMapView } from './components/views/contatemeantes-map-view/contatemeantes-map-view';
 
 export const routes: Routes = [
   { path: '', component: ViewHome },
@@ -12,5 +11,4 @@ export const routes: Routes = [
   { path: 'process-diagram', component: ProcessDiagramView },
   { path: 'process-diagram/:key', component: ProcessDiagramView },
   { path: 'process-instances', component: ProcessDiagramView },
-  { path: 'contatemeantes-map', component: ContatemeantesMapView },
 ];

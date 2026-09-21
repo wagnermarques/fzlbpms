@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FzlBPMS — BPMN Drawer</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./">FzlBPMS — Modelador BPMN</a>
+  <span class="spacer"></span>
+  <button class="primary" id="btnNovo">+ Novo diagrama</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Diagramas de Processos BPMN <span class="spacer"></span><button id="btnImportar">Importar .bpmn</button></h2>
+    <input type="file" id="fileImport" accept=".bpmn,.xml,.bpmn20.xml" hidden>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Nome</th><th>Chave do Processo</th><th>Atualizado</th><th>Versão</th><th></th></tr></thead>
+      <tbody id="tbDiagramas"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<script src="js/storage.js"></script>
+<script src="js/flowable-moddle.js"></script>
+<script>
+function emptyRow(tbody, cols, msg) {
+  tbody.innerHTML = `<tr><td colspan="${cols}" class="empty">${esc(msg)}</td></tr>`;
+}
+
+function loadDiagramas() {
+  const tb = document.getElementById('tbDiagramas');
+  const list = Storage.getAll();
+  if (!list.length) return emptyRow(tb, 5, 'Nenhum diagrama cadastrado. Crie um novo ou importe um arquivo .bpmn.');
+  tb.innerHTML = list.map(d => `
+    <tr>
+      <td><a href="modeler.html?id=${encodeURIComponent(d.id)}"><strong>${esc(d.name)}</strong></a></td>
+      <td class="mono">${esc(d.processKey || '—')}</td>
+      <td>${fmtDate(d.updatedAt)}</td>
+      <td><span class="badge muted">v${d.version || 1}</span></td>
+      <td class="actions">
+        <a class="btn" href="modeler.html?id=${encodeURIComponent(d.id)}">Editar</a>
+        <button class="danger" data-del="${encodeURIComponent(d.id)}" data-name="${esc(d.name)}">Excluir</button>
+      </td>
+    </tr>`).join('');
+}
+
+document.getElementById('btnNovo').onclick = () => {
+  const name = prompt('Nome do diagrama:');
+  if (!name || !name.trim()) return;
+  const d = Storage.save({
+    name: name.trim(),
+    xml: newDiagramXml(name.trim()),
+  });
+  location.href = `modeler.html?id=${encodeURIComponent(d.id)}`;
+};
+
+document.getElementById('btnImportar').onclick = () => document.getElementById('fileImport').click();
+document.getElementById('fileImport').onchange = async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  try {
+    const xml = await file.text();
+    const name = file.name.replace(/\.(bpmn20\.xml|bpmn|xml)$/i, '');
+    const d = Storage.save({ name, xml });
+    location.href = `modeler.html?id=${encodeURIComponent(d.id)}`;
+  } catch (e) { toast('Erro ao ler arquivo: ' + e.message, 'error'); }
+  ev.target.value = '';
+};
+
+document.body.addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-del]');
+  if (!b) return;
+  if (!confirm(`Excluir o diagrama "${b.dataset.name}"?`)) return;
+  Storage.delete(b.dataset.del);
+  loadDiagramas();
+  toast('Diagrama excluído.', 'ok');
+});
+
+loadDiagramas();
+</script>
+</body>
+</html>

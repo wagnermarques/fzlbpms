@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# switch-domain.sh — switch the running fzlbpms stack between "localhost"
-# and a public domain (e.g. fzlbpms.com.br).
+# switch-domain.sh — switch the running fzlbpms stack between local
+# development (fzlbpms.local) and production (fzlbpms.com.br).
+#
+# Both environments require HTTPS:
+#   - In local development, HTTPS is enforced by Moodle OAuth2 and Keycloak SSO.
+#     Certificates are generated via mkcert and trusted local root CA.
+#   - In production, public SSL/TLS certificates protect fzlbpms.com.br.
 #
 # fzlbpmsadmin-web itself is domain-agnostic (the SPA derives its Keycloak
 # issuer from window.location.origin). What can't be dynamic:
@@ -19,8 +24,10 @@
 # This script updates .env, patches Moodle's already-installed config.php,
 # and restarts/re-runs exactly the services that need it. Safe to re-run.
 #
-# Usage: bin/switch-domain.sh localhost
-#        bin/switch-domain.sh fzlbpms.com.br
+# Usage:
+#   bin/switch-domain.sh fzlbpms.local
+#   bin/switch-domain.sh fzlbpms.com.br
+#   bin/switch-domain.sh -h | --help
 # =============================================================================
 set -euo pipefail
 
@@ -28,11 +35,81 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 log() { echo "[switch-domain] $*"; }
 
-DOMAIN="${1:-fzlbpms.local}"
-# Remap 'localhost' input to default development domain 'fzlbpms.local'
-if [ "$DOMAIN" = "localhost" ]; then
-    DOMAIN="fzlbpms.local"
+show_help() {
+    cat << 'EOF'
+Usage:
+  bin/switch-domain.sh <environment_or_domain>
+  bin/switch-domain.sh -h | --help
+
+Description:
+  Configures the running fzlbpms stack for either the local development
+  environment (fzlbpms.local) or production (fzlbpms.com.br).
+
+  Both environments strictly operate over HTTPS:
+  - In local development, HTTPS is mandatory for Keycloak SSO and Moodle OAuth2
+    token validation (plain http://localhost is rejected by Moodle).
+    Local TLS certificates are provided via mkcert and trusted local root CA.
+  - In production, HTTPS is provided via public domain certificates.
+
+Actions performed by this script:
+  1. Validates the environment / domain parameter.
+  2. For 'fzlbpms.local', ensures /etc/hosts maps 127.0.0.1 to fzlbpms.local.
+  3. Updates .env variables (FZL_PUBLIC_HOSTNAME, FZL_PUBLIC_PROTO,
+     MOODLE_WWWROOT, MOODLE_WS_URL, FZL_OAUTH2_COOKIE_SECURE).
+  4. Patches Moodle's installed config.php ($CFG->wwwroot) inside fzl-php8.3-fpm.
+  5. Restarts fzl-keycloak to apply the updated KC_HOSTNAME.
+  6. Re-registers SSO redirect URIs for clients (moodle, flowable,
+     fzlbpmsadmin-web, theia) via Keycloak's Admin REST API.
+  7. Restarts fzl-flowable-ui with the new OIDC issuer URI.
+  8. Recreates fzl-oauth2-proxy with the new issuer and cookie settings.
+  9. Re-runs moodle-oauth2-configurator to bind Moodle to Keycloak.
+
+Accepted Parameters:
+  fzlbpms.local        Configure stack for local development (https://fzlbpms.local)
+                       Aliases: 'local', 'dev'
+  fzlbpms.com.br       Configure stack for production (https://fzlbpms.com.br)
+                       Aliases: 'prod', 'production'
+  -h, --help           Show this help message and exit
+
+Examples:
+  ./bin/switch-domain.sh fzlbpms.local
+  ./bin/switch-domain.sh fzlbpms.com.br
+EOF
+}
+
+# Handle help flags before checking environment or files
+if [ $# -eq 0 ]; then
+    echo "[switch-domain] ERROR: Target domain or environment parameter is required." >&2
+    echo "[switch-domain] Accepted parameters: 'fzlbpms.local' or 'fzlbpms.com.br'." >&2
+    echo "[switch-domain] Run '$0 --help' for details." >&2
+    exit 1
 fi
+
+case "${1}" in
+    -h|--help|help)
+        show_help
+        exit 0
+        ;;
+    fzlbpms.local|local|dev|development)
+        DOMAIN="fzlbpms.local"
+        ;;
+    fzlbpms.com.br|prod|production)
+        DOMAIN="fzlbpms.com.br"
+        ;;
+    localhost|127.0.0.1)
+        echo "[switch-domain] ERROR: '$1' is not accepted." >&2
+        echo "[switch-domain] The fzlbpms stack strictly requires HTTPS for Keycloak SSO and Moodle OAuth2." >&2
+        echo "[switch-domain] Please use 'fzlbpms.local' for local development." >&2
+        echo "[switch-domain] Run '$0 --help' for details." >&2
+        exit 1
+        ;;
+    *)
+        echo "[switch-domain] ERROR: Invalid option '${1}'." >&2
+        echo "[switch-domain] This script only accepts 'fzlbpms.local' (development) or 'fzlbpms.com.br' (production)." >&2
+        echo "[switch-domain] Run '$0 --help' for details." >&2
+        exit 1
+        ;;
+esac
 
 ENV_FILE=".env"
 CONFIG_PHP="src-projects/var_www/html/moodle/config.php"
@@ -58,27 +135,17 @@ ensure_etc_hosts() {
     fi
 }
 
-if [[ "$DOMAIN" == *".local"* ]] || [ "$DOMAIN" = "fzlbpms.local" ]; then
+if [ "$DOMAIN" = "fzlbpms.local" ]; then
     ensure_etc_hosts "$DOMAIN"
 fi
 
-# fzlbpms.local and public domains use https (via mkcert / public TLS)
-if [ "$DOMAIN" = "127.0.0.1" ]; then
-    PROTO="http"
-else
-    PROTO="https"
-fi
+# Both fzlbpms.local and fzlbpms.com.br strictly use HTTPS.
+# Local development uses local trusted certificates (mkcert), and production uses public TLS.
+# HTTPS is mandatory for Moodle's OAuth2 issuer validation and Keycloak SSO cookies.
+PROTO="https"
+COOKIE_SECURE="true"
 NEW_WWWROOT="${PROTO}://${DOMAIN}/moodle"
 NEW_WS_URL="${PROTO}://${DOMAIN}/moodle/webservice/rest/server.php"
-
-# oauth2-proxy (the gate in front of /theia/) must not set a Secure cookie on
-# a plain-http stack — the browser would refuse to send it back and the login
-# would loop forever between Keycloak and /oauth2/start.
-if [ "$PROTO" = "https" ]; then
-    COOKIE_SECURE="true"
-else
-    COOKIE_SECURE="false"
-fi
 
 log "Domain: ${DOMAIN}  (proto: ${PROTO})"
 
@@ -194,17 +261,17 @@ if [ -n "$KC_READY" ]; then
         log "          and its blueprint deployed, then re-run this script."
     else
         update_client "$MOODLE_CLIENT" \
-            "[\"${PROTO}://${DOMAIN}/moodle/admin/oauth2callback.php\",\"http://localhost/moodle/admin/oauth2callback.php\"]" \
+            "[\"${PROTO}://${DOMAIN}/moodle/admin/oauth2callback.php\",\"https://fzlbpms.local/moodle/admin/oauth2callback.php\",\"http://localhost/moodle/admin/oauth2callback.php\"]" \
             ""
         update_client "$FLOWABLE_CLIENT" \
-            "[\"${PROTO}://${DOMAIN}/flowable-ui/*\",\"http://localhost/flowable-ui/*\",\"http://localhost:8080/flowable-ui/*\"]" \
+            "[\"${PROTO}://${DOMAIN}/flowable-ui/*\",\"https://fzlbpms.local/flowable-ui/*\",\"http://localhost/flowable-ui/*\",\"http://localhost:8080/flowable-ui/*\"]" \
             ""
         update_client "$WEBAPP_CLIENT" \
-            "[\"${PROTO}://${DOMAIN}/fzlbpmsadmin/*\",\"http://localhost/fzlbpmsadmin/*\",\"http://localhost:4200/*\"]" \
-            "[\"${PROTO}://${DOMAIN}\",\"http://localhost\",\"http://localhost:4200\"]"
+            "[\"${PROTO}://${DOMAIN}/fzlbpmsadmin/*\",\"https://fzlbpms.local/fzlbpmsadmin/*\",\"http://localhost/fzlbpmsadmin/*\",\"http://localhost:4200/*\"]" \
+            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost\",\"http://localhost:4200\"]"
         # oauth2-proxy's callback, which gates the Theia IDE at /theia/.
         update_client "$THEIA_CLIENT" \
-            "[\"${PROTO}://${DOMAIN}/oauth2/callback\",\"http://localhost/oauth2/callback\"]" \
+            "[\"${PROTO}://${DOMAIN}/oauth2/callback\",\"https://fzlbpms.local/oauth2/callback\",\"http://localhost/oauth2/callback\"]" \
             ""
     fi
 else

@@ -35,8 +35,20 @@ case "$TARGET" in
         ./bin/switch-domain.sh fzlbpms.com.br
         log "Successfully switched to PRODUCTION (fzlbpms.com.br)"
         ;;
+    -h|--help|help)
+        echo "Usage: $0 [dev|prod]"
+        echo ""
+        echo "Switch fzlbpms environment profile and configure domain settings."
+        echo ""
+        echo "Options:"
+        echo "  dev, local         Switch to development profile (.env.dev -> fzlbpms.local)"
+        echo "  prod, production   Switch to production profile (.env.prod -> fzlbpms.com.br)"
+        echo "  -h, --help         Show this help message"
+        exit 0
+        ;;
     *)
         echo "Usage: $0 [dev|prod]" >&2
+        echo "Run '$0 --help' for details." >&2
         exit 1
         ;;
 esac

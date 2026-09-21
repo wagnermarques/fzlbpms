@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="pingServiceBean" class="fzlbpms.chamadasonline.PingServiceBean" />
+
+	<bean id="dataSource" class="fzlbpms.chamadasonline.ChamadasOnlineDataSourceFactory"
+		factory-method="create" />
+
+	<bean id="jwtUtil" class="fzlbpms.chamadasonline.JwtUtil" factory-method="create" />
+
+	<bean id="keycloakTokenVerifier" class="fzlbpms.chamadasonline.KeycloakTokenVerifier"
+		factory-method="create" />
+
+	<bean id="authenticateProcessor" class="fzlbpms.chamadasonline.AuthenticateProcessor">
+		<property name="jwtUtil" ref="jwtUtil" />
+	</bean>
+
+	<bean id="requireStaffProcessor" class="fzlbpms.chamadasonline.RequireStaffProcessor">
+		<property name="jwtUtil" ref="jwtUtil" />
+	</bean>
+
+	<bean id="loginProcessor" class="fzlbpms.chamadasonline.LoginProcessor">
+		<property name="dataSource" ref="dataSource" />
+		<property name="jwtUtil" ref="jwtUtil" />
+	</bean>
+
+	<bean id="keycloakLoginProcessor" class="fzlbpms.chamadasonline.KeycloakLoginProcessor">
+		<property name="dataSource" ref="dataSource" />
+		<property name="jwtUtil" ref="jwtUtil" />
+		<property name="keycloakTokenVerifier" ref="keycloakTokenVerifier" />
+	</bean>
+
+	<bean id="meProcessor" class="fzlbpms.chamadasonline.MeProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="activeEventProcessor" class="fzlbpms.chamadasonline.ActiveEventProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="checkinProcessor" class="fzlbpms.chamadasonline.CheckinProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="createEventProcessor" class="fzlbpms.chamadasonline.CreateEventProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="createPeriodProcessor" class="fzlbpms.chamadasonline.CreatePeriodProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="rotateCodeProcessor" class="fzlbpms.chamadasonline.RotateCodeProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="listCheckinsProcessor" class="fzlbpms.chamadasonline.ListCheckinsProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="listFlaggedProcessor" class="fzlbpms.chamadasonline.ListFlaggedProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="reviewCheckinProcessor" class="fzlbpms.chamadasonline.ReviewCheckinProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="studentLookupProcessor" class="fzlbpms.chamadasonline.StudentLookupProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="issueEnrollmentCodeProcessor" class="fzlbpms.chamadasonline.IssueEnrollmentCodeProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="enrollDeviceProcessor" class="fzlbpms.chamadasonline.EnrollDeviceProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<camelContext id="chamadasonlineContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<onException>
+			<exception>java.lang.IllegalArgumentException</exception>
+			<exception>fzlbpms.chamadasonline.BadRequestException</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<!-- Same header-leak fix as contatemeantes.xml: the Jetty REST binding
+			     reuses the inbound request's Message for the response. -->
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>400</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<onException>
+			<exception>fzlbpms.chamadasonline.UnauthorizedException</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>401</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<onException>
+			<exception>fzlbpms.chamadasonline.ForbiddenException</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>403</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<onException>
+			<exception>fzlbpms.chamadasonline.NotFoundException</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>404</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<!-- CORS restricted to the GH Pages origin (unlike contatemeantes's
+		     enableCORS="true" wide-open default) since real Bearer tokens flow
+		     through this API. -->
+		<restConfiguration component="jetty"
+			port="9094"
+			bindingMode="off"
+			enableCORS="true">
+			<corsHeaders key="Access-Control-Allow-Origin" value="https://wagnermarques.github.io" />
+			<corsHeaders key="Access-Control-Allow-Methods" value="GET,POST,PATCH,OPTIONS" />
+			<corsHeaders key="Access-Control-Allow-Headers" value="Content-Type,Authorization" />
+		</restConfiguration>
+
+		<rest path="/chamadasonline">
+			<get path="/health">
+				<to uri="direct:health" />
+			</get>
+			<post path="/auth/login" consumes="application/json">
+				<to uri="direct:auth-login" />
+			</post>
+			<post path="/auth/keycloak" consumes="application/json">
+				<to uri="direct:auth-keycloak" />
+			</post>
+			<get path="/auth/me">
+				<to uri="direct:auth-me" />
+			</get>
+			<get path="/events/active">
+				<to uri="direct:events-active" />
+			</get>
+			<post path="/checkins" consumes="application/json">
+				<to uri="direct:checkins-create" />
+			</post>
+			<post path="/events" consumes="application/json">
+				<to uri="direct:events-create" />
+			</post>
+			<post path="/events/{id}/periods" consumes="application/json">
+				<to uri="direct:periods-create" />
+			</post>
+			<get path="/events/{eventId}/periods/{periodId}/code">
+				<to uri="direct:periods-code" />
+			</get>
+			<get path="/events/{eventId}/periods/{periodId}/checkins">
+				<to uri="direct:periods-checkins" />
+			</get>
+			<get path="/events/{eventId}/flagged">
+				<to uri="direct:events-flagged" />
+			</get>
+			<patch path="/checkins/{id}/review" consumes="application/json">
+				<to uri="direct:checkins-review" />
+			</patch>
+			<get path="/students/lookup">
+				<to uri="direct:students-lookup" />
+			</get>
+			<post path="/students/{id}/enrollment-code">
+				<to uri="direct:students-enrollment-code" />
+			</post>
+			<post path="/devices/enroll" consumes="application/json">
+				<to uri="direct:devices-enroll" />
+			</post>
+		</rest>
+
+		<route id="chamadasonline-health">
+			<from uri="direct:health" />
+			<removeHeaders pattern="*" />
+			<setBody>
+				<method ref="pingServiceBean" method="pingJson" />
+			</setBody>
+			<setHeader name="Content-Type">
+				<constant>application/json</constant>
+			</setHeader>
+		</route>
+
+		<!-- Rate limits mirror the Node source's per-route fastify-rate-limit
+		     config (routes/auth.ts: { max: 10, timeWindow: "1 minute" }),
+		     keyed per client IP (nginx sets X-Real-IP — see
+		     containers/fzl-nginx/nginx-shared/app-server.conf). -->
+		<route id="chamadasonline-auth-login">
+			<from uri="direct:auth-login" />
+			<throttle timePeriodMillis="60000">
+				<constant>10</constant>
+				<correlationExpression>
+					<simple>${header.X-Real-IP}</simple>
+				</correlationExpression>
+				<process ref="loginProcessor" />
+			</throttle>
+		</route>
+
+		<route id="chamadasonline-auth-keycloak">
+			<from uri="direct:auth-keycloak" />
+			<throttle timePeriodMillis="60000">
+				<constant>10</constant>
+				<correlationExpression>
+					<simple>${header.X-Real-IP}</simple>
+				</correlationExpression>
+				<process ref="keycloakLoginProcessor" />
+			</throttle>
+		</route>
+
+		<route id="chamadasonline-auth-me">
+			<from uri="direct:auth-me" />
+			<process ref="authenticateProcessor" />
+			<process ref="meProcessor" />
+		</route>
+
+		<route id="chamadasonline-events-active">
+			<from uri="direct:events-active" />
+			<process ref="authenticateProcessor" />
+			<process ref="activeEventProcessor" />
+		</route>
+
+		<!-- checkins.ts: { max: 5, timeWindow: "1 minute" } -->
+		<route id="chamadasonline-checkins-create">
+			<from uri="direct:checkins-create" />
+			<process ref="authenticateProcessor" />
+			<throttle timePeriodMillis="60000">
+				<constant>5</constant>
+				<correlationExpression>
+					<simple>${header.X-Real-IP}</simple>
+				</correlationExpression>
+				<process ref="checkinProcessor" />
+			</throttle>
+		</route>
+
+		<route id="chamadasonline-events-create">
+			<from uri="direct:events-create" />
+			<process ref="requireStaffProcessor" />
+			<process ref="createEventProcessor" />
+		</route>
+
+		<route id="chamadasonline-periods-create">
+			<from uri="direct:periods-create" />
+			<process ref="requireStaffProcessor" />
+			<process ref="createPeriodProcessor" />
+		</route>
+
+		<route id="chamadasonline-periods-code">
+			<from uri="direct:periods-code" />
+			<process ref="requireStaffProcessor" />
+			<process ref="rotateCodeProcessor" />
+		</route>
+
+		<route id="chamadasonline-periods-checkins">
+			<from uri="direct:periods-checkins" />
+			<process ref="requireStaffProcessor" />
+			<process ref="listCheckinsProcessor" />
+		</route>
+
+		<route id="chamadasonline-events-flagged">
+			<from uri="direct:events-flagged" />
+			<process ref="requireStaffProcessor" />
+			<process ref="listFlaggedProcessor" />
+		</route>
+
+		<route id="chamadasonline-checkins-review">
+			<from uri="direct:checkins-review" />
+			<process ref="requireStaffProcessor" />
+			<process ref="reviewCheckinProcessor" />
+		</route>
+
+		<route id="chamadasonline-students-lookup">
+			<from uri="direct:students-lookup" />
+			<process ref="requireStaffProcessor" />
+			<process ref="studentLookupProcessor" />
+		</route>
+
+		<!-- devices.ts: { max: 30, timeWindow: "1 minute" } -->
+		<route id="chamadasonline-students-enrollment-code">
+			<from uri="direct:students-enrollment-code" />
+			<process ref="requireStaffProcessor" />
+			<throttle timePeriodMillis="60000">
+				<constant>30</constant>
+				<correlationExpression>
+					<simple>${header.X-Real-IP}</simple>
+				</correlationExpression>
+				<process ref="issueEnrollmentCodeProcessor" />
+			</throttle>
+		</route>
+
+		<!-- devices.ts: { max: 10, timeWindow: "1 minute" } -->
+		<route id="chamadasonline-devices-enroll">
+			<from uri="direct:devices-enroll" />
+			<process ref="authenticateProcessor" />
+			<throttle timePeriodMillis="60000">
+				<constant>10</constant>
+				<correlationExpression>
+					<simple>${header.X-Real-IP}</simple>
+				</correlationExpression>
+				<process ref="enrollDeviceProcessor" />
+			</throttle>
+		</route>
+
+	</camelContext>
+
+</blueprint>

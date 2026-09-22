@@ -28,6 +28,7 @@ containers/fzl-superset/superset-home
 containers/fzl-nginx/certs/*.pem
 containers/fzl-php8.3-fpm/certs/*.crt
 containers/flowable-ui/certs/*.pem
+containers/fzl-flowable-ui/certs/*.pem
 containers/fzl-karaf-camel-integration/certs/*.pem
 containers/fzl-oauth2-proxy/certs/*.crt
 containers/fzl-theia/certs/*.crt

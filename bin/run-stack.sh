@@ -134,6 +134,20 @@ else
     # those sources exist as (empty) files first; the playbook fills them with
     # the real CA later (--tags certs).
     if [ "$DRY_RUN" != "1" ]; then
+        if command -v mkcert >/dev/null 2>&1; then
+            caroot="$(mkcert -CAROOT 2>/dev/null || true)"
+            if [ -n "$caroot" ] && [ -f "${caroot}/rootCA.pem" ]; then
+                for target in \
+                    "$PROJECT_DIR/containers/fzl-php8.3-fpm/certs/mkcert-ca.crt" \
+                    "$PROJECT_DIR/containers/fzl-flowable-ui/certs/mkcert-ca.pem" \
+                    "$PROJECT_DIR/containers/fzl-karaf-camel-integration/certs/mkcert-ca.pem" \
+                    "$PROJECT_DIR/containers/fzl-oauth2-proxy/certs/mkcert-ca.crt" \
+                    "$PROJECT_DIR/containers/fzl-theia/certs/mkcert-ca.crt"; do
+                    mkdir -p "$(dirname "$target")"
+                    cp -f "${caroot}/rootCA.pem" "$target"
+                done
+            fi
+        fi
         for cert in \
             "$PROJECT_DIR/containers/fzl-oauth2-proxy/certs/mkcert-ca.crt" \
             "$PROJECT_DIR/containers/fzl-theia/certs/mkcert-ca.crt"; do

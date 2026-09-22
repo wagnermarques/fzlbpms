@@ -135,8 +135,28 @@ ensure_etc_hosts() {
     fi
 }
 
+sync_mkcert_ca() {
+    if command -v mkcert >/dev/null 2>&1; then
+        local caroot
+        caroot="$(mkcert -CAROOT 2>/dev/null || true)"
+        if [ -n "$caroot" ] && [ -f "${caroot}/rootCA.pem" ]; then
+            log "Syncing host mkcert root CA (${caroot}/rootCA.pem) into container cert stores..."
+            for target in \
+                "containers/fzl-php8.3-fpm/certs/mkcert-ca.crt" \
+                "containers/fzl-flowable-ui/certs/mkcert-ca.pem" \
+                "containers/fzl-karaf-camel-integration/certs/mkcert-ca.pem" \
+                "containers/fzl-oauth2-proxy/certs/mkcert-ca.crt" \
+                "containers/fzl-theia/certs/mkcert-ca.crt"; do
+                mkdir -p "$(dirname "$target")"
+                cp -f "${caroot}/rootCA.pem" "$target"
+            done
+        fi
+    fi
+}
+
 if [ "$DOMAIN" = "fzlbpms.local" ]; then
     ensure_etc_hosts "$DOMAIN"
+    sync_mkcert_ca
 fi
 
 # Both fzlbpms.local and fzlbpms.com.br strictly use HTTPS.

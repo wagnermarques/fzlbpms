@@ -1,0 +1,103 @@
+#+TITLE: Chamadas Online - Apache Camel OSGi Blueprint Bundle
+#+AUTHOR: fzlbpms
+#+DATE: 2026-09-22
+#+STARTUP: showall
+
+* Visão Geral
+
+O bundle *chamadasonline* é um serviço OSGi Blueprint baseado em Apache Camel 3.21 executado no Apache Karaf, concebido como backend integrado para a aplicação PWA *fzl-chamadasonline* (Registro de Presença Escolar com defesas antifraude em múltiplas camadas).
+
+* Arquitetura e Componentes
+
+- *Porta Interna do Camel Jetty:* ~9094~ (definida via variável de ambiente ~FZL_KARAF_CHAMADAS_PORT=9094~)
+- *Proxy Reverso Nginx:*
+  - Caminho externo: ~https://fzlbpms.local/chamadas/...~
+  - Destino interno: ~http://fzl-karaf-camel-integration:9094/fzlbpms/chamadas/$1~
+  - Suporte completo a CORS (métodos ~GET~, ~POST~, ~PATCH~, ~OPTIONS~ e cabeçalhos ~Authorization, Content-Type, Accept~).
+- *Autenticação Keycloak:*
+  - Realm: ~fzlbpms~
+  - Client ID: ~fzl-chamadasonline~ (Public client, Standard Flow com PKCE S256)
+  - Redirect URIs: ~http://localhost:5173/*~ e ~https://wagnermarques.github.io/fzl-chamadasonline/*~
+  - Roles do Realm: ~chamadas-user~ (aluno) e ~chamadas-staff~ (professor/secretaria/administrador)
+- *Banco de Dados:*
+  - PostgreSQL container ~fzl-postgresql~, database ~fzldb~.
+  - Driver JDBC: ~org.postgresql.jdbc~ (42.7.4).
+
+* Defesas Antifraude Implementadas
+
+1. *Código Rotativo Dinâmico (Rotating Code):*
+   - Código alfanumérico aleatório de 5 caracteres gerado a cada 45 segundos por período de evento.
+   - Validação com tolerância para o código imediatamente anterior (~90 segundos).
+2. *Cerca Geográfica (Geofencing):*
+   - Cálculo esférico Haversine da distância entre as coordenadas do aluno (~lat~, ~lng~) e o ponto central do evento.
+   - Suporte adicional a polígonos GeoJSON (Point-in-Polygon).
+   - Se fora do raio ou polígono, o checkin é gravado como ~flagged = true~ com motivo ~outside_geofence~.
+3. *Vinculação Estrita de Dispositivo (Device Binding):*
+   - Dispositivos são identificados por ~clientToken~ e ~fingerprintHash~.
+   - O vínculo oficial de um aluno a um dispositivo é realizado pela secretaria/staff via código de 6 dígitos (validade de 120s).
+   - Caso um aluno possua dispositivo homologado e tente realizar checkin através de outro dispositivo não autorizado, a requisição é bloqueada (~403 Forbidden~).
+   - Se o mesmo dispositivo for usado para checkins de alunos diferentes no mesmo dia, o checkin é sinalizado como fraude (~device_bound_to_other_student~).
+4. *Resposta Furtiva (Stealth Mode):*
+   - Para o aluno, a submissão de checkin sempre responde ~200 OK~ (~{"status":"ok"}~) para evitar que fraudadores testem e contornem as regras de detecção. Todas as flags são gravadas internamente para auditoria e decisão da moderação.
+
+* Estrutura de Tabelas (PostgreSQL / ~fzldb~)
+
+- ~ChamadasRole~: Enum com valores ~'STUDENT'~ e ~'STAFF'~.
+- ~ChamadasUser~: Cadastro de usuários sincronizados via Keycloak ou inseridos manualmente.
+- ~ChamadasEvent~: Eventos/aulas com geofence (~geofenceLat~, ~geofenceLng~, ~geofenceRadiusMeters~, ~geofencePolygon~).
+- ~ChamadasEventPeriod~: Períodos/horários pertencentes a um evento (~startsAt~, ~endsAt~).
+- ~ChamadasCheckinCode~: Códigos rotativos de 5 caracteres com timestamp de emissão e expiração.
+- ~ChamadasDevice~: Dispositivos registrados com status de homologação (~verified~, ~verifiedByStaffId~).
+- ~ChamadasDeviceEnrollmentCode~: Códigos de uso único de 6 dígitos para homologação de celular na secretaria.
+- ~ChamadasCheckin~: Registros de presença com telemetria, distância, status de fraude (~flagged~), motivos (~flagReasons~) e moderação (~reviewed~, ~reviewDecision~).
+
+* Contratos da API REST (/chamadas/...)
+
+** Autenticação
+- ~POST /chamadas/auth/keycloak~:
+  - Body: ~{"keycloakToken": "<token>", "clientToken": "<uuid>"}~
+  - Retorno: ~{"accessToken": "<jwt-session>", "user": {...}}~
+- ~GET /chamadas/auth/me~:
+  - Header: ~Authorization: Bearer <token>~
+  - Retorno: dados do usuário autenticado.
+
+** Eventos e Períodos
+- ~GET /chamadas/events/active~:
+  - Retorna o evento e período ativo no momento (~{"active": true, "event": {...}, "period": {...}}~).
+- ~POST /chamadas/events~:
+  - Cria um novo evento com parâmetros de geofencing.
+- ~POST /chamadas/events/{id}/periods~:
+  - Cria períodos de aula/chamada dentro de um evento.
+- ~GET /chamadas/events/{eventId}/periods/{periodId}/code~:
+  - Retorna o código rotativo de 5 caracteres atual e o tempo restante (~secondsRemaining~).
+
+** Check-in e Moderação
+- ~POST /chamadas/checkins~:
+  - Body: ~{"eventPeriodId": "...", "code": "...", "clientToken": "...", "lat": -22.3, "lng": -49.0, "fingerprintHash": "..."}~
+  - Retorno: ~{"status": "ok"}~
+- ~GET /chamadas/events/{eventId}/periods/{periodId}/checkins~:
+  - Lista de presenças do período com detalhes e flags.
+- ~GET /chamadas/events/{eventId}/flagged~:
+  - Lista presenças suspeitas pendentes de moderação.
+- ~PATCH /chamadas/checkins/{id}/review~:
+  - Body: ~{"decision": "approved" | "rejected"}~
+  - Atualiza a decisão de moderação da presença.
+
+** Homologação de Dispositivos
+- ~GET /chamadas/students/lookup?registrationNumber={rm}~:
+  - Busca dados do aluno e status do dispositivo homologado.
+- ~POST /chamadas/students/{id}/enrollment-code~:
+  - Gera código numérico de 6 dígitos com expiração em 120s.
+- ~POST /chamadas/devices/enroll~:
+  - Body: ~{"code": "123456", "clientToken": "...", "fingerprintHash": "..."}~
+  - Vincula e homologa o aparelho para o aluno.
+
+* Compilação e Deploy
+
+O bundle utiliza o ~maven-bundle-plugin~ configurado no ~pom.xml~:
+
+#+begin_src bash
+mvn clean install -f src-projects/karaf_bundles/blueprint-osgi-camel-bundles/chamadasonline/pom.xml
+#+end_src
+
+O artefato gerado é automaticamente copiado para ~src-projects/karaf_deploy_dir/chamadasonline-1.0-SNAPSHOT.jar~, onde o Apache Karaf efetua o hot-deploy instantâneo através do Felix FileInstall.

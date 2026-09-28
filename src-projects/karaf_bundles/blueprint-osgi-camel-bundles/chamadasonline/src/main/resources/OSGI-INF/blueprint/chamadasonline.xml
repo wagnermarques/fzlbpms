@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<!-- Data Source connected to fzl-postgresql (fzldb) -->
+	<bean id="dataSource" class="fzlbpms.chamadas.ChamadasDataSourceFactory"
+		factory-method="create" />
+
+	<!-- Processors -->
+	<bean id="authProcessor" class="fzlbpms.chamadas.AuthProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="eventsProcessor" class="fzlbpms.chamadas.EventsProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="checkinProcessor" class="fzlbpms.chamadas.CheckinProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<bean id="deviceProcessor" class="fzlbpms.chamadas.DeviceProcessor">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<camelContext id="chamadasOnlineContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<onException>
+			<exception>java.lang.Exception</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>500</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json; charset=UTF-8</constant>
+			</setHeader>
+			<setHeader name="Access-Control-Allow-Origin">
+				<constant>*</constant>
+			</setHeader>
+			<setHeader name="Access-Control-Allow-Methods">
+				<constant>GET, POST, PATCH, OPTIONS</constant>
+			</setHeader>
+			<setHeader name="Access-Control-Allow-Headers">
+				<constant>Authorization, Content-Type, Accept</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"server_error","message":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<!-- Jetty REST Server on Port 9094 (proxied by Nginx /chamadas/ -> /fzlbpms/chamadas/) -->
+		<restConfiguration component="jetty"
+			port="9094"
+			bindingMode="off"
+			enableCORS="true" />
+
+		<rest path="/fzlbpms/chamadas">
+			<!-- Auth Endpoints -->
+			<post path="/auth/keycloak" consumes="application/json">
+				<to uri="direct:chamadas-auth-keycloak" />
+			</post>
+			<get path="/auth/me">
+				<to uri="direct:chamadas-auth-me" />
+			</get>
+
+			<!-- Events Endpoints -->
+			<get path="/events/active">
+				<to uri="direct:chamadas-events-active" />
+			</get>
+			<post path="/events" consumes="application/json">
+				<to uri="direct:chamadas-events-create" />
+			</post>
+			<post path="/events/{id}/periods" consumes="application/json">
+				<to uri="direct:chamadas-events-period-create" />
+			</post>
+			<get path="/events/{eventId}/periods/{periodId}/code">
+				<to uri="direct:chamadas-events-period-code" />
+			</get>
+
+			<!-- Checkins Endpoints -->
+			<post path="/checkins" consumes="application/json">
+				<to uri="direct:chamadas-checkin-submit" />
+			</post>
+			<get path="/events/{eventId}/periods/{periodId}/checkins">
+				<to uri="direct:chamadas-checkins-period" />
+			</get>
+			<get path="/events/{eventId}/flagged">
+				<to uri="direct:chamadas-checkins-flagged" />
+			</get>
+			<patch path="/checkins/{id}/review" consumes="application/json">
+				<to uri="direct:chamadas-checkin-review" />
+			</patch>
+
+			<!-- Device Binding Endpoints -->
+			<get path="/students/lookup">
+				<to uri="direct:chamadas-devices-lookup" />
+			</get>
+			<post path="/students/{id}/enrollment-code">
+				<to uri="direct:chamadas-devices-enrollment-code" />
+			</post>
+			<post path="/devices/enroll" consumes="application/json">
+				<to uri="direct:chamadas-devices-enroll" />
+			</post>
+		</rest>
+
+		<!-- Auth Routes -->
+		<route id="route-chamadas-auth-keycloak">
+			<from uri="direct:chamadas-auth-keycloak" />
+			<to uri="bean:authProcessor?method=handleKeycloakAuth" />
+		</route>
+		<route id="route-chamadas-auth-me">
+			<from uri="direct:chamadas-auth-me" />
+			<to uri="bean:authProcessor?method=handleAuthMe" />
+		</route>
+
+		<!-- Events Routes -->
+		<route id="route-chamadas-events-active">
+			<from uri="direct:chamadas-events-active" />
+			<to uri="bean:eventsProcessor?method=handleGetActiveEvent" />
+		</route>
+		<route id="route-chamadas-events-create">
+			<from uri="direct:chamadas-events-create" />
+			<to uri="bean:eventsProcessor?method=handleCreateEvent" />
+		</route>
+		<route id="route-chamadas-events-period-create">
+			<from uri="direct:chamadas-events-period-create" />
+			<to uri="bean:eventsProcessor?method=handleCreatePeriod" />
+		</route>
+		<route id="route-chamadas-events-period-code">
+			<from uri="direct:chamadas-events-period-code" />
+			<to uri="bean:eventsProcessor?method=handleGetRotatingCode" />
+		</route>
+
+		<!-- Checkins Routes -->
+		<route id="route-chamadas-checkin-submit">
+			<from uri="direct:chamadas-checkin-submit" />
+			<to uri="bean:checkinProcessor?method=handleCheckinSubmit" />
+		</route>
+		<route id="route-chamadas-checkins-period">
+			<from uri="direct:chamadas-checkins-period" />
+			<to uri="bean:checkinProcessor?method=handleListPeriodCheckins" />
+		</route>
+		<route id="route-chamadas-checkins-flagged">
+			<from uri="direct:chamadas-checkins-flagged" />
+			<to uri="bean:checkinProcessor?method=handleListFlaggedCheckins" />
+		</route>
+		<route id="route-chamadas-checkin-review">
+			<from uri="direct:chamadas-checkin-review" />
+			<to uri="bean:checkinProcessor?method=handleReviewCheckin" />
+		</route>
+
+		<!-- Device Binding Routes -->
+		<route id="route-chamadas-devices-lookup">
+			<from uri="direct:chamadas-devices-lookup" />
+			<to uri="bean:deviceProcessor?method=handleStudentLookup" />
+		</route>
+		<route id="route-chamadas-devices-enrollment-code">
+			<from uri="direct:chamadas-devices-enrollment-code" />
+			<to uri="bean:deviceProcessor?method=handleGenerateEnrollmentCode" />
+		</route>
+		<route id="route-chamadas-devices-enroll">
+			<from uri="direct:chamadas-devices-enroll" />
+			<to uri="bean:deviceProcessor?method=handleDeviceEnroll" />
+		</route>
+
+	</camelContext>
+
+</blueprint>

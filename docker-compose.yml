@@ -237,6 +237,8 @@ services:
       # Contatemeantes GPS tracking bundle — direct LAN access for mobile app
       # testing, ahead of an nginx proxy. Plain HTTP; dev-only.
       - "${FZL_KARAF_CONTATEMEANTES_PORT:-9093}:9093"
+      # Chamadas Online REST API — direct LAN access / dev port
+      - "${FZL_KARAF_CHAMADAS_PORT:-9094}:9094"
       # Task Today REST API — direct LAN access / dev port (nginx: /api/tasktoday/)
       - "${FZL_KARAF_TASKTODAY_PORT:-9095}:9095"
     environment:
@@ -300,6 +302,14 @@ services:
       CONTATEMEANTES_DB_NAME: ${CONTATEMEANTES_DB_NAME:?}
       CONTATEMEANTES_DB_USER: ${CONTATEMEANTES_DB_USER:?}
       CONTATEMEANTES_DB_PASS: ${CONTATEMEANTES_DB_PASS:?}
+      # Chamadas Online bundle — tables in fzldb (fzl-postgresql)
+      CHAMADAS_DB_HOST: fzl-postgresql
+      CHAMADAS_DB_PORT: "5432"
+      CHAMADAS_DB_NAME: ${FZL_POSTGRES_DB:-fzldb}
+      CHAMADAS_DB_USER: ${FZL_POSTGRES_USER:-postgres}
+      CHAMADAS_DB_PASS: ${FZL_POSTGRES_PASSWORD:-1234}
+      # HMAC key for the bundle's session tokens — no default on purpose.
+      CHAMADAS_JWT_SECRET: ${CHAMADAS_JWT_SECRET:?}
       # Task Today bundle — tasktoday_* tables in fzldb (fzl-postgresql).
       # Keycloak JWKS comes from KC_HOST/KC_HTTP_RELATIVE_PATH/FZL_REALM above.
       TASKTODAY_DB_HOST: fzl-postgresql

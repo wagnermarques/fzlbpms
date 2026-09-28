@@ -53,8 +53,8 @@ Defined on the =flowable= client:
 
 ** 5. Bootstrap Users & Role Mappings
 | Username | Purpose | Assigned Roles |
-|------------------+--------------------------------+---------------------------------------------------|
-| =fzlbpmsadmin= | Stack Superadmin | Realm Roles: =admin=, =theia-user= |
+|------------------+---------------------------------------+---------------------------------------------------|
+| =fzlbpmsadmin= | Stack Superadmin (Admin of all apps) | Realm Roles: =admin=, =theia-user=, =chamadas-user=; Flowable Client Roles: =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api= |
 | =moodle-admin= | Dedicated Moodle Site Admin | Site administrator via Moodle OAuth2 SSO |
 | =flowable-admin= | Dedicated Flowable Admin | Flowable Client Roles: =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api= |
 

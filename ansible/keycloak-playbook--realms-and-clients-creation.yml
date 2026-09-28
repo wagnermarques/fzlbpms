@@ -43,6 +43,8 @@
         description: "Permissao de acesso a IDE Theia no navegador (/theia/)"
       - name: "chamadas-user"
         description: "Permite login e acesso ao sistema Chamadas Online (GitHub Pages)"
+      - name: "chamadas-staff"
+        description: "Permite acesso de gestor/professor/secretaria ao sistema Chamadas Online"
       - name: "moodle-student"
         description: "Permite login e acesso de estudante ao Moodle LMS"
       - name: "tasktoday-admin"
@@ -82,7 +84,7 @@
 
     - name: Resolve Environment & Stack Variables
       ansible.builtin.set_fact:
-        keycloak_url: "{{ keycloak_url | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_URL') | default('http://localhost:' ~ (parsed_env_vars.FZL_KEYCLOAK_PORT | default('8083')), true)) }}"
+        keycloak_url: "{{ (keycloak_url | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_URL') | default('http://localhost:' ~ (parsed_env_vars.FZL_KEYCLOAK_PORT | default('8083')), true))) | regex_replace('/+$', '') }}{{ '' if (keycloak_url | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_URL') | default('http://localhost:' ~ (parsed_env_vars.FZL_KEYCLOAK_PORT | default('8083')), true))).endswith('/auth') else '/auth' }}"
         keycloak_admin_user: "{{ keycloak_admin_user | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_ADMIN_USER') | default(parsed_env_vars.FZL_KEYCLOAK_ADMIN_USER | default('admin'), true)) }}"
         keycloak_admin_password: "{{ keycloak_admin_password | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_ADMIN_PASSWORD') | default(parsed_env_vars.FZL_KEYCLOAK_ADMIN_PASSWORD | default('admin'), true)) }}"
         target_realm: "{{ target_realm | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_REALM') | default('fzlbpms', true)) }}"
@@ -184,15 +186,17 @@
             baseUrl: "https://wagnermarques.github.io/fzl-chamadasonline/"
             redirectUris:
               - "https://wagnermarques.github.io/fzl-chamadasonline/*"
+              - "http://localhost:5173/*"
               - "http://localhost:*"
               - "http://127.0.0.1:*"
             webOrigins:
               - "https://wagnermarques.github.io"
+              - "http://localhost:5173"
               - "http://localhost:*"
               - "+"
             attributes:
               "pkce.code.challenge.method": "S256"
-              "post.logout.redirect.uris": "https://wagnermarques.github.io/fzl-chamadasonline/*##http://localhost:*"
+              "post.logout.redirect.uris": "https://wagnermarques.github.io/fzl-chamadasonline/*##http://localhost:5173/*##http://localhost:*"
 
           # 7. fzl-tasktodayapp (Public - GitHub Pages SPA with PKCE; calls /api/tasktoday)
           #    3030 = vite dev, 4173 = vite preview.
@@ -307,35 +311,38 @@
         status_code: 200
       register: all_clients_res
 
-    - name: Ensure Stack Clients are created or updated
+    - name: Create Stack Client if missing
+      loop: "{{ stack_clients }}"
+      loop_control:
+        label: "{{ item.clientId }}"
+      vars:
+        existing_client_ids: "{{ all_clients_res.json | map(attribute='clientId') | list }}"
+      when: item.clientId not in existing_client_ids
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body: "{{ item }}"
+        status_code: 201
+
+    - name: Update Stack Client if already exists
       loop: "{{ stack_clients }}"
       loop_control:
         label: "{{ item.clientId }}"
       vars:
         client_matches: "{{ all_clients_res.json | selectattr('clientId', 'equalto', item.clientId) | list }}"
-      block:
-        - name: Create client if missing
-          when: client_matches | length == 0
-          ansible.builtin.uri:
-            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients"
-            method: POST
-            headers: "{{ auth_header }}"
-            body_format: json
-            body: "{{ item }}"
-            status_code: 201
-
-        - name: Update client if already exists
-          when: client_matches | length > 0
-          ansible.builtin.uri:
-            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ client_matches[0].id }}"
-            method: PUT
-            headers: "{{ auth_header }}"
-            body_format: json
-            body: "{{ item }}"
-            status_code: [200, 204]
+      when: client_matches | length > 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ client_matches[0].id }}"
+        method: PUT
+        headers: "{{ auth_header }}"
+        body_format: json
+        body: "{{ item }}"
+        status_code: [200, 204]
 
     # -------------------------------------------------------------------------
-    # 5. Flowable Client Roles Provisioning
+    # 5. Flowable Client Roles & Protocol Mappers Provisioning
     # -------------------------------------------------------------------------
     - name: Re-fetch clients to get Flowable internal ID
       ansible.builtin.uri:
@@ -355,14 +362,14 @@
       register: existing_flowable_roles_res
 
     - name: Create Flowable client roles if missing
-      when: flowable_client_info.json | length > 0
+      when:
+        - flowable_client_info.json | length > 0
+        - item not in (existing_flowable_roles_res.json | map(attribute='name') | list)
       loop: "{{ flowable_client_roles }}"
       loop_control:
         label: "{{ item }}"
       vars:
         flowable_id: "{{ flowable_client_info.json[0].id }}"
-        existing_names: "{{ existing_flowable_roles_res.json | map(attribute='name') | list }}"
-      when: item not in existing_names
       ansible.builtin.uri:
         url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ flowable_id }}/roles"
         method: POST
@@ -370,6 +377,41 @@
         body_format: json
         body:
           name: "{{ item }}"
+        status_code: 201
+
+    - name: Fetch existing protocol mappers for Flowable client
+      when: flowable_client_info.json | length > 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ flowable_client_info.json[0].id }}/protocol-mappers/models"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: flowable_mappers_res
+
+    - name: Ensure flowable-authorities-mapper protocol mapper exists
+      when:
+        - flowable_client_info.json | length > 0
+        - "'flowable-authorities-mapper' not in (flowable_mappers_res.json | map(attribute='name') | list)"
+      vars:
+        flowable_id: "{{ flowable_client_info.json[0].id }}"
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ flowable_id }}/protocol-mappers/models"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          name: "flowable-authorities-mapper"
+          protocol: "openid-connect"
+          protocolMapper: "oidc-usermodel-client-role-mapper"
+          consentRequired: false
+          config:
+            usermodel.clientRoleMapping.clientId: "flowable"
+            claim.name: "flowable_authorities"
+            jsonType.label: "String"
+            multivalued: "true"
+            id.token.claim: "true"
+            access.token.claim: "true"
+            userinfo.token.claim: "true"
         status_code: 201
 
     # -------------------------------------------------------------------------
@@ -391,7 +433,8 @@
             lastName: "Administrator"
             email: "{{ admin_username }}@fzlbpms.local"
             password: "{{ admin_password }}"
-            realm_roles: ["admin", "theia-user", "tasktoday-admin"]
+            realm_roles: ["admin", "theia-user", "chamadas-user", "chamadas-staff", "tasktoday-admin"]
+            flowable_client_roles: "{{ flowable_client_roles }}"
           - username: "{{ moodle_admin_username }}"
             firstName: "Moodle"
             lastName: "Administrator"
@@ -406,47 +449,48 @@
             realm_roles: []
             flowable_client_roles: "{{ flowable_client_roles }}"
 
-    - name: Ensure Users exist
+    - name: Create User if missing
+      loop: "{{ bootstrap_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+      vars:
+        existing_user_names: "{{ existing_users_res.json | map(attribute='username') | list }}"
+      when: item.username not in existing_user_names
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          username: "{{ item.username }}"
+          firstName: "{{ item.firstName }}"
+          lastName: "{{ item.lastName }}"
+          email: "{{ item.email }}"
+          enabled: true
+          emailVerified: true
+          credentials:
+            - type: "password"
+              value: "{{ item.password }}"
+              temporary: false
+        status_code: 201
+
+    - name: Reset password for existing user
       loop: "{{ bootstrap_users }}"
       loop_control:
         label: "{{ item.username }}"
       vars:
         existing_user_matches: "{{ existing_users_res.json | selectattr('username', 'equalto', item.username) | list }}"
-      block:
-        - name: Create User if missing
-          when: existing_user_matches | length == 0
-          ansible.builtin.uri:
-            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users"
-            method: POST
-            headers: "{{ auth_header }}"
-            body_format: json
-            body:
-              username: "{{ item.username }}"
-              firstName: "{{ item.firstName }}"
-              lastName: "{{ item.lastName }}"
-              email: "{{ item.email }}"
-              enabled: true
-              emailVerified: true
-              credentials:
-                - type: "password"
-                  value: "{{ item.password }}"
-                  temporary: false
-            status_code: 201
-
-        - name: Reset password for existing user
-          when: existing_user_matches | length > 0
-          vars:
-            user_id: "{{ existing_user_matches[0].id }}"
-          ansible.builtin.uri:
-            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ user_id }}/reset-password"
-            method: PUT
-            headers: "{{ auth_header }}"
-            body_format: json
-            body:
-              type: "password"
-              value: "{{ item.password }}"
-              temporary: false
-            status_code: 204
+      when: existing_user_matches | length > 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ existing_user_matches[0].id }}/reset-password"
+        method: PUT
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          type: "password"
+          value: "{{ item.password }}"
+          temporary: false
+        status_code: 204
 
     # -------------------------------------------------------------------------
     # 7. Role Mappings for Users
@@ -467,23 +511,25 @@
         status_code: 200
       register: all_realm_roles_res
 
-    - name: Assign Realm Roles to Admin User
+    - name: Assign Realm Roles to Users
+      loop: "{{ bootstrap_users }}"
+      loop_control:
+        label: "{{ item.username }}"
       vars:
-        admin_user_obj: "{{ updated_users_res.json | selectattr('username', 'equalto', admin_username) | list | first }}"
-        admin_roles_to_assign: "{{ all_realm_roles_res.json | selectattr('name', 'in', ['admin', 'theia-user']) | list }}"
-      when: admin_user_obj is defined and admin_roles_to_assign | length > 0
+        matched_user: "{{ (updated_users_res.json | selectattr('username', 'equalto', item.username) | list | first) | default({}) }}"
+        roles_to_assign: "{{ all_realm_roles_res.json | selectattr('name', 'in', item.realm_roles) | list }}"
+      when: matched_user.id is defined and roles_to_assign | length > 0
       ansible.builtin.uri:
-        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ admin_user_obj.id }}/role-mappings/realm"
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ matched_user.id }}/role-mappings/realm"
         method: POST
         headers: "{{ auth_header }}"
         body_format: json
-        body: "{{ admin_roles_to_assign }}"
+        body: "{{ roles_to_assign }}"
         status_code: 204
 
-    - name: Assign Flowable Client Roles to flowable-admin User
+    - name: Assign Flowable Client Roles to Designated Admins (flowable-admin & fzlbpmsadmin)
       when: flowable_client_info.json | length > 0
       vars:
-        flowable_user_obj: "{{ updated_users_res.json | selectattr('username', 'equalto', flowable_admin_username) | list | first }}"
         flowable_id: "{{ flowable_client_info.json[0].id }}"
       block:
         - name: Fetch latest flowable client roles
@@ -494,14 +540,20 @@
             status_code: 200
           register: fresh_flowable_roles_res
 
-        - name: Map Flowable roles to flowable-admin
-          when: flowable_user_obj is defined
+        - name: Map Flowable roles to flowable-admin and fzlbpmsadmin
+          loop: "{{ bootstrap_users | selectattr('flowable_client_roles', 'defined') | list }}"
+          loop_control:
+            label: "{{ item.username }}"
+          vars:
+            matched_user: "{{ (updated_users_res.json | selectattr('username', 'equalto', item.username) | list | first) | default({}) }}"
+            roles_to_map: "{{ fresh_flowable_roles_res.json | selectattr('name', 'in', item.flowable_client_roles) | list }}"
+          when: matched_user.id is defined and roles_to_map | length > 0
           ansible.builtin.uri:
-            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ flowable_user_obj.id }}/role-mappings/clients/{{ flowable_id }}"
+            url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ matched_user.id }}/role-mappings/clients/{{ flowable_id }}"
             method: POST
             headers: "{{ auth_header }}"
             body_format: json
-            body: "{{ fresh_flowable_roles_res.json }}"
+            body: "{{ roles_to_map }}"
             status_code: 204
 
     # -------------------------------------------------------------------------

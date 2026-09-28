@@ -44,7 +44,17 @@ else
 fi
 
 echo "==== EXECUTANDO CHOWN EM $KARAF_HOME ===="
-chown -R appuser:appuser "$KARAF_HOME"
+# Hand Karaf's own tree (etc, data, input/output dirs, ...) to appuser, but
+# NOT the two bind mounts whose files the HOST user authors:
+#   deploy_bundles = src-projects/karaf_bundles    (git-tracked bundle sources)
+#   deploy         = src-projects/karaf_deploy_dir (jars written by host mvn install)
+# A recursive chown there used to hand every source file and jar to uid 999
+# on each container start, leaving them read-only for the developer.
+# appuser only needs to READ those; the deploy dir itself is made writable so
+# Karaf's fileinstall can still drop state files next to the jars.
+find "$KARAF_HOME" \( -path "$KARAF_HOME/deploy_bundles" -o -path "$KARAF_HOME/deploy" \) -prune \
+  -o -exec chown appuser:appuser {} +
+chmod a+rwx "$KARAF_HOME/deploy"
 
 echo "==== INSPECIONANDO PERMISS�ES DEPOIS DO CHOWN ===="
 ls -la /opt/karaf

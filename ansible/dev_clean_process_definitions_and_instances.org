@@ -1,0 +1,333 @@
+#+TITLE: dev_clean_process_definitions_and_instances.yml
+#+AUTHOR: Claude Code
+#+DATE: 2026-08-11
+#+OPTIONS: toc:2 num:t
+
+* 1. Purpose
+
+Resets the *Flowable repository and runtime* back to an empty state, so a
+development environment can be rebuilt from scratch without recreating the
+Docker containers or dropping the database.
+
+It removes:
+
+- running process instances (and their tasks, variables and jobs)
+- process deployments, their process definitions and the associated history
+- form deployments and their form definitions
+- submitted form instances and the form values they stored
+- app deployments and their app definitions
+- optionally, the design-time Modeler models
+
+*This playbook is destructive and intended for development only.* There is no
+undo beyond a database backup taken beforehand (see [[*8. Backup and recovery][Backup and recovery]]).
+
+** What it does NOT touch
+
+| Area                       | Handled by                                        |
+|----------------------------+---------------------------------------------------|
+| Users, groups, privileges  | =dev_clean_flowable_users_groups_and_privs.yml=   |
+| Privilege definitions      | Never deleted by either playbook                  |
+| Modeler models (default)   | Kept unless =clean_modeler_models=true=           |
+| GitLab state               | Not in scope                                      |
+
+* 2. Design rationale
+
+Deletion goes through *each engine's own REST API* with =cascade=true= rather
+than issuing =DELETE= statements against the tables.
+
+This matters because Flowable spreads a single deployment across many tables
+(=ACT_RE_*=, =ACT_RU_*=, =ACT_HI_*=, =ACT_GE_BYTEARRAY=) tied together by
+foreign keys. Letting the engine cascade means:
+
+- the engine resolves referential integrity itself, in the correct order
+- no orphan rows are left in tables the playbook did not think to list
+- the engine's caches stay consistent with the database
+
+Direct SQL is used *only* for the things no engine REST API exposes: the
+design-time Modeler store (=ACT_DE_*=), the submitted form instances
+(=ACT_FO_FORM_INSTANCE=) and the optional deep sweep.
+
+** Why form instances need SQL
+
+Two independent reasons, both verified against Flowable 6.7.2:
+
+1. The Form engine REST API has no delete operation for them. The only
+   endpoints on =FormInstance= are =GET /form/form-instance/{id}=,
+   =GET /form/form-instances= and the two =POST= submit/query resources.
+2. Deleting the form deployment does not remove them either. The engine keeps
+   a submission after the definition it was filled in is gone, so an instance
+   that was cleaned by an earlier run of this playbook still leaves rows
+   behind:
+
+#+BEGIN_EXAMPLE
+form_deployments=0 form_definitions=0 form_instances=10 form_resources=10
+#+END_EXAMPLE
+
+The 10 =act_fo_form_resource= rows there are not deployed =.form= sources -
+they are the submitted values, referenced by
+=act_fo_form_instance.form_values_id_=. They have to be deleted *first*: once
+the instance table is empty nothing is left to identify them by.
+
+* 3. Prerequisites
+
+- =ansible-playbook= available on the host
+- the =fzl-flowable-ui= container running and reachable on =http://localhost:8080= (or port set in =.env=)
+- the =fzl-flowable-db= container running (needed for the verification
+  step, the Modeler cleanup and the optional deep sweep)
+- =docker= usable by the current user without =sudo=
+
+Quick check:
+
+#+BEGIN_SRC sh
+docker ps --filter name=fzl-flowable
+curl -s -o /dev/null -w '%{http_code}\n' -u admin:test \
+  http://localhost:8080/flowable-ui/process-api/repository/deployments
+#+END_SRC
+
+A =200= means the playbook can authenticate.
+
+* 4. Usage
+
+#+BEGIN_SRC sh
+# Interactive - prompts for confirmation before deleting anything
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml
+
+# Non-interactive - skips the confirmation prompt
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml -e force=true
+
+# Full blank slate, including the design-time Modeler models
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml \
+  -e clean_modeler_models=true
+
+# Keep the submitted form instances (they are deleted by default)
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml \
+  -e clean_form_instances=false
+
+# Also truncate any runtime/history rows the cascade left behind
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml \
+  -e deep_db_sweep=true
+#+END_SRC
+
+*Note:* do not pass =-k=. That flag is =--ask-pass= (SSH password); this play
+runs =hosts: localhost= with =connection: local=, so it would prompt for a
+credential that is never used.
+
+** Variables
+
+| Variable                  | Default                                                                 | Meaning                                                |
+|---------------------------+-------------------------------------------------------------------------+--------------------------------------------------------|
+| =flowable_base_url=       | =http://localhost:{{ flowable_port }}/flowable-ui= (port from =.env=)   | Root URL of the Flowable UI                         |
+| =process_api=             | =<base>/process-api=                                                    | Process engine REST root                               |
+| =app_api=                 | =<base>/app-api=                                                        | App engine REST root                                   |
+| =form_api=                | =<base>/form-api=                                                       | Form engine REST root                                  |
+| =flowable_admin_user=     | =admin=                                                                 | Account used for basic auth                            |
+| =flowable_admin_password= | =test=                                                                  | Password for that account                              |
+| =flowable_db_container=   | =fzl-flowable-db=                                                       | Container name for =docker exec psql=                  |
+| =flowable_db_user=        | =flowable= (from =FZL_FLOWABLE_DB_USER= in =.env=)                      | Postgres role                                          |
+| =flowable_db_name=        | =flowable= (from =FZL_FLOWABLE_DB_NAME= in =.env=)                      | Postgres database                                      |
+| =clean_modeler_models=    | =false=                                                                 | Delete design-time Modeler content (=ACT_DE_*=)        |
+| =clean_form_instances=    | =true=                                                                  | Delete submitted form instances (=ACT_FO_FORM_INSTANCE=) |
+| =deep_db_sweep=           | =false=                                                                 | =TRUNCATE= leftover =ACT_RU_*= / =ACT_HI_*= rows       |
+| =force=                   | =false=                                                                 | Skip the interactive confirmation prompt               |
+
+** Why =clean_modeler_models= defaults to false
+
+=ACT_DE_MODEL= holds the *design-time* models authored in the Flowable Modeler
+UI. Those are not "deployed" artifacts - they are source material, closer to a
+=.bpmn20.xml= file than to a running deployment. Deleting them removes your
+work from the Modeler, so it is opt-in.
+
+Deployed artifacts are always removed regardless of this flag.
+
+* 5. Execution flow
+
+#+BEGIN_SRC mermaid
+graph TD
+    A[Confirm prompt] --> B[Fetch instances, process/form/app deployments, form instances]
+    B --> C[Show what will be removed]
+    C --> D[Delete running process instances]
+    D --> E[Delete process deployments - cascade]
+    E --> F[Delete form deployments]
+    F --> F2{clean_form_instances}
+    F2 -->|true| F3[DELETE form values + ACT_FO_FORM_INSTANCE via psql]
+    F2 -->|false| G
+    F3 --> G[Delete app deployments - cascade]
+    G --> H{clean_modeler_models}
+    H -->|true| I[DELETE ACT_DE_* via psql]
+    H -->|false| J
+    I --> J{deep_db_sweep}
+    J -->|true| K[TRUNCATE ACT_RU_* / ACT_HI_*]
+    J -->|false| L[Count what remains]
+    K --> L
+    L --> M[Cleanup summary]
+#+END_SRC
+
+** Step detail
+
+1. *Confirm destructive operation* - an interactive =pause= listing the target
+   URL and the effective flags. Skipped when =force=true=.
+2. *Discovery* - four =GET= requests with =?size=10000= so the result is not
+   capped by the default page size of 10, plus one =GET
+   /form/form-instances?size=1= read only for its =total=, since the form
+   instances are deleted in bulk rather than one id at a time.
+3. *Build the deletion lists* - extracts the =id= of each returned object.
+4. *Show what will be removed* - counts, printed before anything is deleted.
+5. *Delete running process instances* - explicit, even though the deployment
+   cascade would also remove them. Doing it first keeps the report accurate and
+   fails loudly if an instance is locked.
+6. *Delete process deployments* with =?cascade=true= - removes the process
+   definitions and their history rows.
+7. *Delete form deployments*.
+8. *Delete submitted form instances* - conditional on =clean_form_instances=.
+   The =ACT_FO_FORM_RESOURCE= rows holding the submitted values go before
+   =ACT_FO_FORM_INSTANCE=, since they are only identifiable through it.
+9. *Delete app deployments* with =?cascade=true=.
+10. *Delete design-time Modeler models* - conditional. Child tables
+    (=ACT_DE_MODEL_RELATION=, =ACT_DE_MODEL_HISTORY=) go first so the
+    =ACT_DE_MODEL= foreign keys stay satisfied.
+11. *Deep sweep* - conditional =TRUNCATE=.
+12. *Count what remains* - a single read-only =SELECT=.
+13. *Cleanup summary* - what was deleted and what is left.
+
+Every REST =DELETE= accepts both =204= (deleted) and =404= (already gone), so
+the playbook is *idempotent*: a second run over an already-clean instance
+reports =changed=0= rather than failing. The form-instance step is idempotent
+in the same way - its =changed_when= only fires on a =DELETE n= with =n > 0=,
+so deleting nothing reports =ok=.
+
+* 6. REST endpoints used
+
+| Engine  | Operation           | Endpoint                                                       |
+|---------+---------------------+----------------------------------------------------------------|
+| Process | list instances      | =GET  /process-api/runtime/process-instances?size=10000=       |
+| Process | delete instance     | =DELETE /process-api/runtime/process-instances/{id}=           |
+| Process | list deployments    | =GET  /process-api/repository/deployments?size=10000=          |
+| Process | delete deployment   | =DELETE /process-api/repository/deployments/{id}?cascade=true= |
+| Form    | list deployments    | =GET  /form-api/form-repository/deployments?size=10000=        |
+| Form    | delete deployment   | =DELETE /form-api/form-repository/deployments/{id}=            |
+| Form    | count instances     | =GET  /form-api/form/form-instances?size=1= (read for =total=) |
+| App     | list deployments    | =GET  /app-api/app-repository/deployments?size=10000=          |
+| App     | delete deployment   | =DELETE /app-api/app-repository/deployments/{id}?cascade=true= |
+
+All three engines return the same envelope:
+
+#+BEGIN_SRC json
+{ "data": [ { "id": "...", "name": "...", "deploymentTime": "..." } ],
+  "total": 6, "start": 0, "size": 6 }
+#+END_SRC
+
+* 7. Database tables affected
+
+** Cleared indirectly, by the engine cascade
+
+| Group        | Tables                                                                 |
+|--------------+------------------------------------------------------------------------|
+| Repository   | =act_re_deployment=, =act_re_procdef=, =act_ge_bytearray=              |
+| App          | =act_app_deployment=, =act_app_deployment_resource=, =act_app_appdef=  |
+| Form         | =act_fo_form_deployment=, =act_fo_form_resource= (deployed =.form= sources), =act_fo_form_definition= |
+| Runtime      | =act_ru_execution=, =act_ru_task=, =act_ru_variable=, =act_ru_identitylink=, =act_ru_job=, ... |
+| History      | =act_hi_procinst=, =act_hi_taskinst=, =act_hi_actinst=, =act_hi_varinst=, =act_hi_detail=, ... |
+
+** Cleared by direct SQL
+
+| Condition                    | Tables                                                          |
+|------------------------------+-----------------------------------------------------------------|
+| =clean_modeler_models=true=  | =act_de_model_relation=, =act_de_model_history=, =act_de_model= |
+| =clean_form_instances=true=  | =act_fo_form_instance=, plus the =act_fo_form_resource= rows it points at through =form_values_id_= |
+| =deep_db_sweep=true=         | all =act_ru_*= and =act_hi_*= listed in the task                |
+
+The =TRUNCATE= list in the deep sweep is *foreign-key complete* - every table
+referencing another in the list is itself in the list. Postgres would otherwise
+reject the statement with /cannot truncate a table referenced in a foreign key
+constraint/.
+
+** Never touched
+
+=act_id_user=, =act_id_group=, =act_id_membership=, =act_id_priv=,
+=act_id_priv_mapping=, and all =*_databasechangelog= tables.
+
+* 8. Backup and recovery
+
+Take a backup before running, since there is no undo:
+
+#+BEGIN_SRC sh
+docker exec fzl-flowable-db pg_dump -U flowable -d flowable \
+  --data-only --column-inserts \
+  > flowable_backup_$(date +%Y%m%d_%H%M%S).sql
+#+END_SRC
+
+After cleaning, redeploy the BPMN processes and apps from the repository:
+
+#+BEGIN_SRC sh
+src-projects/flowable-processes/
+#+END_SRC
+
+That directory holds the BPMN process definitions (such as =moodle-provision-courses.bpmn20.xml=), so everything
+the playbook deletes can be recreated from version control.
+
+* 9. Verification
+
+The final task prints a one-line census straight from the database. A fully
+cleaned instance looks like:
+
+#+BEGIN_EXAMPLE
+process_deployments=0 process_definitions=0 app_deployments=0 app_definitions=0
+form_deployments=0 form_definitions=0 form_instances=0 form_resources=0
+modeler_models=1 running_executions=0 running_tasks=0 hist_instances=0
+hist_tasks=0 users=1 groups=0
+#+END_EXAMPLE
+
+=modeler_models=1= is expected with the default =clean_modeler_models=false=.
+=users=1= is the preserved =admin= account.
+
+To check by hand:
+
+#+BEGIN_SRC sh
+docker exec fzl-flowable-db psql -U flowable -d flowable \
+  -c "SELECT id_, name_ FROM act_re_deployment;" \
+  -c "SELECT id_, key_, name_, version_ FROM act_re_procdef;" \
+  -c "SELECT count(*) FROM act_ru_execution;" \
+  -c "SELECT count(*) FROM act_fo_form_instance;"
+#+END_SRC
+
+* 10. Troubleshooting
+
+| Symptom                                            | Cause and fix                                                                                   |
+|----------------------------------------------------+-------------------------------------------------------------------------------------------------|
+| =401 Unauthorized=                                 | =flowable_admin_password= is wrong, or the =admin= user was removed. Default is =admin:test=.    |
+| Connection refused on =:8080=                      | =fzl-flowable-ui= is not running. Run =./bin/run-stack.sh basic= and wait for startup.          |
+| =Error response from daemon: No such container=    | =flowable_db_container= does not match. Container should be =fzl-flowable-db=. Check =docker ps=. |
+| Playbook hangs with no output                      | The confirmation =pause= is waiting on stdin. Press ENTER, or pass =force=true=.                 |
+| =409= on a deployment delete                       | An instance still references it. Rerun - instances are deleted first.                            |
+| Rows remain in =act_hi_*= after a run              | History from an already-deleted deployment. Rerun with =deep_db_sweep=true=.                      |
+| Rows remain in =act_fo_form_instance= after a run  | The run had =clean_form_instances=false=. Rerun with the default.                                |
+| =act_fo_form_resource= non-zero, everything else 0 | Orphan submitted values from a run predating this step. Rerun to clear them.                     |
+| Only 10 items deleted per run                      | =?size=10000= was removed from a GET; the engine defaults to a page size of 10.                  |
+
+* 11. Related files
+
+| File                                                              | Purpose                                                                             |
+|-------------------------------------------------------------------+-------------------------------------------------------------------------------------|
+| =ansible/dev_clean_process_definitions_and_instances.yml=         | Removes running instances, deployments and definitions                               |
+| =ansible/dev_clean_flowable_users_groups_and_privs.yml=           | Removes IDM users, groups and privilege mappings                                   |
+| =ansible/dev_clean_flowable_users_groups_and_privs.org=           | Documentation for Flowable IDM users, groups, and privileges cleanup               |
+| =ansible/keycloak-playbook--realms-and-clients-creation.yml=       | Idempotently provisions Keycloak realm, users, and Flowable client roles            |
+| =ansible/setup-project.yml=                                       | Project bootstrap and mkcert certificate provisioning                               |
+
+** Typical full reset
+
+#+BEGIN_SRC sh
+# 1. Clean process instances, deployments, and definitions
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml -e force=true
+
+# 2. Clean Flowable IDM users/groups/privileges (keeps admin/flowable-admin/fzlbpmsadmin)
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml -e force=true
+
+# 3. If needed, re-provision Keycloak users and client roles
+ansible-playbook -i ansible/inventory.ini ansible/keycloak-playbook--realms-and-clients-creation.yml
+
+# 4. Then redeploy process definitions from src-projects/flowable-processes/
+#+END_SRC
+
+Clean the processes *before* the users: deleting a running instance is cleaner
+while the assignees it references still exist.

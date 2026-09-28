@@ -1,0 +1,338 @@
+---
+# DEV ONLY - Destructive playbook.
+#
+# Wipes the Flowable *repository* and *runtime*:
+#   - running process instances (and their tasks/variables/jobs)
+#   - process deployments and their process definitions + history
+#   - form deployments and their form definitions
+#   - submitted form instances and the form values they stored
+#   - app deployments and their app definitions
+#   - (optional) design-time Modeler models
+#
+# Deletion goes through each engine's REST API with cascade=true so the engine
+# itself resolves foreign keys, rather than deleting rows behind its back.
+# The exception is the submitted form instances: the Form engine REST API only
+# exposes GET/query/submit for them, so those go through SQL.
+#
+# Users, groups and privileges are NOT touched - use
+# dev_clean_flowable_users_groups_and_privs.yml for those.
+#
+# Usage:
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml -e force=true
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml -e clean_modeler_models=true
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml -e clean_form_instances=false
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_process_definitions_and_instances.yml -e deep_db_sweep=true
+- name: Clean all Process Definitions, Instances and Apps from Flowable (DEV)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    env_file_path: "{{ env_file | default(playbook_dir + '/../.env') }}"
+
+    flowable_admin_user: "{{ flowable_user | default(lookup('ansible.builtin.env', 'FLOWABLE_REST_ADMIN_USER') | default('admin', true)) }}"
+    flowable_admin_password: "{{ flowable_password | default(lookup('ansible.builtin.env', 'FLOWABLE_REST_ADMIN_PASSWORD') | default('test', true)) }}"
+
+    # Design-time Modeler content (ACT_DE_MODEL and friends) - what you see
+    # under "Modeler" in the UI. This is authored content, NOT something
+    # deployed to an engine, so it is kept by default.
+    # Enable with -e clean_modeler_models=true for a full blank slate.
+    clean_modeler_models: false
+
+    # Submitted form instances (ACT_FO_FORM_INSTANCE) and the values each one
+    # stored (ACT_FO_FORM_RESOURCE rows pointed at by FORM_VALUES_ID_).
+    # Deleting the form deployment does NOT remove them - the form engine keeps
+    # the submissions even after the definition they were filled in is gone -
+    # and the Form REST API has no delete endpoint for them, so this is SQL.
+    clean_form_instances: true
+
+    # Last-resort sweep of any ACT_RU_* / ACT_HI_* rows the cascade left behind.
+    # Off by default: the REST cascade should already leave these empty.
+    deep_db_sweep: false
+
+    # Set to true (-e force=true) to skip the interactive confirmation.
+    force: false
+
+  pre_tasks:
+    - name: Check if .env file exists
+      ansible.builtin.stat:
+        path: "{{ env_file_path }}"
+      register: env_file_stat
+
+    - name: Parse .env file if present
+      when: env_file_stat.stat.exists
+      block:
+        - name: Read .env content
+          ansible.builtin.slurp:
+            src: "{{ env_file_path }}"
+          register: env_file_content
+
+        - name: Set facts from parsed .env
+          ansible.builtin.set_fact:
+            parsed_env_vars: "{{ parsed_env_vars | default({}) | combine({ item.split('=', 1)[0].strip(): item.split('=', 1)[1].strip() }) }}"
+          loop: "{{ (env_file_content.content | b64decode).splitlines() }}"
+          when:
+            - item is defined
+            - item | trim | length > 0
+            - not (item | trim).startswith('#')
+            - "'=' in item"
+
+    - name: Resolve Flowable Database and Stack Variables
+      ansible.builtin.set_fact:
+        flowable_port: "{{ flowable_port | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_UI_PORT') | default(parsed_env_vars.FZL_FLOWABLE_UI_PORT | default('8080'), true)) }}"
+        flowable_db_container: "{{ flowable_db_container | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_DB_CONTAINER') | default('fzl-flowable-db', true)) }}"
+        flowable_db_user: "{{ flowable_db_user | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_DB_USER') | default(parsed_env_vars.FZL_FLOWABLE_DB_USER | default('flowable'), true)) }}"
+        flowable_db_name: "{{ flowable_db_name | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_DB_NAME') | default(parsed_env_vars.FZL_FLOWABLE_DB_NAME | default('flowable'), true)) }}"
+
+    - name: Resolve Flowable URLs and API Endpoints
+      ansible.builtin.set_fact:
+        flowable_base_url: "{{ (flowable_base_url | default(lookup('ansible.builtin.env', 'FLOWABLE_BASE_URL') | default('http://localhost:' ~ flowable_port ~ '/flowable-ui', true))) | regex_replace('/+$', '') }}"
+
+    - name: Set API endpoint facts
+      ansible.builtin.set_fact:
+        process_api: "{{ flowable_base_url }}/process-api"
+        app_api: "{{ flowable_base_url }}/app-api"
+        form_api: "{{ flowable_base_url }}/form-api"
+
+  tasks:
+    - name: Confirm destructive operation
+      ansible.builtin.pause:
+        prompt: |
+          *** WARNING ***
+          This will DELETE from Flowable at {{ flowable_base_url }}:
+            - ALL running process instances
+            - ALL process deployments / definitions and their history
+            - ALL form deployments / definitions
+            - ALL submitted form instances : {{ 'YES' if clean_form_instances | bool else 'no (kept)' }}
+            - ALL app deployments / definitions
+            - Modeler design-time models   : {{ 'YES' if clean_modeler_models | bool else 'no (kept)' }}
+            - Deep ACT_RU_/ACT_HI_ sweep   : {{ 'YES' if deep_db_sweep | bool else 'no' }}
+
+          Database container: {{ flowable_db_container }} (DB: {{ flowable_db_name }})
+          Users, groups and privileges are NOT affected.
+
+          Press ENTER to continue, or Ctrl+C then A to abort
+      when: not (force | bool)
+
+    # --- Discovery ----------------------------------------------------------
+    - name: Fetch running process instances
+      ansible.builtin.uri:
+        url: "{{ process_api }}/runtime/process-instances?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: runtime_instances_response
+
+    - name: Fetch process deployments
+      ansible.builtin.uri:
+        url: "{{ process_api }}/repository/deployments?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: process_deployments_response
+
+    - name: Fetch form deployments
+      ansible.builtin.uri:
+        url: "{{ form_api }}/form-repository/deployments?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: form_deployments_response
+
+    - name: Fetch submitted form instances
+      ansible.builtin.uri:
+        url: "{{ form_api }}/form/form-instances?size=1"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: form_instances_response
+
+    - name: Fetch app deployments
+      ansible.builtin.uri:
+        url: "{{ app_api }}/app-repository/deployments?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: app_deployments_response
+
+    - name: Build the deletion lists
+      ansible.builtin.set_fact:
+        instance_ids: "{{ runtime_instances_response.json.data | map(attribute='id') | list }}"
+        process_deployment_ids: "{{ process_deployments_response.json.data | map(attribute='id') | list }}"
+        form_deployment_ids: "{{ form_deployments_response.json.data | map(attribute='id') | list }}"
+        form_instance_count: "{{ form_instances_response.json.total }}"
+        app_deployment_ids: "{{ app_deployments_response.json.data | map(attribute='id') | list }}"
+
+    - name: Show what will be removed
+      ansible.builtin.debug:
+        msg:
+          - "Running process instances : {{ instance_ids | length }}"
+          - "Process deployments       : {{ process_deployment_ids | length }}"
+          - "Form deployments          : {{ form_deployment_ids | length }}"
+          - "Form instances            : {{ form_instance_count }}{{ '' if clean_form_instances | bool else ' (kept)' }}"
+          - "App deployments           : {{ app_deployment_ids | length }}"
+          - "Modeler models            : {{ 'will be deleted' if clean_modeler_models | bool else 'kept' }}"
+
+    # --- Runtime instances --------------------------------------------------
+    # Deleting the deployment with cascade=true would remove these too, but
+    # doing it explicitly keeps the report accurate and fails loudly if an
+    # instance is somehow locked.
+    - name: Delete running process instances
+      ansible.builtin.uri:
+        url: "{{ process_api }}/runtime/process-instances/{{ item }}"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204  # Deleted
+          - 404  # Already gone
+      loop: "{{ instance_ids }}"
+      loop_control:
+        label: "{{ item }}"
+      register: instance_cleanup
+      changed_when: instance_cleanup.status == 204
+
+    # --- Deployments --------------------------------------------------------
+    - name: Delete process deployments (cascade removes definitions and history)
+      ansible.builtin.uri:
+        url: "{{ process_api }}/repository/deployments/{{ item }}?cascade=true"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204
+          - 404
+      loop: "{{ process_deployment_ids }}"
+      loop_control:
+        label: "{{ item }}"
+      register: process_deployment_cleanup
+      changed_when: process_deployment_cleanup.status == 204
+
+    - name: Delete form deployments
+      ansible.builtin.uri:
+        url: "{{ form_api }}/form-repository/deployments/{{ item }}"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204
+          - 404
+      loop: "{{ form_deployment_ids }}"
+      loop_control:
+        label: "{{ item }}"
+      register: form_deployment_cleanup
+      changed_when: form_deployment_cleanup.status == 204
+
+    # --- Submitted form instances -------------------------------------------
+    # Not reachable through the Form REST API (GET/query/submit only) and not
+    # touched by the deployment delete, so they are removed with SQL.
+    # The value blobs go first: once ACT_FO_FORM_INSTANCE is empty there is no
+    # way left to tell which ACT_FO_FORM_RESOURCE rows were submissions and
+    # which are deployed .form sources.
+    - name: Delete submitted form instances and their stored values
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -c
+          "DELETE FROM act_fo_form_resource
+             WHERE id_ IN (SELECT form_values_id_ FROM act_fo_form_instance
+                            WHERE form_values_id_ IS NOT NULL);
+           DELETE FROM act_fo_form_instance;"
+      register: form_instance_cleanup
+      changed_when: form_instance_cleanup.stdout is search('DELETE [1-9]')
+      when: clean_form_instances | bool
+
+    - name: Delete app deployments (cascade removes app definitions)
+      ansible.builtin.uri:
+        url: "{{ app_api }}/app-repository/deployments/{{ item }}?cascade=true"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204
+          - 404
+      loop: "{{ app_deployment_ids }}"
+      loop_control:
+        label: "{{ item }}"
+      register: app_deployment_cleanup
+      changed_when: app_deployment_cleanup.status == 204
+
+    # --- Design-time Modeler content ----------------------------------------
+    # Not exposed by the engine REST APIs; ACT_DE_* is the Modeler's own store.
+    # Child tables go first so the ACT_DE_MODEL foreign keys stay satisfied.
+    - name: Delete design-time Modeler models
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -c
+          "DELETE FROM ACT_DE_MODEL_RELATION;
+           DELETE FROM ACT_DE_MODEL_HISTORY;
+           DELETE FROM ACT_DE_MODEL;"
+      register: modeler_cleanup
+      changed_when: modeler_cleanup.stdout is search('DELETE [1-9]')
+      when: clean_modeler_models | bool
+
+    # --- Optional deep sweep ------------------------------------------------
+    - name: Sweep leftover runtime and history rows
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -c
+          "TRUNCATE
+             act_ru_variable, act_ru_identitylink, act_ru_entitylink,
+             act_ru_task, act_ru_event_subscr, act_ru_actinst,
+             act_ru_job, act_ru_timer_job, act_ru_suspended_job,
+             act_ru_deadletter_job, act_ru_external_job, act_ru_history_job,
+             act_ru_execution,
+             act_hi_detail, act_hi_varinst, act_hi_identitylink,
+             act_hi_entitylink, act_hi_comment, act_hi_attachment,
+             act_hi_tsk_log, act_hi_taskinst, act_hi_actinst, act_hi_procinst;"
+      register: deep_sweep
+      changed_when: true
+      when: deep_db_sweep | bool
+
+    # --- Verification -------------------------------------------------------
+    - name: Count what remains in the Flowable DB
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -tAc
+          "SELECT 'process_deployments=' || (SELECT count(*) FROM act_re_deployment)
+               || ' process_definitions=' || (SELECT count(*) FROM act_re_procdef)
+               || ' app_deployments=' || (SELECT count(*) FROM act_app_deployment)
+               || ' app_definitions=' || (SELECT count(*) FROM act_app_appdef)
+               || ' form_deployments=' || (SELECT count(*) FROM act_fo_form_deployment)
+               || ' form_definitions=' || (SELECT count(*) FROM act_fo_form_definition)
+               || ' form_instances=' || (SELECT count(*) FROM act_fo_form_instance)
+               || ' form_resources=' || (SELECT count(*) FROM act_fo_form_resource)
+               || ' modeler_models=' || (SELECT count(*) FROM act_de_model)
+               || ' running_executions=' || (SELECT count(*) FROM act_ru_execution)
+               || ' running_tasks=' || (SELECT count(*) FROM act_ru_task)
+               || ' hist_instances=' || (SELECT count(*) FROM act_hi_procinst)
+               || ' hist_tasks=' || (SELECT count(*) FROM act_hi_taskinst)
+               || ' users=' || (SELECT count(*) FROM act_id_user)
+               || ' groups=' || (SELECT count(*) FROM act_id_group);"
+      register: final_counts
+      changed_when: false
+
+    - name: Cleanup summary
+      ansible.builtin.debug:
+        msg:
+          - "Deleted: {{ instance_ids | length }} instance(s), {{ process_deployment_ids | length }} process deployment(s), {{ form_deployment_ids | length }} form deployment(s), {{ form_instance_count if clean_form_instances | bool else 0 }} form instance(s), {{ app_deployment_ids | length }} app deployment(s)"
+          - "Remaining: {{ final_counts.stdout | trim }}"
+          - "Deploy processes from: src-projects/flowable-processes/ (or process-app/)"

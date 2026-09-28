@@ -1,0 +1,223 @@
+#+TITLE: dev_clean_flowable_users_groups_and_privs.yml
+#+AUTHOR: FzlSoft
+#+DATE: 2026-09-22
+#+OPTIONS: toc:2 num:t
+
+* 1. Purpose
+
+Resets the *Flowable IDM (Identity Management)* store back to a minimal, clean
+baseline state in a development environment, without destroying Docker containers
+or resetting the database.
+
+It removes:
+
+- all non-protected users (=ACT_ID_USER=)
+- all non-protected groups (=ACT_ID_GROUP=)
+- all group memberships (=ACT_ID_MEMBERSHIP=)
+- privilege mappings (=ACT_ID_PRIV_MAPPING=) assigned to removed users and groups
+- orphan membership and privilege rows
+
+*This playbook is destructive and intended for development only.* Critical administrative
+accounts (=admin=, =flowable-admin=, and =fzlbpmsadmin=) are protected by default
+so that Flowable UI and REST APIs remain accessible after execution.
+
+** What it does NOT touch
+
+| Area                          | Handled by / Notes                                            |
+|-------------------------------+---------------------------------------------------------------|
+| Process definitions & runtime | =dev_clean_process_definitions_and_instances.yml=              |
+| Form and App deployments      | =dev_clean_process_definitions_and_instances.yml=              |
+| Protected users               | Preserved (=admin=, =flowable-admin=, =fzlbpmsadmin=)         |
+| Privilege definitions         | =ACT_ID_PRIV= definitions are preserved; only mappings clean  |
+| Keycloak IAM Realm & Users    | Managed via =ansible/keycloak-playbook--realms-and-clients-creation.yml= |
+
+* 2. Design rationale
+
+This playbook uses a *hybrid approach*:
+
+1. *Flowable IDM REST API* is used for standard entity deletion:
+   - Group memberships (=DELETE /identity/groups/{groupId}/members/{userId}=)
+   - Groups (=DELETE /identity/groups/{groupId}=)
+   - Users (=DELETE /identity/users/{userId}=)
+2. *Direct PostgreSQL SQL* (=docker exec=) is used where the REST API provides no endpoints:
+   - Revoking privilege mappings (=ACT_ID_PRIV_MAPPING=)
+   - Sweeping orphan memberships and mappings
+
+** Why privilege mappings need SQL
+
+Flowable's `/process-api/identity` REST endpoints provide user, group, and membership
+management, but do *not* expose endpoint operations to delete rows from =ACT_ID_PRIV_MAPPING=.
+Direct SQL ensures privilege mappings are revoked cleanly before deleting users and groups,
+avoiding foreign-key violations and orphan mapping records.
+
+* 3. Prerequisites
+
+- =ansible-playbook= available on the host
+- the =fzl-flowable-ui= container running and reachable on =http://localhost:8080= (or port set in =.env=)
+- the =fzl-flowable-db= container running (needed for privilege cleanup and verification)
+- =docker= usable by the current user without =sudo=
+
+Quick check:
+
+#+BEGIN_SRC sh
+docker ps --filter name=fzl-flowable
+curl -s -o /dev/null -w '%{http_code}\n' -u admin:test \
+  http://localhost:8080/flowable-ui/process-api/identity/users
+#+END_SRC
+
+A =200= indicates the Flowable REST API is responsive and credentials are valid.
+
+* 4. Usage
+
+#+BEGIN_SRC sh
+# Interactive - prompts for confirmation before deleting anything
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml
+
+# Non-interactive - skips confirmation prompt
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml -e force=true
+
+# Custom protected users list
+ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml \
+  -e '{"protected_users":["admin","flowable-admin","fzlbpmsadmin","custom-user"]}'
+#+END_SRC
+
+*Note:* do not pass =-k=. That flag is =--ask-pass= (SSH password); this play
+runs =hosts: localhost= with =connection: local=, so it would prompt for a
+credential that is never used.
+
+** Variables
+
+| Variable                  | Default                                                                 | Meaning                                                |
+|---------------------------+-------------------------------------------------------------------------+--------------------------------------------------------|
+| =env_file=                | =../.env=                                                               | Path to stack environment file                         |
+| =flowable_port=           | =FZL_FLOWABLE_UI_PORT= from =.env= (default =8080=)                     | Host port for Flowable UI                              |
+| =flowable_base_url=       | =http://localhost:{{ flowable_port }}/flowable-ui=                       | Root URL of the Flowable UI                            |
+| =flowable_url=            | ={{ flowable_base_url }}/process-api=                                    | Process / IDM engine REST root                         |
+| =flowable_admin_user=     | =admin=                                                                 | Account used for Basic Auth                            |
+| =flowable_admin_password= | =test=                                                                  | Password for Basic Auth account                        |
+| =flowable_db_container=   | =fzl-flowable-db=                                                       | Container name for =docker exec psql=                  |
+| =flowable_db_user=        | =flowable= (from =FZL_FLOWABLE_DB_USER= in =.env=)                      | Postgres role                                          |
+| =flowable_db_name=        | =flowable= (from =FZL_FLOWABLE_DB_NAME= in =.env=)                      | Postgres database                                      |
+| =protected_users=         | =["admin", "flowable-admin", "fzlbpmsadmin"]=                           | Users exempt from deletion                             |
+| =protected_groups=        | =[]=                                                                    | Groups exempt from deletion                            |
+| =force=                   | =false=                                                                 | Skip the interactive confirmation prompt               |
+
+* 5. Execution flow
+
+#+BEGIN_SRC mermaid
+graph TD
+    A[Confirm prompt] --> B[Fetch IDM users and groups via REST]
+    B --> C[Filter out protected users & groups]
+    C --> D[Show what will be removed]
+    D --> E[Revoke privilege mappings via SQL ACT_ID_PRIV_MAPPING]
+    E --> F[Remove group memberships via REST]
+    F --> G[Delete non-protected groups via REST]
+    G --> H[Delete non-protected users via REST]
+    H --> I[Sweep orphan memberships and privileges via SQL]
+    I --> J[Re-read remaining users & groups via REST]
+    J --> K[Count remaining privilege mappings via SQL]
+    K --> L[Display Cleanup Summary]
+#+END_SRC
+
+** Step detail
+
+1. *Confirm destructive operation* - interactive pause detailing target URL,
+   container, database, and protected users. Skipped when =force=true=.
+2. *Fetch users and groups* - queries =/identity/users?size=10000= and =/identity/groups?size=10000=.
+3. *Build deletion lists* - excludes accounts in =protected_users= and =protected_groups=.
+4. *Revoke privilege mappings* - deletes entries from =ACT_ID_PRIV_MAPPING= for non-protected
+   users and groups using direct SQL.
+5. *Remove group memberships* - calls =DELETE /identity/groups/{groupId}/members/{userId}=
+   for each user/group pair.
+6. *Delete groups* - calls =DELETE /identity/groups/{groupId}=.
+7. *Delete users* - calls =DELETE /identity/users/{userId}=.
+8. *Sweep orphan entries* - runs SQL cleanup ensuring no orphan records in =ACT_ID_MEMBERSHIP=
+   or =ACT_ID_PRIV_MAPPING=.
+9. *Verification & Summary* - queries remaining users, groups, and privilege count,
+   printing a report.
+
+Every REST =DELETE= accepts both =204= (deleted) and =404= (already gone), ensuring
+*idempotency*.
+
+* 6. REST endpoints used
+
+| Entity      | Operation         | Endpoint                                                      |
+|-------------+-------------------+---------------------------------------------------------------|
+| User        | List users        | =GET  /process-api/identity/users?size=10000=                  |
+| User        | Delete user       | =DELETE /process-api/identity/users/{id}=                      |
+| Group       | List groups       | =GET  /process-api/identity/groups?size=10000=                 |
+| Group       | Delete group      | =DELETE /process-api/identity/groups/{id}=                     |
+| Membership  | Remove member     | =DELETE /process-api/identity/groups/{groupId}/members/{userId}= |
+
+* 7. Database tables affected
+
+| Table                 | Operation | Mechanism | Notes                                               |
+|-----------------------+-----------+-----------+-----------------------------------------------------|
+| =act_id_user=         | DELETE    | REST API  | Only non-protected users are removed                |
+| =act_id_group=        | DELETE    | REST API  | Only non-protected groups are removed               |
+| =act_id_membership=   | DELETE    | REST/SQL  | Deleted via REST membership call and orphan sweep   |
+| =act_id_priv_mapping= | DELETE    | SQL       | Privilege mappings for non-protected accounts       |
+
+** Never touched
+
+- =act_id_priv=: Privilege definitions (such as =access-admin=, =access-idm=, =access-modeler=, =access-task=, =access-rest-api=) are preserved.
+- =act_id_token=, =act_id_property=, =act_id_bytearray=.
+- All =ACT_RE_*=, =ACT_RU_*=, =ACT_HI_*=, =ACT_FO_*=, =ACT_DE_*= tables.
+
+* 8. Backup and recovery
+
+Take an IDM backup before running:
+
+#+BEGIN_SRC sh
+docker exec fzl-flowable-db pg_dump -U flowable -d flowable \
+  -t 'act_id_*' --data-only --column-inserts \
+  > flowable_idm_backup_$(date +%Y%m%d_%H%M%S).sql
+#+END_SRC
+
+** Re-provisioning Keycloak SSO Users & Roles
+
+In the FZLBPMS stack, user authentication and role mapping for the Flowable UI are primarily
+governed by Keycloak SSO. Re-provision Keycloak realm roles and Flowable client roles at any time:
+
+#+BEGIN_SRC sh
+ansible-playbook -i ansible/inventory.ini ansible/keycloak-playbook--realms-and-clients-creation.yml
+#+END_SRC
+
+* 9. Verification
+
+The final task prints remaining users, groups, and privilege counts. A typical clean state looks like:
+
+#+BEGIN_EXAMPLE
+Remaining users     : admin
+Remaining groups    : none
+Remaining privileges: 5 mapping(s)
+#+END_EXAMPLE
+
+To verify manually:
+
+#+BEGIN_SRC sh
+docker exec fzl-flowable-db psql -U flowable -d flowable \
+  -c "SELECT id_, first_, last_, email_ FROM act_id_user;" \
+  -c "SELECT id_, name_ FROM act_id_group;" \
+  -c "SELECT count(*) AS remaining_priv_mappings FROM act_id_priv_mapping;"
+#+END_SRC
+
+* 10. Troubleshooting
+
+| Symptom                                            | Cause and fix                                                                                   |
+|----------------------------------------------------+-------------------------------------------------------------------------------------------------|
+| =401 Unauthorized=                                 | =flowable_admin_password= is wrong, or =admin= was deleted. Default credentials are =admin:test=. |
+| Connection refused on =:8080=                      | =fzl-flowable-ui= is down. Start the stack with =./bin/run-stack.sh basic=.                     |
+| =Error response from daemon: No such container=    | Check that the database container is =fzl-flowable-db= (=docker ps=).                           |
+| Playbook pauses with no progress                   | Waiting for interactive confirmation. Press ENTER to proceed, or run with =-e force=true=.     |
+| Privilege count decreases unexpectedly             | An admin account was omitted from =protected_users=. Re-add it or re-map privileges in DB.      |
+
+* 11. Related files
+
+| File                                                              | Purpose                                                                             |
+|-------------------------------------------------------------------+-------------------------------------------------------------------------------------|
+| =ansible/dev_clean_flowable_users_groups_and_privs.yml=           | The playbook documented here                                                        |
+| =ansible/dev_clean_process_definitions_and_instances.yml=         | Removes running process instances, deployments, forms, and apps                    |
+| =ansible/dev_clean_process_definitions_and_instances.org=         | Documentation for process definitions and instances cleanup                         |
+| =ansible/keycloak-playbook--realms-and-clients-creation.yml=       | Provisions Keycloak realm, users, and Flowable client roles                         |
+| =ansible/inventory.ini=                                           | Ansible inventory configuration                                                     |

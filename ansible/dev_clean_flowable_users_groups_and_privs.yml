@@ -1,0 +1,284 @@
+---
+# DEV ONLY - Destructive playbook.
+#
+# Removes every user, group, group membership and privilege mapping from
+# Flowable IDM, except the accounts listed in `protected_users` /
+# `protected_groups` (by default the admin account used to talk to the API,
+# so the Flowable UI stays reachable afterwards).
+#
+# Usage:
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml -e force=true
+#   ansible-playbook -i ansible/inventory.ini ansible/dev_clean_flowable_users_groups_and_privs.yml -e '{"protected_users":["admin","flowable-admin"]}'
+#
+# Note: Stack users are managed by Keycloak SSO. Re-provision Keycloak roles/clients with:
+#   ansible-playbook -i ansible/inventory.ini ansible/keycloak-playbook--realms-and-clients-creation.yml
+- name: Clean all Users, Groups and Privileges from Flowable IDM (DEV)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    env_file_path: "{{ env_file | default(playbook_dir + '/../.env') }}"
+
+    flowable_admin_user: "{{ flowable_user | default(lookup('ansible.builtin.env', 'FLOWABLE_REST_ADMIN_USER') | default('admin', true)) }}"
+    flowable_admin_password: "{{ flowable_password | default(lookup('ansible.builtin.env', 'FLOWABLE_REST_ADMIN_PASSWORD') | default('test', true)) }}"
+
+    # Never delete these - keeps at least one usable admin account.
+    protected_users:
+      - "{{ flowable_admin_user }}"
+      - "flowable-admin"
+      - "fzlbpmsadmin"
+    protected_groups: []
+
+    # Set to true (-e force=true) to skip the interactive confirmation.
+    force: false
+
+  pre_tasks:
+    - name: Check if .env file exists
+      ansible.builtin.stat:
+        path: "{{ env_file_path }}"
+      register: env_file_stat
+
+    - name: Parse .env file if present
+      when: env_file_stat.stat.exists
+      block:
+        - name: Read .env content
+          ansible.builtin.slurp:
+            src: "{{ env_file_path }}"
+          register: env_file_content
+
+        - name: Set facts from parsed .env
+          ansible.builtin.set_fact:
+            parsed_env_vars: "{{ parsed_env_vars | default({}) | combine({ item.split('=', 1)[0].strip(): item.split('=', 1)[1].strip() }) }}"
+          loop: "{{ (env_file_content.content | b64decode).splitlines() }}"
+          when:
+            - item is defined
+            - item | trim | length > 0
+            - not (item | trim).startswith('#')
+            - "'=' in item"
+
+    - name: Resolve Flowable Database and Stack Variables
+      ansible.builtin.set_fact:
+        flowable_port: "{{ flowable_port | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_UI_PORT') | default(parsed_env_vars.FZL_FLOWABLE_UI_PORT | default('8080'), true)) }}"
+        flowable_db_container: "{{ flowable_db_container | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_DB_CONTAINER') | default('fzl-flowable-db', true)) }}"
+        flowable_db_user: "{{ flowable_db_user | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_DB_USER') | default(parsed_env_vars.FZL_FLOWABLE_DB_USER | default('flowable'), true)) }}"
+        flowable_db_name: "{{ flowable_db_name | default(lookup('ansible.builtin.env', 'FZL_FLOWABLE_DB_NAME') | default(parsed_env_vars.FZL_FLOWABLE_DB_NAME | default('flowable'), true)) }}"
+
+    - name: Resolve Flowable URLs and API Endpoints
+      ansible.builtin.set_fact:
+        flowable_base_url: "{{ (flowable_base_url | default(lookup('ansible.builtin.env', 'FLOWABLE_BASE_URL') | default('http://localhost:' ~ flowable_port ~ '/flowable-ui', true))) | regex_replace('/+$', '') }}"
+
+    - name: Set API endpoint facts
+      ansible.builtin.set_fact:
+        flowable_url: "{{ flowable_url | default(flowable_base_url ~ '/process-api') }}"
+
+  tasks:
+    - name: Confirm destructive operation
+      ansible.builtin.pause:
+        prompt: |
+          *** WARNING ***
+          This will DELETE ALL users, groups, memberships and privilege mappings
+          from Flowable at {{ flowable_url }}
+          (DB: {{ flowable_db_name }} in container {{ flowable_db_container }}).
+
+          Protected users : {{ protected_users | join(', ') | default('none', true) }}
+          Protected groups: {{ protected_groups | join(', ') | default('none', true) }}
+
+          Press ENTER to continue, or Ctrl+C then A to abort
+      when: not (force | bool)
+
+    - name: Fetch all users from Flowable IDM
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/users?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: flowable_users_response
+
+    - name: Fetch all groups from Flowable IDM
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/groups?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: flowable_groups_response
+
+    - name: Build the deletion lists (excluding protected entries)
+      ansible.builtin.set_fact:
+        users_to_delete: >-
+          {{ flowable_users_response.json.data
+             | map(attribute='id')
+             | reject('in', protected_users)
+             | list }}
+        groups_to_delete: >-
+          {{ flowable_groups_response.json.data
+             | map(attribute='id')
+             | reject('in', protected_groups)
+             | list }}
+
+    # Rendered as a SQL IN-list, e.g. ['admin'] -> "'admin'". An empty list
+    # becomes "''", which matches no real id and therefore protects nothing.
+    - name: Quote the protected entries for use in SQL
+      ansible.builtin.set_fact:
+        protected_users_sql: >-
+          {{ "'" ~ protected_users | join("', '") ~ "'" if protected_users | length > 0 else "''" }}
+        protected_groups_sql: >-
+          {{ "'" ~ protected_groups | join("', '") ~ "'" if protected_groups | length > 0 else "''" }}
+
+    - name: Show what will be removed
+      ansible.builtin.debug:
+        msg:
+          - "Users to delete  ({{ users_to_delete | length }}): {{ users_to_delete | join(', ') | default('none', true) }}"
+          - "Groups to delete ({{ groups_to_delete | length }}): {{ groups_to_delete | join(', ') | default('none', true) }}"
+          - "Kept users       : {{ protected_users | join(', ') | default('none', true) }}"
+
+    # --- Privileges ---------------------------------------------------------
+    # Done first: while the users/groups still exist the mapping rows are easy
+    # to scope, and it avoids leaving orphan rows behind.
+    - name: Revoke privilege mappings from users in Flowable DB
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -c
+          "DELETE FROM ACT_ID_PRIV_MAPPING
+           WHERE user_id_ IS NOT NULL
+             AND user_id_ NOT IN ({{ protected_users_sql }});"
+      register: user_priv_cleanup
+      changed_when: user_priv_cleanup.stdout is search('DELETE [1-9]')
+
+    - name: Revoke privilege mappings from groups in Flowable DB
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -c
+          "DELETE FROM ACT_ID_PRIV_MAPPING
+           WHERE group_id_ IS NOT NULL
+             AND group_id_ NOT IN ({{ protected_groups_sql }});"
+      register: group_priv_cleanup
+      changed_when: group_priv_cleanup.stdout is search('DELETE [1-9]')
+
+    # --- Memberships --------------------------------------------------------
+    - name: Remove users from their groups via Flowable IDM
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/groups/{{ item.0 }}/members/{{ item.1 }}"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204  # Removed
+          - 404  # Not a member / group already gone
+      loop: "{{ groups_to_delete | product(users_to_delete) | list }}"
+      loop_control:
+        label: "{{ item.1 }} -> {{ item.0 }}"
+      register: membership_cleanup
+      changed_when: membership_cleanup.status == 204
+      failed_when: membership_cleanup.status not in [204, 404]
+
+    # --- Groups -------------------------------------------------------------
+    - name: Delete groups from Flowable IDM
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/groups/{{ item }}"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204  # Deleted
+          - 404  # Already gone
+      loop: "{{ groups_to_delete }}"
+      loop_control:
+        label: "{{ item }}"
+      register: group_cleanup
+      changed_when: group_cleanup.status == 204
+
+    - name: Display group deletion status
+      ansible.builtin.debug:
+        msg: "Group '{{ item.item }}' -> {{ 'DELETED' if item.status == 204 else 'NOT FOUND / SKIPPED' }}"
+      loop: "{{ group_cleanup.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Users --------------------------------------------------------------
+    - name: Delete users from Flowable IDM
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/users/{{ item }}"
+        method: DELETE
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code:
+          - 204  # Deleted
+          - 404  # Already gone
+      loop: "{{ users_to_delete }}"
+      loop_control:
+        label: "{{ item }}"
+      register: user_cleanup
+      changed_when: user_cleanup.status == 204
+
+    - name: Display user deletion status
+      ansible.builtin.debug:
+        msg: "User '{{ item.item }}' -> {{ 'DELETED' if item.status == 204 else 'NOT FOUND / SKIPPED' }}"
+      loop: "{{ user_cleanup.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # --- Leftovers ----------------------------------------------------------
+    - name: Sweep orphan memberships and privilege mappings in Flowable DB
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -c
+          "DELETE FROM ACT_ID_MEMBERSHIP
+             WHERE user_id_ NOT IN (SELECT id_ FROM ACT_ID_USER)
+                OR group_id_ NOT IN (SELECT id_ FROM ACT_ID_GROUP);
+           DELETE FROM ACT_ID_PRIV_MAPPING
+             WHERE (user_id_ IS NOT NULL AND user_id_ NOT IN (SELECT id_ FROM ACT_ID_USER))
+                OR (group_id_ IS NOT NULL AND group_id_ NOT IN (SELECT id_ FROM ACT_ID_GROUP));"
+      register: orphan_cleanup
+      changed_when: orphan_cleanup.stdout is search('DELETE [1-9]')
+
+    # --- Verification -------------------------------------------------------
+    - name: Re-read remaining users
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/users?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: remaining_users
+
+    - name: Re-read remaining groups
+      ansible.builtin.uri:
+        url: "{{ flowable_url }}/identity/groups?size=10000"
+        method: GET
+        user: "{{ flowable_admin_user }}"
+        password: "{{ flowable_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: remaining_groups
+
+    - name: Count remaining privilege mappings
+      ansible.builtin.command:
+        cmd: >
+          docker exec {{ flowable_db_container }}
+          psql -U {{ flowable_db_user }} -d {{ flowable_db_name }} -tAc
+          "SELECT count(*) FROM ACT_ID_PRIV_MAPPING;"
+      register: remaining_privs
+      changed_when: false
+
+    - name: Cleanup summary
+      ansible.builtin.debug:
+        msg:
+          - "Remaining users     : {{ remaining_users.json.data | map(attribute='id') | join(', ') | default('none', true) }}"
+          - "Remaining groups    : {{ remaining_groups.json.data | map(attribute='id') | join(', ') | default('none', true) }}"
+          - "Remaining privileges: {{ remaining_privs.stdout | trim }} mapping(s)"
+          - "Keycloak SSO users can be re-provisioned with: ansible-playbook -i ansible/inventory.ini ansible/keycloak-playbook--realms-and-clients-creation.yml"

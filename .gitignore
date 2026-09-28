@@ -257,3 +257,8 @@ containers/fzl-karaf-camel-integration/custom_karaf_etc/etc-from-4.4.7/users.pro
 workspaces/fzlcoord/csvs-listas-de-alunos/
 /workspaces/prof-workspace/
 
+
+# Student grade / submission records (names of students) — personal data,
+# never publish to this public repository. Files stay local only.
+workspaces/etec-coord-workspace/app-dir--mencoes/**/*.csv
+workspaces/etec-coord-workspace/app-dir--mencoes/**/*.xlsx

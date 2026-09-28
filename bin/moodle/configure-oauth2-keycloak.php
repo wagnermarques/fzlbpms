@@ -96,16 +96,20 @@ try {
         echo "[oauth2-setup] 'oauth2' auth plugin already enabled.\n";
     }
 
-    // Promote Moodle's own dedicated SSO admin (FZL_MOODLE_ADMIN_USERNAME, the
-    // Keycloak user Camel bootstraps — see keycloak-admin-camel-context.xml)
-    // to Moodle site administrator. The Moodle account only exists after that
-    // user's FIRST Keycloak login, and auth_oauth2 creates it with the email
-    // as the username (e.g. 'moodle-admin@fzlbpms.local', not 'moodle-admin')
-    // — so match oauth2 accounts by exact username OR by the local-part of
+    // Promote designated Keycloak SSO users to Moodle site administrator.
+    // The Moodle account only exists after that user's FIRST Keycloak login,
+    // and auth_oauth2 creates it with the email as the username (e.g.
+    // 'fzlbpmsadmin@fzlbpms.local' or 'moodle-admin@fzlbpms.local') —
+    // so match oauth2 accounts by exact username OR by the local-part of
     // username/email.
     // Idempotent: appends to $CFG->siteadmins only when missing.
-    $ssoadmin = getenv('MOODLE_SITEADMIN_USERNAME');
-    if ($ssoadmin) {
+    $admin_usernames = array_filter(array_unique([
+        getenv('MOODLE_SITEADMIN_USERNAME') ?: 'moodle-admin',
+        getenv('FZLBPMS_ADMIN_USERNAME') ?: 'fzlbpmsadmin',
+        'moodle-admin',
+        'fzlbpmsadmin'
+    ]));
+    foreach ($admin_usernames as $ssoadmin) {
         $match = null;
         foreach ($DB->get_records('user', ['auth' => 'oauth2', 'deleted' => 0]) as $u) {
             if ($u->username === $ssoadmin

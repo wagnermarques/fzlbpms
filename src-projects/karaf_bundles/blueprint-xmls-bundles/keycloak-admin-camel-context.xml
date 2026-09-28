@@ -532,6 +532,33 @@
               </setHeader>
               <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.flowableAdminUserId}/role-mappings/clients/${exchangeProperty.kc.flowableClientUuid}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
               <log message="[KC-SETUP] Granted Flowable role '${exchangeProperty.kc.roleName}' to '{{FZL_FLOWABLE_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
+
+              <!-- Also grant Flowable role to fzlbpmsadmin (superadmin) -->
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZLBPMS_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+              <choice>
+                <when>
+                  <simple>${body} != '[]'</simple>
+                  <setProperty name="kc.fzlbpmsAdminUserId">
+                    <jsonpath>$[0].id</jsonpath>
+                  </setProperty>
+                  <setBody>
+                    <simple>[{"id":"${exchangeProperty.kc.roleId}","name":"${exchangeProperty.kc.roleName}"}]</simple>
+                  </setBody>
+                  <removeHeaders pattern="*"/>
+                  <setHeader name="Authorization">
+                    <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+                  </setHeader>
+                  <setHeader name="Content-Type">
+                    <constant>application/json</constant>
+                  </setHeader>
+                  <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.fzlbpmsAdminUserId}/role-mappings/clients/${exchangeProperty.kc.flowableClientUuid}?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+                  <log message="[KC-SETUP] Granted Flowable role '${exchangeProperty.kc.roleName}' to '{{FZLBPMS_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
+                </when>
+              </choice>
             </otherwise>
           </choice>
         </otherwise>

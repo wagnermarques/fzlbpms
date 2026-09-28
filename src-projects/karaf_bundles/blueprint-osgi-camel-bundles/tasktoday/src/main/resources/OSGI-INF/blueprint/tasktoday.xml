@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Task Today App (fzl-tasktodayapp PWA) backend.
+
+  External URL : https://<FZL_PUBLIC_HOSTNAME>/api/tasktoday/...
+  nginx        : /api/tasktoday/ → http://fzl-karaf-camel-integration:9095/fzlbpms/tasktoday/
+  Auth         : Keycloak access token (realm fzlbpms), RS256-verified against the realm JWKS;
+                 realm role tasktoday-admin may manage the shared native categories
+  Database     : fzl-postgresql / fzldb, tables tasktoday_* (schema applied by the Db bean)
+  Alarms       : timer every 30s → Web Push (VAPID) to the task owner's subscriptions
+
+  See ../../../../README.org for the API contract.
+-->
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="db" class="fzlbpms.tasktoday.Db" init-method="init" />
+
+	<bean id="jwtVerifier" class="fzlbpms.tasktoday.KeycloakJwtVerifier" />
+
+	<bean id="pushService" class="fzlbpms.tasktoday.PushService">
+		<property name="db" ref="db" />
+	</bean>
+
+	<bean id="errorResponder" class="fzlbpms.tasktoday.ErrorResponder" />
+
+	<bean id="tasksProcessor" class="fzlbpms.tasktoday.TasksProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+	</bean>
+
+	<bean id="categoriesProcessor" class="fzlbpms.tasktoday.CategoriesProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+	</bean>
+
+	<bean id="pushProcessor" class="fzlbpms.tasktoday.PushProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+		<property name="pushService" ref="pushService" />
+	</bean>
+
+	<bean id="alarmChecker" class="fzlbpms.tasktoday.AlarmChecker">
+		<property name="db" ref="db" />
+		<property name="pushService" ref="pushService" />
+	</bean>
+
+	<camelContext id="taskTodayContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<!-- ApiError → its 4xx JSON; anything else → logged 500 JSON. -->
+		<onException>
+			<exception>java.lang.Exception</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<bean ref="errorResponder" method="handle" />
+		</onException>
+
+		<!-- Own Jetty port (9090-9094 are taken by the other bundles). -->
+		<restConfiguration component="jetty"
+			port="9095"
+			bindingMode="off"
+			enableCORS="true">
+			<corsHeaders key="Access-Control-Allow-Methods" value="GET, POST, PUT, DELETE, OPTIONS" />
+			<corsHeaders key="Access-Control-Allow-Headers" value="Authorization, Content-Type, Accept" />
+		</restConfiguration>
+
+		<rest path="/fzlbpms/tasktoday">
+			<get path="/tasks">
+				<to uri="direct:tasktoday-tasks-list" />
+			</get>
+			<post path="/tasks" consumes="application/json">
+				<to uri="direct:tasktoday-tasks-create" />
+			</post>
+			<put path="/tasks/{id}" consumes="application/json">
+				<to uri="direct:tasktoday-tasks-update" />
+			</put>
+			<delete path="/tasks/{id}">
+				<to uri="direct:tasktoday-tasks-delete" />
+			</delete>
+
+			<get path="/categories">
+				<to uri="direct:tasktoday-categories-list" />
+			</get>
+			<post path="/categories" consumes="application/json">
+				<to uri="direct:tasktoday-categories-create" />
+			</post>
+			<put path="/categories/{id}" consumes="application/json">
+				<to uri="direct:tasktoday-categories-update" />
+			</put>
+			<delete path="/categories/{id}">
+				<to uri="direct:tasktoday-categories-delete" />
+			</delete>
+
+			<get path="/push/vapid-public-key">
+				<to uri="direct:tasktoday-push-vapid-key" />
+			</get>
+			<post path="/push/subscribe" consumes="application/json">
+				<to uri="direct:tasktoday-push-subscribe" />
+			</post>
+			<post path="/push/test">
+				<to uri="direct:tasktoday-push-test" />
+			</post>
+		</rest>
+
+		<route id="route-tasktoday-tasks-list">
+			<from uri="direct:tasktoday-tasks-list" />
+			<bean ref="tasksProcessor" method="list" />
+		</route>
+		<route id="route-tasktoday-tasks-create">
+			<from uri="direct:tasktoday-tasks-create" />
+			<bean ref="tasksProcessor" method="create" />
+		</route>
+		<route id="route-tasktoday-tasks-update">
+			<from uri="direct:tasktoday-tasks-update" />
+			<bean ref="tasksProcessor" method="update" />
+		</route>
+		<route id="route-tasktoday-tasks-delete">
+			<from uri="direct:tasktoday-tasks-delete" />
+			<bean ref="tasksProcessor" method="delete" />
+		</route>
+
+		<route id="route-tasktoday-categories-list">
+			<from uri="direct:tasktoday-categories-list" />
+			<bean ref="categoriesProcessor" method="list" />
+		</route>
+		<route id="route-tasktoday-categories-create">
+			<from uri="direct:tasktoday-categories-create" />
+			<bean ref="categoriesProcessor" method="create" />
+		</route>
+		<route id="route-tasktoday-categories-update">
+			<from uri="direct:tasktoday-categories-update" />
+			<bean ref="categoriesProcessor" method="update" />
+		</route>
+		<route id="route-tasktoday-categories-delete">
+			<from uri="direct:tasktoday-categories-delete" />
+			<bean ref="categoriesProcessor" method="delete" />
+		</route>
+
+		<route id="route-tasktoday-push-vapid-key">
+			<from uri="direct:tasktoday-push-vapid-key" />
+			<bean ref="pushProcessor" method="vapidPublicKey" />
+		</route>
+		<route id="route-tasktoday-push-subscribe">
+			<from uri="direct:tasktoday-push-subscribe" />
+			<bean ref="pushProcessor" method="subscribe" />
+		</route>
+		<route id="route-tasktoday-push-test">
+			<from uri="direct:tasktoday-push-test" />
+			<bean ref="pushProcessor" method="test" />
+		</route>
+
+		<!--
+		  The spec suggested quartz:taskAlarmChecker?cron=0/30+*+*+*+*+? — same
+		  cadence with Camel core's timer, so no camel-quartz feature (and image
+		  rebuild) is needed. Single consumer thread: runs never overlap.
+		-->
+		<route id="route-tasktoday-alarm-checker">
+			<from uri="timer:taskAlarmChecker?period=30000&amp;delay=20000" />
+			<bean ref="alarmChecker" method="check" />
+		</route>
+
+	</camelContext>
+
+</blueprint>

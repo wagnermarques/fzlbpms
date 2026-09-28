@@ -237,6 +237,8 @@ services:
       # Contatemeantes GPS tracking bundle — direct LAN access for mobile app
       # testing, ahead of an nginx proxy. Plain HTTP; dev-only.
       - "${FZL_KARAF_CONTATEMEANTES_PORT:-9093}:9093"
+      # Task Today REST API — direct LAN access / dev port (nginx: /api/tasktoday/)
+      - "${FZL_KARAF_TASKTODAY_PORT:-9095}:9095"
     environment:
       # Host is already NTP-synced and set to America/Sao_Paulo. Containers
       # share the host's clock but default to UTC for timezone *rendering*
@@ -298,6 +300,18 @@ services:
       CONTATEMEANTES_DB_NAME: ${CONTATEMEANTES_DB_NAME:?}
       CONTATEMEANTES_DB_USER: ${CONTATEMEANTES_DB_USER:?}
       CONTATEMEANTES_DB_PASS: ${CONTATEMEANTES_DB_PASS:?}
+      # Task Today bundle — tasktoday_* tables in fzldb (fzl-postgresql).
+      # Keycloak JWKS comes from KC_HOST/KC_HTTP_RELATIVE_PATH/FZL_REALM above.
+      TASKTODAY_DB_HOST: fzl-postgresql
+      TASKTODAY_DB_PORT: "5432"
+      TASKTODAY_DB_NAME: ${FZL_POSTGRES_DB:-fzldb}
+      TASKTODAY_DB_USER: ${FZL_POSTGRES_USER:-postgres}
+      TASKTODAY_DB_PASS: ${FZL_POSTGRES_PASSWORD:-1234}
+      # VAPID identity for Web Push. Leave the keys empty to have the bundle
+      # generate a pair on first start and keep it in tasktoday_vapid_keys.
+      TASKTODAY_VAPID_PUBLIC_KEY: ${TASKTODAY_VAPID_PUBLIC_KEY:-}
+      TASKTODAY_VAPID_PRIVATE_KEY: ${TASKTODAY_VAPID_PRIVATE_KEY:-}
+      TASKTODAY_VAPID_SUBJECT: ${TASKTODAY_VAPID_SUBJECT:-mailto:admin@fzlbpms.local}
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy

@@ -4,7 +4,7 @@
 #
 # Idempotent Keycloak provisioning playbook for the entire FZLBPMS stack:
 #   - Realm: fzlbpms
-#   - Realm Roles: admin, theia-user, chamadas-user, moodle-student
+#   - Realm Roles: admin, theia-user, chamadas-user, moodle-student, tasktoday-admin
 #   - Clients:
 #       1. fzlbpms-camel        (Confidential - Backend REST proxy)
 #       2. fzlbpmsadmin-web     (Public - Angular Web UI with PKCE)
@@ -12,6 +12,7 @@
 #       4. flowable             (Confidential - Flowable BPM UI SSO)
 #       5. theia                (Confidential - Theia IDE OAuth2 Proxy)
 #       6. fzl-chamadasonline   (Public - GitHub Pages SPA with PKCE)
+#       7. fzl-tasktodayapp     (Public - GitHub Pages SPA with PKCE)
 #   - Users:
 #       1. fzlbpmsadmin         (Stack Admin)
 #       2. moodle-admin         (Moodle Site Administrator)
@@ -44,6 +45,8 @@
         description: "Permite login e acesso ao sistema Chamadas Online (GitHub Pages)"
       - name: "moodle-student"
         description: "Permite login e acesso de estudante ao Moodle LMS"
+      - name: "tasktoday-admin"
+        description: "Administra as categorias nativas (compartilhadas) do Task Today App"
 
     # 2. Flowable Client Roles definition
     flowable_client_roles:
@@ -190,6 +193,32 @@
             attributes:
               "pkce.code.challenge.method": "S256"
               "post.logout.redirect.uris": "https://wagnermarques.github.io/fzl-chamadasonline/*##http://localhost:*"
+
+          # 7. fzl-tasktodayapp (Public - GitHub Pages SPA with PKCE; calls /api/tasktoday)
+          #    3030 = vite dev, 4173 = vite preview.
+          - clientId: "fzl-tasktodayapp"
+            name: "FZL Task Today App (GitHub Pages)"
+            enabled: true
+            publicClient: true
+            standardFlowEnabled: true
+            directAccessGrantsEnabled: false
+            rootUrl: "https://wagnermarques.github.io/fzl-tasktodayapp"
+            baseUrl: "https://wagnermarques.github.io/fzl-tasktodayapp/"
+            redirectUris:
+              - "https://wagnermarques.github.io/fzl-tasktodayapp/*"
+              - "http://localhost:3030/*"
+              - "http://localhost:4173/*"
+              - "http://localhost:*"
+              - "http://127.0.0.1:*"
+            webOrigins:
+              - "https://wagnermarques.github.io"
+              - "http://localhost:3030"
+              - "http://localhost:4173"
+              - "http://localhost:*"
+              - "+"
+            attributes:
+              "pkce.code.challenge.method": "S256"
+              "post.logout.redirect.uris": "https://wagnermarques.github.io/fzl-tasktodayapp/*##http://localhost:3030/*##http://localhost:4173/*##http://localhost:*##http://127.0.0.1:*"
 
   tasks:
     # -------------------------------------------------------------------------
@@ -362,7 +391,7 @@
             lastName: "Administrator"
             email: "{{ admin_username }}@fzlbpms.local"
             password: "{{ admin_password }}"
-            realm_roles: ["admin", "theia-user"]
+            realm_roles: ["admin", "theia-user", "tasktoday-admin"]
           - username: "{{ moodle_admin_username }}"
             firstName: "Moodle"
             lastName: "Administrator"

@@ -1,0 +1,269 @@
+#+TITLE: Task Today - Apache Camel OSGi Blueprint Bundle
+#+AUTHOR: fzlbpms
+#+DATE: 2026-09-28
+#+STARTUP: showall
+
+* Visão Geral
+
+Backend do PWA *fzl-tasktodayapp* (Task Today App): tarefas, categorias e
+alarmes via Web Push, em Apache Camel 3.21 no Karaf, com PostgreSQL (~fzldb~).
+Implementa a especificação ~docs/backend-karaf-camel-prompt.md~ daquele repositório.
+
+* Arquitetura
+
+- *Porta interna do Camel Jetty:* ~9095~ (exposta no host via ~FZL_KARAF_TASKTODAY_PORT~, padrão 9095)
+- *Proxy reverso Nginx:*
+  - Externo: ~https://<FZL_PUBLIC_HOSTNAME>/api/tasktoday/...~ (dev: ~https://fzlbpms.local/api/tasktoday~)
+  - Interno: ~http://fzl-karaf-camel-integration:9095/fzlbpms/tasktoday/...~
+  - Pré-voo CORS (~OPTIONS~) respondido pelo nginx; métodos ~GET, POST, PUT, DELETE~.
+- *Autenticação:* ~Authorization: Bearer <access token do Keycloak>~ do realm ~fzlbpms~.
+  - Assinatura RS256 verificada contra o JWKS do realm
+    (~http://fzl-keycloak:8080/auth/realms/fzlbpms/protocol/openid-connect/certs~, com cache por ~kid~).
+  - Também valida ~exp~/~nbf~ (30 s de tolerância) e ~iss~ terminando em ~/realms/fzlbpms~
+    (só o sufixo: o host público muda com ~switch-domain.sh~).
+  - O dono de cada registro é o ~sub~ do token. Registros de outro usuário respondem 404.
+  - Papel de realm ~tasktoday-admin~ (em ~realm_access.roles~ do token): pode criar, editar e
+    remover as categorias nativas, compartilhadas por todos. Atribuído ao ~fzlbpmsadmin~.
+- *Banco:* ~fzl-postgresql~ / ~fzldb~. O script ~src/main/resources/sql/schema.sql~
+  (idempotente) é aplicado automaticamente na subida do bundle, ou no primeiro uso se o
+  PostgreSQL ainda não estiver no ar.
+- *Alarmes:* rota ~timer:taskAlarmChecker~ a cada 30 s (mesma cadência do
+  ~quartz ... cron=0/30~ sugerido na especificação, sem precisar da feature ~camel-quartz~).
+- *Web Push:* criptografia ~aes128gcm~ (RFC 8291) e VAPID ES256 (RFC 8292) implementados
+  com a criptografia do próprio JDK (~WebPush.java~), sem BouncyCastle, e testados contra
+  o exemplo do Apêndice A da RFC 8291.
+
+* Tabelas (~fzldb~)
+
+| Tabela                          | Conteúdo                                                        |
+|---------------------------------+-----------------------------------------------------------------|
+| ~tasktoday_categories~          | 4 categorias nativas (~user_id~ NULL) + categorias do usuário   |
+| ~tasktoday_tasks~               | tarefas; índices ~idx_tasks_user_deadline~, ~idx_tasks_status~  |
+| ~tasktoday_push_subscriptions~  | inscrições Web Push; ~id~ = SHA-256 (hex) do ~endpoint~         |
+| ~tasktoday_vapid_keys~          | par VAPID gerado na primeira subida (linha única, ~id = 1~)     |
+
+Categorias nativas (mesmos ids que o PWA semeia offline): ~cat-cursos~,
+~cat-cotidianas~, ~cat-financeira~, ~cat-pessoais~.
+
+* Variáveis de Ambiente (container ~fzl-karaf-camel-integration~)
+
+| Variável                                    | Padrão                          |
+|---------------------------------------------+---------------------------------|
+| ~TASKTODAY_DB_HOST~ / ~_PORT~ / ~_NAME~     | ~fzl-postgresql~ / 5432 / ~fzldb~ |
+| ~TASKTODAY_DB_USER~ / ~_PASS~               | ~FZL_POSTGRES_USER~ / ~FZL_POSTGRES_PASSWORD~ |
+| ~KC_HOST~, ~KC_HTTP_RELATIVE_PATH~, ~FZL_REALM~ | ~fzl-keycloak~, ~/auth~, ~fzlbpms~ (já existentes) |
+| ~TASKTODAY_KEYCLOAK_URL~                    | sobrescreve ~http://KC_HOST:8080/KC_HTTP_RELATIVE_PATH~ |
+| ~TASKTODAY_VAPID_PUBLIC_KEY~ / ~_PRIVATE_KEY~ | vazio → par gerado e salvo em ~tasktoday_vapid_keys~ |
+| ~TASKTODAY_VAPID_SUBJECT~                   | ~mailto:admin@fzlbpms.local~    |
+| ~TASKTODAY_PUSH_ALLOWED_HOSTS~              | extra (CSV) além de FCM, Mozilla, Apple e WNS |
+
+Os endpoints de inscrição são restritos aos serviços de push dos navegadores
+(~fcm.googleapis.com~, ~push.services.mozilla.com~, ~push.apple.com~,
+~notify.windows.com~), porque o servidor faz POST para a URL registrada.
+
+* Contrato da API REST
+
+Base: ~https://fzlbpms.local/api/tasktoday~. JSON em camelCase (modelo do PWA,
+~src/services/task-service.js~). Datas em ISO-8601 UTC (~Date.toISOString()~).
+Todas as rotas exigem ~Authorization: Bearer <token>~, exceto ~GET /push/vapid-public-key~.
+
+Erros: ~{"error": "<codigo>", "message": "<texto>"}~ com status
+400 (~bad_request~), 401 (~unauthorized~), 403 (~forbidden~), 404 (~not_found~),
+409 (~conflict~) ou 500 (~server_error~).
+
+** Tarefas
+
+*** ~GET /tasks~
+
+Query params, todos opcionais (mesma semântica de ~TaskService.filterTasks()~):
+
+| Param              | Valores                                          | Padrão        |
+|--------------------+--------------------------------------------------+---------------|
+| ~deadline_scope~   | ~overdue~, ~today~, ~this_week~, ~all~           | ~all~         |
+| ~category_id~      | id da categoria ou ~all~                         | ~all~         |
+| ~priority~         | ~BAIXA~, ~MEDIA~, ~ALTA~, ~URGENTE~, ~all~       | ~all~         |
+| ~status~           | ~PENDENTE~, ~EM_ANDAMENTO~, ~CONCLUIDA~, ~all~   | ~all~         |
+| ~include_archived~ | ~false~, ~true~, ~only~                          | ~false~       |
+| ~q~                | busca (ILIKE) em título e descrição              |               |
+| ~tz~               | fuso IANA para "hoje"/"semana"                   | ~America/Sao_Paulo~ |
+
+~overdue~ = prazo já passou e não concluída; ~today~ = prazo no dia corrente;
+~this_week~ = de hoje 00:00 até +7 dias. Ordem: prazo crescente (sem prazo por último).
+
+Resposta ~200~:
+#+begin_src json
+[
+  {
+    "id": "task-1759090000000-a1b2",
+    "title": "Revisar módulo de Arquitetura Apache Camel",
+    "description": "Concluir a leitura dos bundles.",
+    "categoryId": "cat-cursos",
+    "priority": "ALTA",
+    "status": "PENDENTE",
+    "deadline": "2026-09-28T21:00:00Z",
+    "alertType": "sound",
+    "triggerMinutes": 30,
+    "isArchived": false,
+    "completedAt": null,
+    "alarmFired": false,
+    "createdAt": "2026-09-28T14:00:00Z",
+    "updatedAt": "2026-09-28T14:00:00Z"
+  }
+]
+#+end_src
+
+*** ~POST /tasks~ → ~201~ (tarefa criada, mesmo formato acima)
+
+#+begin_src json
+{
+  "id": "task-1759090000000-a1b2",
+  "title": "Pagar boleto",
+  "description": "",
+  "categoryId": "cat-financeira",
+  "priority": "URGENTE",
+  "status": "PENDENTE",
+  "deadline": "2026-09-29T15:00:00.000Z",
+  "alertType": "notification",
+  "triggerMinutes": 60
+}
+#+end_src
+
+- Só ~title~ é obrigatório. ~id~ é opcional: o PWA pode enviar o id que gerou offline
+  (até 64 caracteres ~[A-Za-z0-9._:-]~); sem ele, o servidor gera ~task-<uuid>~.
+  Id já existente → 409.
+- Padrões: ~priority~ ~MEDIA~, ~status~ ~PENDENTE~, ~alertType~ ~sound~, ~triggerMinutes~ 15.
+- ~categoryId~ deve ser nativa ou do próprio usuário (senão 400); pode ser ~null~.
+
+*** ~PUT /tasks/{id}~ → ~200~ (tarefa atualizada)
+
+Atualização *parcial*, como ~updateTask(id, patch)~ do PWA: só os campos enviados mudam.
+- Mudar ~deadline~ ou ~triggerMinutes~ rearma o alarme (~alarmFired: false~), salvo se o
+  corpo trouxer ~alarmFired~ explícito.
+- ~status: "CONCLUIDA"~ preenche ~completedAt~; qualquer outro status o limpa.
+
+#+begin_src json
+{ "status": "CONCLUIDA" }
+{ "deadline": "2026-09-30T15:00:00.000Z", "alarmFired": false }
+{ "isArchived": true }
+#+end_src
+
+*** ~DELETE /tasks/{id}~ → ~204~
+
+** Categorias
+
+*** ~GET /categories~ → ~200~
+
+Nativas primeiro, depois as do usuário.
+#+begin_src json
+[
+  { "id": "cat-cursos", "name": "Cursos", "color": "#1976d2", "icon": "school",
+    "isNative": true, "createdAt": "2026-09-28T14:00:00Z" },
+  { "id": "cat-3f2a...", "name": "Academia", "color": "#6750a4", "icon": "label",
+    "isNative": false, "createdAt": "2026-09-28T14:05:00Z" }
+]
+#+end_src
+
+*** ~POST /categories~ → ~201~
+
+#+begin_src json
+{ "id": "cat-1759090300000", "name": "Academia", "color": "#e91e63", "icon": "fitness_center" }
+#+end_src
+Só ~name~ é obrigatório (até 120). Padrões: ~color~ ~#6750a4~, ~icon~ ~label~.
+Com ~"isNative": true~ cria uma categoria nativa (visível a todos): exige ~tasktoday-admin~,
+senão 403.
+
+*** ~PUT /categories/{id}~ → ~200~
+
+Atualização parcial de ~name~, ~color~ e ~icon~:
+#+begin_src json
+{ "name": "Estudos", "color": "#0d47a1" }
+#+end_src
+Categoria própria: qualquer usuário. Categoria nativa: só ~tasktoday-admin~ (senão 403).
+
+*** ~DELETE /categories/{id}~ → ~204~
+
+Categoria nativa: só ~tasktoday-admin~ (senão 403). As tarefas que a usavam ficam com
+~categoryId: null~ — para uma nativa, isso vale para as tarefas de todos os usuários.
+
+** Web Push
+
+*** ~GET /push/vapid-public-key~ → ~200~ (sem token)
+
+#+begin_src json
+{ "publicKey": "BD3x...base64url, 65 bytes..." }
+#+end_src
+
+O PWA *deve* usar esta chave como ~applicationServerKey~ em ~pushManager.subscribe()~.
+A chave fixa hoje em ~push-service.js~ é a de exemplo do codelab do Google, cuja chave
+privada é pública: o servidor não a usa, e inscrições feitas com ela não recebem push.
+
+*** ~POST /push/subscribe~ → ~201~
+
+Corpo = ~PushSubscription.toJSON()~:
+#+begin_src json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/eXaMpLe...",
+  "expirationTime": null,
+  "keys": { "p256dh": "BNc...", "auth": "tBH..." }
+}
+#+end_src
+Resposta: ~{"id": "<sha256 do endpoint>", "endpoint": "..."}~. Idempotente por navegador;
+se outro usuário logar no mesmo navegador e reinscrever, a inscrição passa para ele.
+
+*** ~POST /push/test~ → ~200~
+
+Corpo opcional: ~{"title": "...", "message": "..."}~. Envia para todas as inscrições do
+usuário. Resposta: ~{"sent": 1, "failed": 0, "removed": 0}~ (~removed~ = inscrições que o
+serviço de push respondeu 404/410 e foram apagadas). Sem inscrições → 404.
+
+** Payload entregue ao Service Worker
+
+O evento ~push~ recebe JSON (~event.data.json()~):
+#+begin_src json
+{
+  "title": "⏰ Pagar boleto",
+  "body": "Prazo: 29/09 12:00",
+  "tag": "tasktoday-task-1759090000000-a1b2",
+  "data": { "type": "task-alarm", "taskId": "task-1759090000000-a1b2",
+            "deadline": "2026-09-29T15:00:00Z" }
+}
+#+end_src
+No teste, ~data.type~ é ~"test"~. O Service Worker do PWA precisa de um handler
+~self.addEventListener('push', ...)~ que chame ~registration.showNotification(title, {body, tag, data})~.
+
+* Regras do Alarme
+
+A cada 30 s, uma tarefa recebe push quando todas as condições valem:
+- ~deadline - triggerMinutes <= agora~, e o prazo venceu há menos de 1 dia;
+- ~alarmFired = false~, ~isArchived = false~, ~status <> CONCLUIDA~, ~alertType <> none~;
+- o dono tem ao menos uma inscrição push.
+
+A tarefa é marcada ~alarmFired = true~ na mesma instrução ~UPDATE ... RETURNING~ que a
+seleciona (~FOR UPDATE SKIP LOCKED~), então cada alarme é enviado uma única vez. Usuários sem
+inscrição push não são marcados: o alarme sonoro do próprio PWA continua responsável.
+Após sincronizar, o PWA deve respeitar ~alarmFired~ vindo do servidor para não tocar duas vezes.
+
+* Compilação e Deploy
+
+#+begin_src bash
+mvn clean install -f src-projects/karaf_bundles/blueprint-osgi-camel-bundles/tasktoday/pom.xml
+#+end_src
+
+Roda os testes (Web Push contra a RFC 8291, validação JWT contra um JWKS local) e copia
+~tasktoday-1.0-SNAPSHOT.jar~ para ~src-projects/karaf_deploy_dir/~, onde o Karaf faz o
+hot-deploy. Depende do bundle ~postgresql-42.7.4.jar~ já presente nesse diretório.
+
+Após alterar ~docker-compose.yml~ (porta 9095 e variáveis ~TASKTODAY_*~), recriar o container:
+~docker compose up -d fzl-karaf-camel-integration fzl-nginx~.
+
+** Teste rápido
+
+#+begin_src bash
+TOKEN=$(curl -s https://fzlbpms.local/auth/realms/fzlbpms/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=<client publico> -d username=<u> -d password=<p> | jq -r .access_token)
+
+curl -s https://fzlbpms.local/api/tasktoday/categories -H "Authorization: Bearer $TOKEN" | jq
+curl -s -X POST https://fzlbpms.local/api/tasktoday/tasks -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"title":"Teste","deadline":"2026-09-30T15:00:00Z"}' | jq
+curl -s "https://fzlbpms.local/api/tasktoday/tasks?deadline_scope=this_week" -H "Authorization: Bearer $TOKEN" | jq
+#+end_src

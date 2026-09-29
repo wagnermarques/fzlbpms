@@ -1,0 +1,58 @@
+---
+# =============================================================================
+# fzl-chamadasonline-setup-dev.yml
+#
+# Chamadas Online for LOCAL DEVELOPMENT: the prod setup plus localhost
+# redirect URIs (Vite on :5173 and any local port) and test users.
+# The steps live in tasks/chamadasonline-common.yml; this file only says what
+# differs in dev.
+#
+# Test users take their password from the .env variable in password_env:
+#   students -> CHAMADAS_DEV_TEST_PASSWORD, staff -> CHAMADAS_DEV_STAFF_TEST_PASSWORD
+# Unset, that user is skipped. Set, it is reapplied on every run, like the
+# bootstrap admins in keycloak-playbook--realms-and-clients-creation.yml.
+#
+# Run after keycloak-playbook--realms-and-clients-creation.yml:
+#   ansible-playbook ansible/fzl-chamadasonline-setup-dev.yml
+#   ansible-playbook ansible/fzl-chamadasonline-setup-dev.yml --skip-tags chamadas-db
+# =============================================================================
+- name: Configure Chamadas Online (dev)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    chamadas_env: dev
+    chamadas_redirect_uris:
+      - "https://wagnermarques.github.io/fzl-chamadasonline/*"
+      - "http://localhost:5173/*"
+      - "http://localhost:*"
+      - "http://127.0.0.1:*"
+    chamadas_web_origins:
+      - "https://wagnermarques.github.io"
+      - "http://localhost:5173"
+      - "http://localhost:*"
+      - "+"
+    chamadas_post_logout_uris:
+      - "https://wagnermarques.github.io/fzl-chamadasonline/*"
+      - "http://localhost:5173/*"
+      - "http://localhost:*"
+    chamadas_test_users:
+      - username: "aluno.teste"
+        firstName: "Aluno"
+        lastName: "Teste"
+        email: "aluno.teste@fzlbpms.local"
+        realm_roles: ["chamadas-user"]
+        password_env: "CHAMADAS_DEV_TEST_PASSWORD"
+      # Chamadas staff/admin for testing, so fzlbpmsadmin (the whole stack's
+      # admin) doesn't need a weak dev password.
+      - username: "professor.teste"
+        firstName: "Professor"
+        lastName: "Teste"
+        email: "professor.teste@fzlbpms.local"
+        realm_roles: ["chamadas-user", "chamadas-staff"]
+        password_env: "CHAMADAS_DEV_STAFF_TEST_PASSWORD"
+
+  tasks:
+    - name: Chamadas Online setup
+      ansible.builtin.import_tasks: tasks/chamadasonline-common.yml

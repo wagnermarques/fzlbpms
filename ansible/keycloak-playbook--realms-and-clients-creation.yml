@@ -4,15 +4,16 @@
 #
 # Idempotent Keycloak provisioning playbook for the entire FZLBPMS stack:
 #   - Realm: fzlbpms
-#   - Realm Roles: admin, theia-user, chamadas-user, moodle-student, tasktoday-admin
+#   - Realm Roles: admin, theia-user, moodle-student, tasktoday-admin
 #   - Clients:
 #       1. fzlbpms-camel        (Confidential - Backend REST proxy)
 #       2. fzlbpmsadmin-web     (Public - Angular Web UI with PKCE)
 #       3. moodle               (Confidential - Moodle OAuth2 SSO)
 #       4. flowable             (Confidential - Flowable BPM UI SSO)
 #       5. theia                (Confidential - Theia IDE OAuth2 Proxy)
-#       6. fzl-chamadasonline   (Public - GitHub Pages SPA with PKCE)
-#       7. fzl-tasktodayapp     (Public - GitHub Pages SPA with PKCE)
+#       6. fzl-tasktodayapp     (Public - GitHub Pages SPA with PKCE)
+#   Chamadas Online (fzl-chamadasonline client, chamadas-* roles) is set up
+#   separately, after this one: fzl-chamadasonline-setup-dev.yml / -prod.yml
 #   - Users:
 #       1. fzlbpmsadmin         (Stack Admin)
 #       2. moodle-admin         (Moodle Site Administrator)
@@ -41,10 +42,6 @@
         description: "Stack-wide Administrator"
       - name: "theia-user"
         description: "Permissao de acesso a IDE Theia no navegador (/theia/)"
-      - name: "chamadas-user"
-        description: "Permite login e acesso ao sistema Chamadas Online (GitHub Pages)"
-      - name: "chamadas-staff"
-        description: "Permite acesso de gestor/professor/secretaria ao sistema Chamadas Online"
       - name: "moodle-student"
         description: "Permite login e acesso de estudante ao Moodle LMS"
       - name: "tasktoday-admin"
@@ -175,30 +172,7 @@
               - "{{ public_proto }}://{{ public_hostname }}/*"
               - "http://localhost:*"
 
-          # 6. fzl-chamadasonline (Public - GitHub Pages SPA with PKCE)
-          - clientId: "fzl-chamadasonline"
-            name: "FZL Chamadas Online (GitHub Pages)"
-            enabled: true
-            publicClient: true
-            standardFlowEnabled: true
-            directAccessGrantsEnabled: false
-            rootUrl: "https://wagnermarques.github.io/fzl-chamadasonline"
-            baseUrl: "https://wagnermarques.github.io/fzl-chamadasonline/"
-            redirectUris:
-              - "https://wagnermarques.github.io/fzl-chamadasonline/*"
-              - "http://localhost:5173/*"
-              - "http://localhost:*"
-              - "http://127.0.0.1:*"
-            webOrigins:
-              - "https://wagnermarques.github.io"
-              - "http://localhost:5173"
-              - "http://localhost:*"
-              - "+"
-            attributes:
-              "pkce.code.challenge.method": "S256"
-              "post.logout.redirect.uris": "https://wagnermarques.github.io/fzl-chamadasonline/*##http://localhost:5173/*##http://localhost:*"
-
-          # 7. fzl-tasktodayapp (Public - GitHub Pages SPA with PKCE; calls /api/tasktoday)
+          # 6. fzl-tasktodayapp (Public - GitHub Pages SPA with PKCE; calls /api/tasktoday)
           #    3030 = vite dev, 4173 = vite preview.
           - clientId: "fzl-tasktodayapp"
             name: "FZL Task Today App (GitHub Pages)"
@@ -433,7 +407,8 @@
             lastName: "Administrator"
             email: "{{ admin_username }}@fzlbpms.local"
             password: "{{ admin_password }}"
-            realm_roles: ["admin", "theia-user", "chamadas-user", "chamadas-staff", "tasktoday-admin"]
+            # chamadas-user / chamadas-staff come from fzl-chamadasonline-setup-*.yml
+            realm_roles: ["admin", "theia-user", "tasktoday-admin"]
             flowable_client_roles: "{{ flowable_client_roles }}"
           - username: "{{ moodle_admin_username }}"
             firstName: "Moodle"

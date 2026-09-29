@@ -1,0 +1,370 @@
+---
+# =============================================================================
+# tasks/chamadasonline-common.yml
+#
+# Everything Chamadas Online (fzl-chamadasonline PWA + the chamadasonline
+# Karaf bundle) needs from the stack, shared by:
+#   ansible/fzl-chamadasonline-setup-dev.yml
+#   ansible/fzl-chamadasonline-setup-prod.yml
+# Those wrappers only set the variables below; keep the steps here so dev and
+# prod can't drift apart.
+#
+# Expected variables (set by the wrapper):
+#   chamadas_env                  "dev" or "prod"
+#   chamadas_redirect_uris        list, fzl-chamadasonline redirectUris
+#   chamadas_web_origins          list, fzl-chamadasonline webOrigins
+#   chamadas_post_logout_uris     list, post.logout.redirect.uris
+#   chamadas_test_users           list of test users (dev only; [] in prod), each
+#                                 {username, firstName, lastName, email,
+#                                  realm_roles, password_env}
+#
+# Steps:
+#   1. Resolve settings (CLI -e > environment > .env > defaults), as in
+#      keycloak-playbook--realms-and-clients-creation.yml
+#   2. Check CHAMADAS_JWT_SECRET (placeholder is fatal in prod)
+#   3. Keycloak: realm roles chamadas-user / chamadas-staff, the
+#      fzl-chamadasonline client (created or overwritten), and both roles for
+#      the stack admin
+#   4. Database: apply the bundle's schema.sql to fzldb (idempotent)
+#   5. Test users (dev only), each with the password in its password_env var
+#
+# Needs the realm to exist: run keycloak-playbook--realms-and-clients-creation.yml
+# first. Removing a URI from the lists here removes it from Keycloak on the
+# next run, because the client is PUT as a whole.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Settings
+# -----------------------------------------------------------------------------
+- name: Check that chamadas_env is dev or prod
+  ansible.builtin.assert:
+    that: chamadas_env in ['dev', 'prod']
+    fail_msg: "chamadas_env must be 'dev' or 'prod' (got '{{ chamadas_env | default('') }}')"
+    quiet: true
+
+- name: Test users are dev-only
+  ansible.builtin.assert:
+    that: chamadas_env == 'dev' or (chamadas_test_users | default([]) | length == 0)
+    fail_msg: "chamadas_test_users must be empty in prod — never create test accounts there."
+    quiet: true
+
+- name: Check if .env file exists
+  ansible.builtin.stat:
+    path: "{{ env_file | default(playbook_dir + '/../.env') }}"
+  register: env_file_stat
+
+- name: Parse .env file if present
+  when: env_file_stat.stat.exists
+  block:
+    - name: Read .env content
+      ansible.builtin.slurp:
+        src: "{{ env_file_stat.stat.path }}"
+      register: env_file_content
+
+    - name: Set facts from parsed .env
+      ansible.builtin.set_fact:
+        parsed_env_vars: "{{ parsed_env_vars | default({}) | combine({ item.split('=', 1)[0].strip(): item.split('=', 1)[1].strip() }) }}"
+      loop: "{{ (env_file_content.content | b64decode).splitlines() }}"
+      loop_control:
+        label: "{{ item.split('=', 1)[0] }}"
+      when:
+        - item | trim | length > 0
+        - not (item | trim).startswith('#')
+        - "'=' in item"
+
+- name: Resolve Chamadas settings
+  vars:
+    kc_base: "{{ (keycloak_url | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_URL') | default('http://localhost:' ~ (parsed_env_vars.FZL_KEYCLOAK_PORT | default('8083')), true))) | regex_replace('/+$', '') }}"
+  ansible.builtin.set_fact:
+    keycloak_url: "{{ kc_base if kc_base.endswith('/auth') else kc_base ~ '/auth' }}"
+    keycloak_admin_user: "{{ keycloak_admin_user | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_ADMIN_USER') | default(parsed_env_vars.FZL_KEYCLOAK_ADMIN_USER | default('admin'), true)) }}"
+    keycloak_admin_password: "{{ keycloak_admin_password | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_ADMIN_PASSWORD') | default(parsed_env_vars.FZL_KEYCLOAK_ADMIN_PASSWORD | default('admin'), true)) }}"
+    target_realm: "{{ target_realm | default(lookup('ansible.builtin.env', 'FZL_KEYCLOAK_REALM') | default('fzlbpms', true)) }}"
+    admin_username: "{{ fzlbpms_admin_username | default(lookup('ansible.builtin.env', 'FZLBPMS_ADMIN_USERNAME') | default(parsed_env_vars.FZLBPMS_ADMIN_USERNAME | default('fzlbpmsadmin'), true)) }}"
+    chamadas_jwt_secret: "{{ lookup('ansible.builtin.env', 'CHAMADAS_JWT_SECRET') | default(parsed_env_vars.CHAMADAS_JWT_SECRET | default(''), true) }}"
+    postgres_container: "{{ postgres_container | default('fzl-postgresql') }}"
+    postgres_db: "{{ lookup('ansible.builtin.env', 'FZL_POSTGRES_DB') | default(parsed_env_vars.FZL_POSTGRES_DB | default('fzldb'), true) }}"
+    postgres_user: "{{ lookup('ansible.builtin.env', 'FZL_POSTGRES_USER') | default(parsed_env_vars.FZL_POSTGRES_USER | default('postgres'), true) }}"
+    chamadas_schema_file: "{{ playbook_dir }}/../src-projects/karaf_bundles/blueprint-osgi-camel-bundles/chamadasonline/src/main/resources/sql/schema.sql"
+
+# -----------------------------------------------------------------------------
+# 2. Session-token secret
+# -----------------------------------------------------------------------------
+- name: Check CHAMADAS_JWT_SECRET is set and long enough
+  ansible.builtin.assert:
+    that: chamadas_jwt_secret | length >= 32
+    fail_msg: "CHAMADAS_JWT_SECRET must be set in .env, at least 32 chars (openssl rand -base64 48). The bundle refuses to start without it."
+    quiet: true
+
+- name: Refuse the .env.template placeholder secret in prod
+  ansible.builtin.assert:
+    that: chamadas_env == 'dev' or not chamadas_jwt_secret.startswith('change-me')
+    fail_msg: "CHAMADAS_JWT_SECRET is still the .env.template placeholder — anyone could forge Chamadas sessions. Generate one: openssl rand -base64 48"
+    quiet: true
+
+- name: Warn about the placeholder secret in dev
+  when: chamadas_env == 'dev' and chamadas_jwt_secret.startswith('change-me')
+  ansible.builtin.debug:
+    msg: "CHAMADAS_JWT_SECRET is the .env.template placeholder. Fine for dev, never for prod."
+
+# -----------------------------------------------------------------------------
+# 3. Keycloak
+# -----------------------------------------------------------------------------
+- name: Obtain Keycloak admin token
+  check_mode: false  # read-only; must run under --check too
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/realms/master/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      client_id: "admin-cli"
+      grant_type: "password"
+      username: "{{ keycloak_admin_user }}"
+      password: "{{ keycloak_admin_password }}"
+    status_code: 200
+  register: admin_token_res
+  no_log: true
+
+- name: Set auth header
+  ansible.builtin.set_fact:
+    auth_header:
+      Authorization: "Bearer {{ admin_token_res.json.access_token }}"
+      Content-Type: "application/json"
+  no_log: true
+
+- name: Check that realm {{ target_realm }} exists
+  check_mode: false  # read-only; must run under --check too
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}"
+    method: GET
+    headers: "{{ auth_header }}"
+    status_code: [200, 404]
+  register: realm_check_res
+
+- name: Stop when the realm is missing
+  when: realm_check_res.status == 404
+  ansible.builtin.fail:
+    msg: "Realm {{ target_realm }} not found. Run ansible/keycloak-playbook--realms-and-clients-creation.yml first."
+
+- name: Fetch existing realm roles
+  check_mode: false  # read-only; must run under --check too
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/roles"
+    method: GET
+    headers: "{{ auth_header }}"
+    status_code: 200
+  register: existing_roles_res
+
+- name: Ensure Chamadas realm roles exist
+  loop:
+    - name: "chamadas-user"
+      description: "Permite login e acesso ao sistema Chamadas Online (GitHub Pages)"
+    - name: "chamadas-staff"
+      description: "Permite acesso de gestor/professor/secretaria ao sistema Chamadas Online"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name not in (existing_roles_res.json | map(attribute='name') | list)
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/roles"
+    method: POST
+    headers: "{{ auth_header }}"
+    body_format: json
+    body: "{{ item }}"
+    status_code: 201
+
+- name: Build the fzl-chamadasonline client spec
+  ansible.builtin.set_fact:
+    chamadas_client:
+      clientId: "fzl-chamadasonline"
+      name: "FZL Chamadas Online (GitHub Pages)"
+      enabled: true
+      publicClient: true
+      standardFlowEnabled: true
+      directAccessGrantsEnabled: false
+      rootUrl: "https://wagnermarques.github.io/fzl-chamadasonline"
+      baseUrl: "https://wagnermarques.github.io/fzl-chamadasonline/"
+      redirectUris: "{{ chamadas_redirect_uris }}"
+      webOrigins: "{{ chamadas_web_origins }}"
+      attributes:
+        "pkce.code.challenge.method": "S256"
+        "post.logout.redirect.uris": "{{ chamadas_post_logout_uris | join('##') }}"
+
+- name: Look up the fzl-chamadasonline client
+  check_mode: false  # read-only; must run under --check too
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients?clientId=fzl-chamadasonline"
+    method: GET
+    headers: "{{ auth_header }}"
+    status_code: 200
+  register: chamadas_client_res
+
+- name: Create the fzl-chamadasonline client
+  when: chamadas_client_res.json | length == 0
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients"
+    method: POST
+    headers: "{{ auth_header }}"
+    body_format: json
+    body: "{{ chamadas_client }}"
+    status_code: 201
+
+- name: Update the fzl-chamadasonline client
+  when: chamadas_client_res.json | length > 0
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/clients/{{ chamadas_client_res.json[0].id }}"
+    method: PUT
+    headers: "{{ auth_header }}"
+    body_format: json
+    body: "{{ chamadas_client }}"
+    status_code: [200, 204]
+
+- name: Re-fetch realm roles to map IDs
+  check_mode: false  # read-only; must run under --check too
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/roles"
+    method: GET
+    headers: "{{ auth_header }}"
+    status_code: 200
+  register: all_realm_roles_res
+
+- name: Look up the stack admin ({{ admin_username }})
+  check_mode: false  # read-only; must run under --check too
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users?username={{ admin_username | urlencode }}&exact=true"
+    method: GET
+    headers: "{{ auth_header }}"
+    status_code: 200
+  register: stack_admin_res
+
+- name: Give the stack admin chamadas-user and chamadas-staff
+  when: stack_admin_res.json | length > 0
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ stack_admin_res.json[0].id }}/role-mappings/realm"
+    method: POST
+    headers: "{{ auth_header }}"
+    body_format: json
+    body: "{{ all_realm_roles_res.json | selectattr('name', 'in', ['chamadas-user', 'chamadas-staff']) | list }}"
+    status_code: 204
+
+# -----------------------------------------------------------------------------
+# 4. Database schema (tables in fzldb; every statement is IF NOT EXISTS)
+# -----------------------------------------------------------------------------
+- name: Apply the Chamadas schema to {{ postgres_db }}
+  tags: [chamadas-db]
+  ansible.builtin.shell: >
+    docker exec -i {{ postgres_container | quote }}
+    psql -v ON_ERROR_STOP=1 -U {{ postgres_user | quote }} -d {{ postgres_db | quote }}
+    < {{ chamadas_schema_file | quote }}
+  register: chamadas_schema_res
+  # psql prints "CREATE TABLE" even when it skips one; the NOTICE is the tell.
+  changed_when: chamadas_schema_res.stderr is not search('already exists')
+
+# -----------------------------------------------------------------------------
+# 5. Test users (dev only)
+# Each user names the .env variable holding its password (password_env).
+# Users whose variable is unset are skipped; set ones are reapplied every run.
+# -----------------------------------------------------------------------------
+- name: Resolve test user passwords
+  loop: "{{ chamadas_test_users | default([]) }}"
+  loop_control:
+    label: "{{ item.username }} <- {{ item.password_env }}"
+  vars:
+    pw: "{{ lookup('ansible.builtin.env', item.password_env) | default(parsed_env_vars[item.password_env] | default(''), true) }}"
+  ansible.builtin.set_fact:
+    chamadas_ready_users: "{{ chamadas_ready_users | default([]) + ([item | combine({'password': pw})] if pw | length > 0 else []) }}"
+  no_log: true
+
+- name: Report test users skipped for lack of a password
+  vars:
+    ready: "{{ chamadas_ready_users | default([]) | map(attribute='username') | list }}"
+    skipped: "{{ chamadas_test_users | default([]) | rejectattr('username', 'in', ready) | list }}"
+  when: skipped | length > 0
+  ansible.builtin.debug:
+    msg: "{% for u in skipped %}{{ u.username }}: {{ u.password_env }} not set in .env, not created or updated. {% endfor %}"
+
+- name: Provision test users
+  when: chamadas_ready_users | default([]) | length > 0
+  block:
+    - name: Fetch existing test users
+      loop: "{{ chamadas_ready_users }}"
+      loop_control:
+        label: "{{ item.username }}"
+      check_mode: false  # read-only; must run under --check too
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users?username={{ item.username | urlencode }}&exact=true"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: test_user_lookup
+      no_log: true
+
+    - name: Create missing test users
+      loop: "{{ test_user_lookup.results }}"
+      loop_control:
+        label: "{{ item.item.username }}"
+      when: item.json | length == 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          username: "{{ item.item.username }}"
+          firstName: "{{ item.item.firstName }}"
+          lastName: "{{ item.item.lastName }}"
+          email: "{{ item.item.email }}"
+          enabled: true
+          emailVerified: true
+          credentials:
+            - type: "password"
+              value: "{{ item.item.password }}"
+              temporary: false
+        status_code: 201
+      no_log: true
+
+    - name: Reset existing test users' passwords
+      loop: "{{ test_user_lookup.results }}"
+      loop_control:
+        label: "{{ item.item.username }}"
+      when: item.json | length > 0
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ item.json[0].id }}/reset-password"
+        method: PUT
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          type: "password"
+          value: "{{ item.item.password }}"
+          temporary: false
+        status_code: 204
+      no_log: true
+
+    - name: Re-fetch test users for their IDs
+      loop: "{{ chamadas_ready_users | map(attribute='username') | list }}"
+      check_mode: false  # read-only; must run under --check too
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users?username={{ item | urlencode }}&exact=true"
+        method: GET
+        headers: "{{ auth_header }}"
+        status_code: 200
+      register: test_user_ids
+
+    - name: Assign test users their realm roles
+      loop: "{{ test_user_ids.results | zip(chamadas_ready_users | map(attribute='realm_roles')) | list }}"
+      loop_control:
+        label: "{{ item.0.item }} -> {{ item.1 }}"
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}/users/{{ item.0.json[0].id }}/role-mappings/realm"
+        method: POST
+        headers: "{{ auth_header }}"
+        body_format: json
+        body: "{{ all_realm_roles_res.json | selectattr('name', 'in', item.1) | list }}"
+        status_code: 204
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      - "Chamadas Online ({{ chamadas_env }}) configured in realm {{ target_realm }}"
+      - "Redirect URIs: {{ chamadas_redirect_uris }}"
+      - "Stack admin {{ admin_username }}: {{ 'chamadas-user + chamadas-staff' if stack_admin_res.json | length > 0 else 'NOT FOUND, no roles given' }}"
+      - "Test users: {{ chamadas_ready_users | default([]) | map(attribute='username') | list }}"

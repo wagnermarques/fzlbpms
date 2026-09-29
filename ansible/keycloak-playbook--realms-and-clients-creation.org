@@ -34,7 +34,7 @@ This Ansible playbook (=keycloak-playbook--realms-and-clients-creation.yml=) is 
 |---------------+-------------------------------------------------------------|
 | =admin= | Stack-wide administrator with full privileges |
 | =theia-user= | Grants access through oauth2-proxy to Theia IDE (=/theia/=) |
-| =chamadas-user=| Grants login permission to the Chamadas Online GitHub Pages app |
+| =chamadas-user= / =chamadas-staff= | Chamadas Online student / staff login — *not created here*, see =fzl-chamadasonline-setup-dev.yml= / =-prod.yml= |
 | =moodle-student=| Standard LMS student role |
 
 ** 3. Clients
@@ -45,7 +45,7 @@ This Ansible playbook (=keycloak-playbook--realms-and-clients-creation.yml=) is 
 | =moodle= | Confidential | OAuth2 / OIDC | Moodle LMS SSO integration |
 | =flowable= | Confidential | OIDC Spring Sec | Flowable BPM UI |
 | =theia= | Confidential | OIDC Auth Code | Theia IDE OAuth2-Proxy Gate |
-| =fzl-chamadasonline= | Public | OIDC + PKCE (S256) | GitHub Pages Student Attendance |
+| =fzl-chamadasonline= | Public | OIDC + PKCE (S256) | GitHub Pages Student Attendance — *not created here*, see =fzl-chamadasonline-setup-*.yml= |
 
 ** 4. Flowable Client Roles
 Defined on the =flowable= client:
@@ -54,7 +54,7 @@ Defined on the =flowable= client:
 ** 5. Bootstrap Users & Role Mappings
 | Username | Purpose | Assigned Roles |
 |------------------+---------------------------------------+---------------------------------------------------|
-| =fzlbpmsadmin= | Stack Superadmin (Admin of all apps) | Realm Roles: =admin=, =theia-user=, =chamadas-user=; Flowable Client Roles: =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api= |
+| =fzlbpmsadmin= | Stack Superadmin (Admin of all apps) | Realm Roles: =admin=, =theia-user=, =tasktoday-admin= (plus =chamadas-user=, =chamadas-staff= from =fzl-chamadasonline-setup-*.yml=); Flowable Client Roles: =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api= |
 | =moodle-admin= | Dedicated Moodle Site Admin | Site administrator via Moodle OAuth2 SSO |
 | =flowable-admin= | Dedicated Flowable Admin | Flowable Client Roles: =access-idm=, =access-admin=, =access-modeler=, =access-task=, =access-rest-api= |
 

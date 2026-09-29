@@ -106,6 +106,28 @@ npm run tauri:dev
 
 ---
 
+## 3. Chamadas Online (`fzl-chamadasonline-setup-dev.yml` / `fzl-chamadasonline-setup-prod.yml`)
+
+Sets up everything the Chamadas Online app (`fzl-chamadasonline` PWA + the `chamadasonline` Karaf bundle) needs: realm roles `chamadas-user` (student) and `chamadas-staff` (teacher/secretary/manager), the `fzl-chamadasonline` Keycloak client, both roles for the stack admin (`fzlbpmsadmin`), and the bundle's tables in `fzldb`. Both files are thin wrappers around `tasks/chamadasonline-common.yml`; put new steps there so dev and prod stay in step.
+
+| | dev | prod |
+|---|---|---|
+| Redirect URIs | GitHub Pages + `localhost:5173` + any `localhost`/`127.0.0.1` port | GitHub Pages only |
+| Test users | `aluno.teste` (student, `CHAMADAS_DEV_TEST_PASSWORD`) and `professor.teste` (staff, `CHAMADAS_DEV_STAFF_TEST_PASSWORD`); passwords from `.env`, reapplied on every run; a user whose variable is unset is skipped | none |
+| `CHAMADAS_JWT_SECRET` | must be ≥ 32 chars; placeholder only warns | placeholder is fatal |
+
+Run after `keycloak-playbook--realms-and-clients-creation.yml` (it needs the realm):
+
+```bash
+ansible-playbook ansible/fzl-chamadasonline-setup-dev.yml
+ansible-playbook ansible/fzl-chamadasonline-setup-dev.yml --skip-tags chamadas-db   # Keycloak only
+ansible-playbook ansible/fzl-chamadasonline-setup-prod.yml                          # on the production host
+```
+
+The client is overwritten as a whole on every run, so running the prod playbook against a Keycloak that dev touched removes the localhost redirect URIs. Neither playbook deletes users.
+
+---
+
 ## Notes & Idempotency
 
 - All playbooks in this directory are fully **idempotent**. You can safely re-run them at any time to verify or repair host configuration.

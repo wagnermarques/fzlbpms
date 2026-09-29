@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# fzl-chamadasonline-setup-prod.yml
+#
+# Chamadas Online for PRODUCTION: only the GitHub Pages app may log in
+# (no localhost redirect URIs), no test users, and a real CHAMADAS_JWT_SECRET
+# is required. The steps live in tasks/chamadasonline-common.yml.
+#
+# Running this against a Keycloak that dev setup touched REMOVES the localhost
+# redirect URIs from fzl-chamadasonline (the client is overwritten as a whole).
+# It never deletes users; remove leftover test accounts by hand.
+#
+# Run on the production host, after keycloak-playbook--realms-and-clients-creation.yml:
+#   ansible-playbook ansible/fzl-chamadasonline-setup-prod.yml
+# =============================================================================
+- name: Configure Chamadas Online (prod)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    chamadas_env: prod
+    chamadas_redirect_uris:
+      - "https://wagnermarques.github.io/fzl-chamadasonline/*"
+    chamadas_web_origins:
+      - "https://wagnermarques.github.io"
+    chamadas_post_logout_uris:
+      - "https://wagnermarques.github.io/fzl-chamadasonline/*"
+    chamadas_test_users: []
+
+  tasks:
+    - name: Chamadas Online setup
+      ansible.builtin.import_tasks: tasks/chamadasonline-common.yml

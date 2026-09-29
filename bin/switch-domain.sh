@@ -63,6 +63,10 @@ Actions performed by this script:
   7. Restarts fzl-flowable-ui with the new OIDC issuer URI.
   8. Recreates fzl-oauth2-proxy with the new issuer and cookie settings.
   9. Re-runs moodle-oauth2-configurator to bind Moodle to Keycloak.
+ 10. Cloudflare tunnel (fzl-cloudflared): stopped for 'fzlbpms.local',
+     started for 'fzlbpms.com.br'. Switch to fzlbpms.com.br ONLY on the
+     production server — a second machine running the same tunnel gets
+     public visitors split between it and production.
 
 Accepted Parameters:
   fzlbpms.local        Configure stack for local development (https://fzlbpms.local)
@@ -310,6 +314,21 @@ docker compose up -d fzl-oauth2-proxy 2>/dev/null \
 
 log "Re-running the Moodle OAuth2 issuer configurator against the new domain..."
 docker compose up moodle-oauth2-configurator
+
+# The public tunnel belongs to the production host only (bin/run-stack.sh
+# applies the same rule on every start). A dev machine left running it
+# shares https://fzlbpms.com.br's traffic with production.
+if [ "$DOMAIN" = "fzlbpms.local" ]; then
+    if [ -n "$(docker ps -q -f name='^fzl-cloudflared$')" ]; then
+        log "Stopping the Cloudflare tunnel (fzl-cloudflared) — development doesn't serve fzlbpms.com.br..."
+        docker compose stop fzl-cloudflared
+    fi
+else
+    log "Starting the Cloudflare tunnel (fzl-cloudflared) for https://${DOMAIN}..."
+    log "  Do this ONLY on the production server: any other machine running this"
+    log "  tunnel gets a share of the public visitors."
+    docker compose up -d fzl-cloudflared
+fi
 
 FZLBPMS_ADMIN_USER="$(env_get FZLBPMS_ADMIN_USERNAME)"
 FZLBPMS_ADMIN_PASS="$(env_get FZLBPMS_ADMIN_PASSWORD)"

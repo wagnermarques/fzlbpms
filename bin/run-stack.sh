@@ -98,12 +98,30 @@ fi
 
 mapfile -t SERVICES < <(resolve "${STACKS[@]+"${STACKS[@]}"}")
 
-# fzl-cloudflared (public Cloudflare Tunnel for fzlbpms.com.br) rides along
-# with every stack, not just the ones that list it explicitly in
-# run-stack.toml — it has to be up whenever fzl-nginx is, and down when the
-# stack it's proxying goes down.
-if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "fzl-cloudflared"; then
-    SERVICES+=("fzl-cloudflared")
+# fzl-cloudflared (public Cloudflare Tunnel for fzlbpms.com.br) belongs to the
+# production host only: the stack whose .env says FZL_PUBLIC_HOSTNAME=
+# fzlbpms.com.br (set by bin/switch-domain.sh). There it rides along with every
+# stack — up whenever fzl-nginx is, down with it. Anywhere else (a dev machine
+# on fzlbpms.local) it must stay off even if a stack lists it: two machines
+# running the same tunnel get public visitors split between them, and dev
+# would answer https://fzlbpms.com.br with dev data and dev passwords.
+PUBLIC_HOSTNAME="$(grep -E '^FZL_PUBLIC_HOSTNAME=' "$ENV_FILE" | head -1 | cut -d= -f2-)"
+STOP_TUNNEL=0
+if [ "$PUBLIC_HOSTNAME" = "fzlbpms.com.br" ] || [ "$MODE" = "down" ]; then
+    if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "fzl-cloudflared"; then
+        SERVICES+=("fzl-cloudflared")
+    fi
+elif [ "$MODE" = "up" ]; then
+    mapfile -t SERVICES < <(printf '%s\n' "${SERVICES[@]}" | grep -vx "fzl-cloudflared" || true)
+    if [ "${#SERVICES[@]}" -eq 0 ] || [ -z "${SERVICES[0]}" ]; then
+        echo "ERROR: FZL_PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME:-<unset>} — the Cloudflare tunnel only runs on the" >&2
+        echo "       production host (FZL_PUBLIC_HOSTNAME=fzlbpms.com.br; see bin/switch-domain.sh)." >&2
+        exit 1
+    fi
+    if [ -n "$(docker ps -q -f name='^fzl-cloudflared$' 2>/dev/null)" ]; then
+        STOP_TUNNEL=1
+    fi
+    echo "NOTE: FZL_PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME:-<unset>} — not starting the Cloudflare tunnel (fzl-cloudflared)."
 fi
 
 # Validate service names against docker-compose.yml before doing anything.
@@ -182,6 +200,13 @@ else
     CMD=(docker compose up -d "${SERVICES[@]}")
     if [ "$BUILD" = "1" ]; then
         CMD=(docker compose up -d --build "${SERVICES[@]}")
+    fi
+fi
+
+if [ "$STOP_TUNNEL" = "1" ]; then
+    echo " ==> docker compose stop fzl-cloudflared   (running, but this is not the production host)"
+    if [ "$DRY_RUN" = "0" ]; then
+        (cd "$PROJECT_DIR" && docker compose stop fzl-cloudflared)
     fi
 fi
 

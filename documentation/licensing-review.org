@@ -1,0 +1,145 @@
+#+TITLE: fzlbpms — License Compatibility Review and Pending Actions
+#+DATE: 2026-09-28
+#+STARTUP: showall
+
+Engineering review, not legal advice. Written to be applied later; nothing
+below has been done yet.
+
+* Summary
+
+- The repository has *no license yet* (no LICENSE/COPYING file, no license
+  headers, GitHub shows none).
+- Nothing found blocks a GNU license, *as long as it is version 3*
+  (GPL-3.0-or-later or AGPL-3.0-or-later).
+- *Recommended: AGPL-3.0-or-later* — fzlbpms runs as a web service
+  (fzlbpms.com.br), and AGPL makes hosted modified versions share their source.
+  GPL-3.0-or-later is fine too if the network clause is not wanted.
+- Before or together with the license, fix the items in "Pending actions".
+
+* Why version 3 (not GPL-2.0)
+
+- Much of the stack is Apache-2.0 (Camel, Karaf, Keycloak libs, Tauri, bollard).
+  Apache-2.0 combines with GPL-3.0/AGPL-3.0, but *not* with GPL-2.0-only.
+- ~bin/moodle/*.php~ run inside Moodle (GPL-3.0-or-later), so they must be
+  under a GPLv3-compatible license. AGPL-3.0 and GPL-3.0 both are (GPLv3 §13).
+
+* What was checked — compatible
+
+| Area                                   | Licenses found                                           | OK? |
+|----------------------------------------+----------------------------------------------------------+-----|
+| npm, 4231 packages in 8 lockfiles      | MIT, ISC, Apache-2.0, BSD-2/3, BlueOak, CC0              | yes |
+| npm oddities                           | Artistic-2.0, WTFPL, Python-2.0, CC-BY — all dev/build   | yes |
+| @vscode/vsce-sign                      | Microsoft license — only used to package the .vsix       | yes |
+| Java: Camel, Karaf, log4j              | Apache-2.0                                               | yes |
+| Java: pgjdbc / SLF4J                   | BSD-2 / MIT                                              | yes |
+| Java: JUnit                            | EPL-1.0, test scope only (never distributed)             | yes |
+| Java: OpenOffice UNO jars 4.1.2        | Apache OpenOffice → Apache-2.0                           | yes |
+| Rust crates (Tauri, Tokio, Serde, ...) | MIT and/or Apache-2.0                                    | yes |
+| Container images                       | Keycloak, Flowable, Moodle, PostgreSQL, nginx, MySQL,    | yes |
+|                                        | Mongo (SSPL), Elasticsearch/Kibana, GitLab, ...          |     |
+
+Container images run as *separate programs* (mere aggregation): their licenses
+do not constrain the license of this repository.
+
+* Pending actions
+
+** 1. License violation today: bpmn.io watermark hidden (fix regardless of license)
+
+~bpmn-js~ is MIT plus one condition: the bpmn.io watermark in rendered diagrams
+must stay visible and its code unchanged. The Theia BPMN plugin hides it:
+
+- ~src-projects/fzl-theia-plugins/theia-plugin-bpmn-editor/src/webview/style.css~ line 40:
+  #+begin_src css
+  .bjs-powered-by {
+      display: none;
+  }
+  #+end_src
+- also present in the built bundles:
+  - ~src-projects/fzl-theia-plugins/theia-plugin-bpmn-editor/media/bpmn-editor.css~
+  - ~src-projects/fzl-theia-plugins-dist/theia-plugin-bpmn-editor/media/bpmn-editor.css~
+
+Fix: delete the rule from ~style.css~, rebuild the plugin (regenerates
+~media/*~ and the ~.vsix~), and copy the result to ~fzl-theia-plugins-dist~.
+Check ~fzlbpmsadmin-web~ (also uses bpmn-js) keeps the watermark visible too.
+
+With the watermark kept, bpmn-js generally fits under GPLv3 §7(b) (terms
+requiring preservation of author attributions); the FSF has not reviewed this
+license, so it remains a gray area worth knowing about.
+
+** 2. Personal data in the PUBLIC repository (more urgent than the license)
+
+- ~containers/fzl-karaf-camel-integration/karaf-data.bak-20260802-222933/~
+- ~containers/fzl-karaf-camel-integration/karaf-data.bak-cleanboot-20260828-113328/~
+  Karaf runtime backups. Under ~tmp/fzlbpms-aproveitamento-docs/~ they contain
+  generated "parecer"/"despacho" documents (.docx/.odt) named after what looks
+  like a real student (name + registration number).
+- ~containers/fzl-superset/superset-db-data/~ — a full PostgreSQL data
+  directory (~1500 files); may contain password hashes and application data.
+
+Stop further exposure (keeps files on disk):
+#+begin_src bash
+git rm -r --cached containers/fzl-karaf-camel-integration/karaf-data.bak-* \
+                   containers/fzl-superset/superset-db-data
+cat >> .gitignore <<'EOF'
+
+# Runtime data — never commit (personal data / database files)
+containers/fzl-karaf-camel-integration/karaf-data*/
+containers/fzl-superset/superset-db-data/
+EOF
+git commit -m "chore: stop tracking Karaf data backups and Superset DB files"
+#+end_src
+
+They remain in git *history* (already pushed). Removing them from history
+needs a rewrite (e.g. ~git filter-repo --path ... --invert-paths~) and a
+force-push; decide deliberately, since it changes every later commit hash.
+If the student documents are real, treat it as a personal-data exposure
+(LGPD) regardless of the history decision.
+
+** 3. Keep Theia parts under their own licenses
+
+Eclipse Theia is EPL-2.0 (secondary: GPL-2.0 with Classpath exception), which
+does not combine with GPL-3.0. Keep, and name them as exceptions in the notice:
+- ~containers/fzl-theia/~ — declares EPL-2.0 (~package.json~)
+- ~src-projects/fzl-theia-plugins/theia-plugin-bpmn-editor/~ and
+  ~src-projects/fzl-theia-plugins-dist/~ — declare Apache-2.0
+
+** 4. EPL-1.0 Maven parent (Acceleo, UML2)
+
+~src-projects/mvn-artifacts/fzlparent_m2t/pom.xml~ declares Eclipse Acceleo
+3.2.1 and UML2 (EPL-1.0, GPL-incompatible). Today it has no code and is not
+built anywhere — no conflict. Any future code built on it should be EPL
+licensed or kept outside the GNU-licensed scope.
+
+** 5. Third-party documents (not ours to license)
+
+Name as exceptions in the notice:
+- Centro Paula Souza forms (~Doc_13_1_anexo_I_*~, ~Doc_13_2_anexo_II_*~ as
+  .odt/.docx) under ~src-projects/karaf_bundles/blueprint-osgi-camel-bundles/etec_coord_processo__aproveitamento_disciplina/~
+  and ~workspaces/etec-coord-workspace/documentos-templates/~
+- ~workspaces/etec-coord-workspace/applications--calendarioescolar/Calendario Escolar - 2026 - ETEC da Zona Leste.pdf~
+
+** 6. Add the license
+
+1. ~LICENSE~ at the repo root: full official text, unmodified —
+   AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.txt
+   (GPL-3.0: https://www.gnu.org/licenses/gpl-3.0.txt)
+2. A notice (e.g. top of ~README~ or a ~NOTICE~ file):
+   #+begin_example
+   Copyright (C) 2024-2026 Wagner Marques <wagnerdocri@gmail.com>
+
+   fzlbpms is free software: you can redistribute it and/or modify it under
+   the terms of the GNU Affero General Public License as published by the
+   Free Software Foundation, either version 3 of the License, or (at your
+   option) any later version. See LICENSE.
+
+   Exceptions — these parts keep their own licenses or owners:
+   - containers/fzl-theia/                     EPL-2.0
+   - src-projects/fzl-theia-plugins*/          Apache-2.0
+   - src-projects/mvn-artifacts/fzlparent_m2t/ EPL-1.0 dependencies (Acceleo, UML2)
+   - Centro Paula Souza / ETEC documents (Doc_13_* templates, school
+     calendar PDF): property of their respective owners, not licensed here.
+   Third-party dependencies are under their own licenses.
+   #+end_example
+   (Check the copyright start year against the first commit: ~git log --reverse --format=%ad | head -1~.)
+3. Optional: ~SPDX-License-Identifier: AGPL-3.0-or-later~ header in new source files.
+4. GitHub detects ~LICENSE~ automatically after the push.

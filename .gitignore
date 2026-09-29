@@ -262,3 +262,8 @@ workspaces/fzlcoord/csvs-listas-de-alunos/
 # never publish to this public repository. Files stay local only.
 workspaces/etec-coord-workspace/app-dir--mencoes/**/*.csv
 workspaces/etec-coord-workspace/app-dir--mencoes/**/*.xlsx
+
+# Teacher-scoring evidence (certificates, portarias, designations) names
+# students and colleagues — personal data, local only. The scripts are public.
+workspaces/etec-coord-workspace/sigurh--pontuacaodocente/**/*.pdf
+workspaces/etec-coord-workspace/sigurh--pontuacaodocente/**/*.png

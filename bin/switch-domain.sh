@@ -312,12 +312,17 @@ log "Recreating fzl-oauth2-proxy (picks up the new issuer / cookie settings)..."
 docker compose up -d fzl-oauth2-proxy 2>/dev/null \
     || log "  (fzl-oauth2-proxy not running — skipped.)"
 
-log "Re-running the Moodle OAuth2 issuer configurator against the new domain..."
-docker compose up moodle-oauth2-configurator
-
 # The public tunnel belongs to the production host only (bin/run-stack.sh
 # applies the same rule on every start). A dev machine left running it
 # shares https://fzlbpms.com.br's traffic with production.
+#
+# Must happen BEFORE the Moodle OAuth2 configurator below: that script's
+# discover_endpoints() call fetches https://${DOMAIN}/.well-known/... over
+# the PUBLIC internet (not the docker network), so for the production domain
+# it can't succeed until the tunnel is actually proxying traffic to
+# fzl-nginx. Doing it after left the configurator discovering against a
+# domain nothing was serving yet, exhausting all retries and leaving
+# Moodle's Keycloak issuer disabled (no SSO login button).
 if [ "$DOMAIN" = "fzlbpms.local" ]; then
     if [ -n "$(docker ps -q -f name='^fzl-cloudflared$')" ]; then
         log "Stopping the Cloudflare tunnel (fzl-cloudflared) — development doesn't serve fzlbpms.com.br..."
@@ -329,6 +334,9 @@ else
     log "  tunnel gets a share of the public visitors."
     docker compose up -d fzl-cloudflared
 fi
+
+log "Re-running the Moodle OAuth2 issuer configurator against the new domain..."
+docker compose up moodle-oauth2-configurator
 
 FZLBPMS_ADMIN_USER="$(env_get FZLBPMS_ADMIN_USERNAME)"
 FZLBPMS_ADMIN_PASS="$(env_get FZLBPMS_ADMIN_PASSWORD)"

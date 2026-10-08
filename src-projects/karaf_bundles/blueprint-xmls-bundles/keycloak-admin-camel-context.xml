@@ -35,6 +35,12 @@
        roles as an ID-token claim. Flowable UI (docker-compose.yml) reads
        that claim to grant admin authorities ONLY to this user — every other
        realm user gets just 'access-task' by default.
+   10. Creates the public PKCE client 'fzl-tasktodayapp' (Task Today's
+       GitHub Pages SPA) and the 'tasktoday-admin' realm role, granted to
+       the admin user above. Same definitions as the standalone
+       bin/tasktoday-keycloak-setup.sh — kept here too so a Keycloak DB
+       wipe/recreate doesn't silently drop this client and leave the SPA
+       failing Keycloak login with "Client not found".
 
   Auth endpoints (port 9090):
     POST /fzlbpms/auth/login    {username, password}  → tokens
@@ -60,7 +66,11 @@
     FZLBPMS_ADMIN_PASSWORD — bootstrap admin password (temporary; change after first login)
     FZL_PUBLIC_HOSTNAME    — canonical externally-reachable hostname, used to build
                              redirect URIs for the SSO clients below (KC_HOSTNAME
-                             must match — see docker-compose.yml)
+                             must match — see docker-compose.yml) and, with
+                             FZL_PUBLIC_PROTO, to set X-Forwarded-Host/Proto on
+                             kc-authorize-admin's introspection call so Keycloak
+                             computes the same issuer a real caller's token has.
+    FZL_PUBLIC_PROTO       — canonical externally-reachable scheme (https). See above.
     FZL_WEBAPP_CLIENT_ID   — public client id for fzlbpmsadmin-web's PKCE login
     FZL_MOODLE_CLIENT_ID   — confidential client id for Moodle's auth_oauth2 plugin
     FZL_MOODLE_CLIENT_SECRET — secret for the Moodle confidential client
@@ -137,6 +147,24 @@
       <put path="/{id}/password" consumes="application/json">
         <to uri="direct:kc-change-user-password"/>
       </put>
+      <get path="/{id}/roles">
+        <to uri="direct:kc-get-user-roles"/>
+      </get>
+      <post path="/{id}/roles" consumes="application/json">
+        <to uri="direct:kc-grant-user-role"/>
+      </post>
+      <delete path="/{id}/roles/{roleName}">
+        <to uri="direct:kc-revoke-user-role"/>
+      </delete>
+    </rest>
+
+    <!-- Realm roles catalog — lets the admin UI populate a role picker
+         without hardcoding role names. See the per-app '<app>-' naming
+         convention noted by kc-ensure-tasktoday-role below. -->
+    <rest path="/fzlbpms/admin/roles">
+      <get>
+        <to uri="direct:kc-list-roles"/>
+      </get>
     </rest>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -155,10 +183,15 @@
         <to uri="direct:kc-ensure-moodle-client"/>
         <to uri="direct:kc-ensure-flowable-client"/>
         <to uri="direct:kc-ensure-theia-client"/>
+        <to uri="direct:kc-ensure-admin-role"/>
         <to uri="direct:kc-ensure-theia-role"/>
+        <to uri="direct:kc-ensure-tasktoday-client"/>
+        <to uri="direct:kc-ensure-tasktoday-role"/>
         <to uri="direct:kc-ensure-admin-user"/>
-        <!-- After the user exists — the grant needs its id. -->
+        <!-- After the user exists — the grants need its id. -->
+        <to uri="direct:kc-grant-admin-role"/>
         <to uri="direct:kc-grant-theia-role"/>
+        <to uri="direct:kc-grant-tasktoday-role"/>
         <to uri="direct:kc-ensure-microsoft-idp"/>
         <!-- Per-software administrator identities (see .env.template). -->
         <to uri="direct:kc-ensure-moodle-admin-user"/>
@@ -207,6 +240,102 @@
       <setBody>
         <simple>${exchangeProperty.kc.savedBody}</simple>
       </setBody>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         AUTHORIZE ADMIN CALLER — direct:kc-authorize-admin
+         Guards the USER CRUD REST API below (and the role-mapping API
+         alongside it). Introspects the CALLER's own bearer token against
+         Keycloak (RFC 7662, via the confidential fzlbpms-camel client's own
+         credentials — no JWKS/signature-verification code needed here) and
+         requires the realm role 'admin'. On failure, sets
+         CamelHttpResponseCode 403 and <stop/>s the exchange — direct: is
+         synchronous on the same Exchange, so this halts the calling CRUD
+         route too, before it ever reaches kc-get-admin-token. On success,
+         restores the original request body so the calling route sees it
+         unchanged.
+
+         Deliberately a single hard-coded 'admin' check for now — every
+         caller of this API today is the stack superadmin. If delegated
+         per-app admins are ever needed, this is the one place to extend
+         (e.g. accept an app-specific '<app>-admin' role too and scope the
+         CRUD routes' queries accordingly).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-authorize-admin">
+      <from uri="direct:kc-authorize-admin"/>
+      <setProperty name="kc.callerAuth">
+        <simple>${header.Authorization}</simple>
+      </setProperty>
+      <setProperty name="kc.preAuthzBody">
+        <simple>${body}</simple>
+      </setProperty>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.callerAuth} == null</simple>
+          <setBody><constant>{"error":"Missing Authorization header"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
+          <log message="[KC-AUTHZ] Rejected — no Authorization header."/>
+          <stop/>
+        </when>
+      </choice>
+      <!-- ${exchangeProperty.kc.callerAuth.substring(7)} does NOT work here —
+           Camel Simple treats the dotted exchangeProperty key
+           ('kc.callerAuth') and the trailing '.substring(7)' method call as
+           ambiguous and silently resolves to an empty string. header.Authorization
+           has no dot in its name, so the same OGNL method-call chain works
+           fine on it — read it directly (still present; removeHeaders below
+           hasn't run yet). -->
+      <setBody>
+        <simple>client_id=fzlbpms-camel&amp;client_secret={{KC_CAMEL_CLIENT_SECRET}}&amp;token=${header.Authorization.substring(7)}</simple>
+      </setBody>
+      <!-- Must strip the inbound REST call's own CamelHttpUri/CamelHttpPath
+           headers here, not just Authorization — otherwise the Camel HTTP
+           producer below targets the ORIGINAL /fzlbpms/admin/... request
+           path instead of the Keycloak introspect URL. excludePattern keeps
+           the REST path params (id/roleName) alive for the routes that use
+           them after this guard returns. -->
+      <removeHeaders pattern="*" excludePattern="id|roleName"/>
+      <setHeader name="Content-Type">
+        <constant>application/x-www-form-urlencoded</constant>
+      </setHeader>
+      <!-- Keycloak computes its own issuer from X-Forwarded-* (KC_PROXY_HEADERS=
+           xforwarded), not from a single globally-fixed value — a real caller's
+           token was minted with iss={{FZL_PUBLIC_PROTO}}://{{FZL_PUBLIC_HOSTNAME}}/...
+           (whatever path a browser used to reach Keycloak), so introspecting it
+           via the internal fzl-keycloak:8080 URL below fails signature/issuer
+           validation ("Access token JWT check failed") unless these headers
+           tell Keycloak to compute that same canonical issuer for this request
+           too. Mirrors nginx's own X-Forwarded-Host/Proto on /auth/ (see
+           nginx-shared/app-server.conf). -->
+      <setHeader name="X-Forwarded-Host">
+        <simple>{{FZL_PUBLIC_HOSTNAME}}</simple>
+      </setHeader>
+      <setHeader name="X-Forwarded-Proto">
+        <simple>{{FZL_PUBLIC_PROTO}}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/realms/{{FZL_REALM}}/protocol/openid-connect/token/introspect?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setProperty name="kc.callerRoles">
+        <jsonpath suppressExceptions="true">$.realm_access.roles</jsonpath>
+      </setProperty>
+      <setBody>
+        <simple>${exchangeProperty.kc.preAuthzBody}</simple>
+      </setBody>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.callerRoles} == null</simple>
+          <setBody><constant>{"error":"Invalid or expired token"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
+          <log message="[KC-AUTHZ] Rejected — token introspection inactive or has no realm roles."/>
+          <stop/>
+        </when>
+        <when>
+          <simple>${exchangeProperty.kc.callerRoles} not contains 'admin'</simple>
+          <setBody><constant>{"error":"Caller lacks the 'admin' realm role"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
+          <log message="[KC-AUTHZ] Rejected — caller lacks the 'admin' realm role."/>
+          <stop/>
+        </when>
+      </choice>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -700,6 +829,99 @@
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE ADMIN REALM ROLE
+         The stack-wide superadmin role — gates the /fzlbpms/admin/* user-CRUD
+         API's kc-authorize-admin check. Same role the ansible realm/client
+         creation playbook (under ansible/) defines; kept here too so a
+         Keycloak DB wipe doesn't silently strip the bootstrap admin's
+         access to their own user-admin tooling.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-admin-role">
+      <from uri="direct:kc-ensure-admin-role"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/admin?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} == 200</simple>
+          <log message="[KC-SETUP] Realm role 'admin' already exists."/>
+        </when>
+        <otherwise>
+          <setBody>
+            <constant>{"name":"admin","description":"Stack-wide Administrator"}</constant>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <log message="[KC-SETUP] Realm role 'admin' create returned ${header.CamelHttpResponseCode}."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GRANT admin TO THE BOOTSTRAP ADMIN
+         Runs after kc-ensure-admin-user so the user is guaranteed to exist.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-grant-admin-role">
+      <from uri="direct:kc-grant-admin-role"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/admin?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} != 200</simple>
+          <log message="[KC-SETUP] WARNING — realm role 'admin' not found; skipping grant."/>
+        </when>
+        <otherwise>
+          <setProperty name="kc.adminRoleId">
+            <jsonpath>$.id</jsonpath>
+          </setProperty>
+
+          <setBody><constant></constant></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZLBPMS_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${body} == '[]'</simple>
+              <log message="[KC-SETUP] WARNING — user '{{FZLBPMS_ADMIN_USERNAME}}' not found; cannot grant 'admin'."/>
+            </when>
+            <otherwise>
+              <setProperty name="kc.adminRoleUserId">
+                <jsonpath>$[0].id</jsonpath>
+              </setProperty>
+              <setBody>
+                <simple>[{"id":"${exchangeProperty.kc.adminRoleId}","name":"admin"}]</simple>
+              </setBody>
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <setHeader name="Content-Type">
+                <constant>application/json</constant>
+              </setHeader>
+              <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.adminRoleUserId}/role-mappings/realm?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+              <log message="[KC-SETUP] Granted 'admin' to '{{FZLBPMS_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
+            </otherwise>
+          </choice>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
          ENSURE THEIA-USER REALM ROLE
          Authentication says who you are; this role says whether you get a
          shell. oauth2-proxy is started with an "allowed-role" of
@@ -788,6 +1010,146 @@
               </setHeader>
               <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.theiaUserId}/role-mappings/realm?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
               <log message="[KC-SETUP] Granted 'theia-user' to '{{FZLBPMS_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
+            </otherwise>
+          </choice>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE TASKTODAY CLIENT (public, PKCE, GitHub Pages SPA)
+         publicClient=true + PKCE S256    → no client secret; same shape as
+                                             kc-ensure-webapp-client, since
+                                             this is also a pure browser SPA.
+         Fixed GitHub Pages / localhost dev URLs, not FZL_PUBLIC_HOSTNAME —
+         this SPA is static-hosted outside the stack and talks to whichever
+         domain the stack is currently on (it only needs the realm's token
+         endpoint, reached via the redirect). Same definition as
+         bin/tasktoday-keycloak-setup.sh — keep both in sync if this changes.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-tasktoday-client">
+      <from uri="direct:kc-ensure-tasktoday-client"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId=fzl-tasktodayapp&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"clientId":"fzl-tasktodayapp","name":"FZL Task Today App (GitHub Pages)","enabled":true,"publicClient":true,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"rootUrl":"https://wagnermarques.github.io/fzl-tasktodayapp","baseUrl":"https://wagnermarques.github.io/fzl-tasktodayapp/","redirectUris":["https://wagnermarques.github.io/fzl-tasktodayapp/*","http://localhost:3030/*","http://localhost:4173/*","http://localhost:*","http://127.0.0.1:*"],"webOrigins":["https://wagnermarques.github.io","http://localhost:3030","http://localhost:4173","http://localhost:*","+"],"attributes":{"pkce.code.challenge.method":"S256","post.logout.redirect.uris":"https://wagnermarques.github.io/fzl-tasktodayapp/*##http://localhost:3030/*##http://localhost:4173/*##http://localhost:*##http://127.0.0.1:*"}}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Public client 'fzl-tasktodayapp' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Tasktoday client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Client 'fzl-tasktodayapp' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE TASKTODAY-ADMIN REALM ROLE
+         Administers Task Today's native (shared) categories — granted to
+         the stack admin below. Same role as
+         bin/tasktoday-keycloak-setup.sh creates.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-tasktoday-role">
+      <from uri="direct:kc-ensure-tasktoday-role"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/tasktoday-admin?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} == 200</simple>
+          <log message="[KC-SETUP] Realm role 'tasktoday-admin' already exists."/>
+        </when>
+        <otherwise>
+          <setBody>
+            <constant>{"name":"tasktoday-admin","description":"Administra as categorias nativas (compartilhadas) do Task Today App"}</constant>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <log message="[KC-SETUP] Realm role 'tasktoday-admin' create returned ${header.CamelHttpResponseCode}."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GRANT tasktoday-admin TO THE BOOTSTRAP ADMIN
+         Runs after kc-ensure-admin-user so the user is guaranteed to exist.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-grant-tasktoday-role">
+      <from uri="direct:kc-grant-tasktoday-role"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/tasktoday-admin?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} != 200</simple>
+          <log message="[KC-SETUP] WARNING — realm role 'tasktoday-admin' not found; skipping grant."/>
+        </when>
+        <otherwise>
+          <setProperty name="kc.tasktodayRoleId">
+            <jsonpath>$.id</jsonpath>
+          </setProperty>
+
+          <setBody><constant></constant></setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users?username={{FZLBPMS_ADMIN_USERNAME}}&amp;exact=true&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${body} == '[]'</simple>
+              <log message="[KC-SETUP] WARNING — user '{{FZLBPMS_ADMIN_USERNAME}}' not found; cannot grant 'tasktoday-admin'."/>
+            </when>
+            <otherwise>
+              <setProperty name="kc.tasktodayUserId">
+                <jsonpath>$[0].id</jsonpath>
+              </setProperty>
+              <setBody>
+                <simple>[{"id":"${exchangeProperty.kc.tasktodayRoleId}","name":"tasktoday-admin"}]</simple>
+              </setBody>
+              <removeHeaders pattern="*"/>
+              <setHeader name="Authorization">
+                <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+              </setHeader>
+              <setHeader name="Content-Type">
+                <constant>application/json</constant>
+              </setHeader>
+              <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.tasktodayUserId}/role-mappings/realm?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+              <log message="[KC-SETUP] Granted 'tasktoday-admin' to '{{FZLBPMS_ADMIN_USERNAME}}' — returned ${header.CamelHttpResponseCode}."/>
             </otherwise>
           </choice>
         </otherwise>
@@ -1007,6 +1369,7 @@
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="kc-list-users">
       <from uri="direct:kc-list-users"/>
+      <to uri="direct:kc-authorize-admin"/>
       <to uri="direct:kc-get-admin-token"/>
       <setBody><constant></constant></setBody>
       <removeHeaders pattern="*"/>
@@ -1021,6 +1384,7 @@
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="kc-get-user">
       <from uri="direct:kc-get-user"/>
+      <to uri="direct:kc-authorize-admin"/>
       <setProperty name="kc.userId">
         <simple>${header.id}</simple>
       </setProperty>
@@ -1040,6 +1404,7 @@
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="kc-create-user">
       <from uri="direct:kc-create-user"/>
+      <to uri="direct:kc-authorize-admin"/>
       <to uri="direct:kc-get-admin-token"/>
       <removeHeaders pattern="*"/>
       <setHeader name="Authorization">
@@ -1058,6 +1423,7 @@
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="kc-update-user">
       <from uri="direct:kc-update-user"/>
+      <to uri="direct:kc-authorize-admin"/>
       <setProperty name="kc.userId">
         <simple>${header.id}</simple>
       </setProperty>
@@ -1078,6 +1444,7 @@
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="kc-delete-user">
       <from uri="direct:kc-delete-user"/>
+      <to uri="direct:kc-authorize-admin"/>
       <setProperty name="kc.userId">
         <simple>${header.id}</simple>
       </setProperty>
@@ -1099,6 +1466,7 @@
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="kc-change-user-password">
       <from uri="direct:kc-change-user-password"/>
+      <to uri="direct:kc-authorize-admin"/>
       <setProperty name="kc.userId">
         <simple>${header.id}</simple>
       </setProperty>
@@ -1120,6 +1488,144 @@
         <constant>application/json</constant>
       </setHeader>
       <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}/reset-password?httpMethod=PUT&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CRUD — LIST REALM ROLES
+         GET /fzlbpms/admin/roles
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-list-roles">
+      <from uri="direct:kc-list-roles"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <to uri="direct:kc-get-admin-token"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CRUD — GET A USER'S REALM ROLES
+         GET /fzlbpms/admin/users/{id}/roles
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-get-user-roles">
+      <from uri="direct:kc-get-user-roles"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <setProperty name="kc.userId">
+        <simple>${header.id}</simple>
+      </setProperty>
+      <to uri="direct:kc-get-admin-token"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}/role-mappings/realm?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CRUD — GRANT A REALM ROLE TO A USER
+         POST /fzlbpms/admin/users/{id}/roles  body: {"name":"<roleName>"}
+         Looks the role up by name for its id (Keycloak's role-mappings
+         endpoint wants [{"id","name"}]), same two-step pattern as
+         kc-grant-theia-role / kc-grant-tasktoday-role above.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-grant-user-role">
+      <from uri="direct:kc-grant-user-role"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <setProperty name="kc.userId">
+        <simple>${header.id}</simple>
+      </setProperty>
+      <setProperty name="kc.roleName">
+        <jsonpath>$.name</jsonpath>
+      </setProperty>
+      <to uri="direct:kc-get-admin-token"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/${exchangeProperty.kc.roleName}?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} != 200</simple>
+          <setBody><constant>{"error":"Role not found"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>404</constant></setHeader>
+        </when>
+        <otherwise>
+          <setProperty name="kc.roleId">
+            <jsonpath>$.id</jsonpath>
+          </setProperty>
+          <setBody>
+            <simple>[{"id":"${exchangeProperty.kc.roleId}","name":"${exchangeProperty.kc.roleName}"}]</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}/role-mappings/realm?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CRUD — REVOKE A REALM ROLE FROM A USER
+         DELETE /fzlbpms/admin/users/{id}/roles/{roleName}
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-revoke-user-role">
+      <from uri="direct:kc-revoke-user-role"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <setProperty name="kc.userId">
+        <simple>${header.id}</simple>
+      </setProperty>
+      <setProperty name="kc.roleName">
+        <simple>${header.roleName}</simple>
+      </setProperty>
+      <to uri="direct:kc-get-admin-token"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles/${exchangeProperty.kc.roleName}?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${header.CamelHttpResponseCode} != 200</simple>
+          <setBody><constant>{"error":"Role not found"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>404</constant></setHeader>
+        </when>
+        <otherwise>
+          <setProperty name="kc.roleId">
+            <jsonpath>$.id</jsonpath>
+          </setProperty>
+          <setBody>
+            <simple>[{"id":"${exchangeProperty.kc.roleId}","name":"${exchangeProperty.kc.roleName}"}]</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <!-- Plain http:// DELETE (Apache HttpClient 4.x, this Camel
+               version's camel-http) silently drops the JSON body above —
+               HttpDelete isn't entity-enclosing by default. Keycloak's
+               DELETE .../role-mappings/realm treats a missing body as
+               "remove EVERY realm role", which actually happened during
+               testing (wiped default-roles-fzlbpms along with the targeted
+               role). deleteWithBody=true tells camel-http to build an
+               entity-enclosing DELETE instead. (jetty: as a producer scheme
+               was tried first — this bundle only has the Jetty consumer
+               feature installed, not the producer.) -->
+          <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}/role-mappings/realm?httpMethod=DELETE&amp;deleteWithBody=true&amp;throwExceptionOnFailure=false"/>
+        </otherwise>
+      </choice>
     </route>
 
   </camelContext>

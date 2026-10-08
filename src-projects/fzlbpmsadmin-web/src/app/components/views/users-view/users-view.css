@@ -1,0 +1,38 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.panel {
+  max-width: 700px;
+  margin-bottom: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+.users-table {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.role-group {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.role-group strong {
+  text-transform: capitalize;
+  margin-bottom: 4px;
+}
+
+.error {
+  color: #b00020;
+  font-weight: 500;
+}

@@ -142,4 +142,21 @@ export class AuthService {
     const username = claims.preferred_username ?? 'unknown';
     return { username, name: claims.name ?? username };
   }
+
+  /** Raw access token, for the auth interceptor — null if not logged in. */
+  getAccessToken(): string | null {
+    return localStorage.getItem(ACCESS_TOKEN_KEY);
+  }
+
+  /** Checks realm_access.roles on the current access token. */
+  hasRole(role: string): boolean {
+    const token = this.getAccessToken();
+    if (!token) return false;
+    try {
+      const claims = decodeJwtPayload(token) as { realm_access?: { roles?: string[] } };
+      return claims.realm_access?.roles?.includes(role) ?? false;
+    } catch {
+      return false;
+    }
+  }
 }

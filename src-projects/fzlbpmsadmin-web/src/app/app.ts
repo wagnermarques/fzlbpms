@@ -30,6 +30,7 @@ export class App {
 
   private auth = inject(AuthService);
   currentUser = computed(() => this.auth.currentUser()?.name ?? null);
+  isAdmin = computed(() => !!this.auth.currentUser() && this.auth.hasRole('admin'));
 
   constructor() {
     this.checkScreenSize();

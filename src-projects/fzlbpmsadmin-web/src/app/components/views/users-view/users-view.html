@@ -1,0 +1,158 @@
+<h2>Usuários</h2>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+<div class="toolbar">
+  <button mat-flat-button color="primary" (click)="toggleCreateForm()">
+    <mat-icon>person_add</mat-icon> Novo usuário
+  </button>
+  <button mat-icon-button (click)="reload()" matTooltip="Recarregar">
+    <mat-icon>refresh</mat-icon>
+  </button>
+</div>
+
+@if (showCreateForm()) {
+  <mat-card class="panel">
+    <mat-card-content>
+      <div class="form-grid">
+        <mat-form-field>
+          <mat-label>Username</mat-label>
+          <input matInput [(ngModel)]="newUsername" required />
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>E-mail</mat-label>
+          <input matInput type="email" [(ngModel)]="newEmail" />
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>Nome</mat-label>
+          <input matInput [(ngModel)]="newFirstName" />
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>Sobrenome</mat-label>
+          <input matInput [(ngModel)]="newLastName" />
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>Senha inicial</mat-label>
+          <input matInput type="password" [(ngModel)]="newPassword" required />
+        </mat-form-field>
+      </div>
+      <mat-checkbox [(ngModel)]="newTemporary">Exigir troca de senha no primeiro login</mat-checkbox>
+    </mat-card-content>
+    <mat-card-actions>
+      <button mat-flat-button color="primary" [disabled]="!newUsername || !newPassword" (click)="submitCreateUser()">
+        Criar
+      </button>
+      <button mat-stroked-button (click)="toggleCreateForm()">Cancelar</button>
+    </mat-card-actions>
+  </mat-card>
+}
+
+<table mat-table [dataSource]="users()" class="users-table">
+  <ng-container matColumnDef="username">
+    <th mat-header-cell *matHeaderCellDef>Username</th>
+    <td mat-cell *matCellDef="let u">{{ u.username }}</td>
+  </ng-container>
+
+  <ng-container matColumnDef="email">
+    <th mat-header-cell *matHeaderCellDef>E-mail</th>
+    <td mat-cell *matCellDef="let u">{{ u.email }}</td>
+  </ng-container>
+
+  <ng-container matColumnDef="enabled">
+    <th mat-header-cell *matHeaderCellDef>Ativo</th>
+    <td mat-cell *matCellDef="let u">
+      <button mat-icon-button (click)="toggleEnabled(u)" [matTooltip]="u.enabled ? 'Desativar' : 'Ativar'">
+        <mat-icon>{{ u.enabled ? 'toggle_on' : 'toggle_off' }}</mat-icon>
+      </button>
+    </td>
+  </ng-container>
+
+  <ng-container matColumnDef="actions">
+    <th mat-header-cell *matHeaderCellDef>Ações</th>
+    <td mat-cell *matCellDef="let u">
+      <button mat-button (click)="openRoleEditor(u)">
+        <mat-icon inline>badge</mat-icon> Roles
+      </button>
+      <button mat-button (click)="openPasswordEditor(u)">
+        <mat-icon inline>key</mat-icon> Senha
+      </button>
+      <button mat-button color="warn" (click)="deleteUser(u)">
+        <mat-icon inline>delete</mat-icon> Excluir
+      </button>
+    </td>
+  </ng-container>
+
+  <tr mat-header-row *matHeaderRowDef="columns"></tr>
+  <tr mat-row *matRowDef="let row; columns: columns"></tr>
+</table>
+
+@if (loading()) {
+  <p>Carregando...</p>
+}
+
+@if (roleEditorUserId()) {
+  <mat-card class="panel">
+    <mat-card-header>
+      <mat-card-title>
+        Roles de {{ roleEditorUser()?.username }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @for (group of roleGroups(); track group.label) {
+        <div class="role-group">
+          <strong>{{ group.label }}</strong>
+          @for (role of group.roles; track role.name) {
+            <mat-checkbox
+              [checked]="roleEditorSelected().has(role.name)"
+              (change)="toggleRoleSelection(role.name)"
+              [matTooltip]="role.description ?? ''"
+            >
+              {{ role.name }}
+            </mat-checkbox>
+          }
+        </div>
+      }
+    </mat-card-content>
+    <mat-card-actions>
+      <button
+        mat-flat-button
+        color="primary"
+        [disabled]="roleEditorBusy()"
+        (click)="saveRoleEditor(roleEditorUser()!)"
+      >
+        Salvar
+      </button>
+      <button mat-stroked-button (click)="closeRoleEditor()">Cancelar</button>
+    </mat-card-actions>
+  </mat-card>
+}
+
+@if (passwordEditorUserId()) {
+  <mat-card class="panel">
+    <mat-card-header>
+      <mat-card-title>
+        Redefinir senha de {{ passwordEditorUser()?.username }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-form-field>
+        <mat-label>Nova senha</mat-label>
+        <input matInput type="password" [(ngModel)]="resetPassword" required />
+      </mat-form-field>
+      <mat-checkbox [(ngModel)]="resetTemporary">Exigir troca no próximo login</mat-checkbox>
+    </mat-card-content>
+    <mat-card-actions>
+      <button
+        mat-flat-button
+        color="primary"
+        [disabled]="!resetPassword"
+        (click)="submitResetPassword(passwordEditorUser()!)"
+      >
+        Salvar
+      </button>
+      <button mat-stroked-button (click)="closePasswordEditor()">Cancelar</button>
+    </mat-card-actions>
+  </mat-card>
+}

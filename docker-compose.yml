@@ -272,7 +272,13 @@ services:
       FZL_MOODLE_ADMIN_USERNAME: ${FZL_MOODLE_ADMIN_USERNAME:?}
       FZL_MOODLE_ADMIN_PASSWORD: ${FZL_MOODLE_ADMIN_PASSWORD:?}
       # SSO clients (browser-redirect OIDC) bootstrapped alongside fzlbpms-camel.
+      # FZL_PUBLIC_PROTO is also needed by kc-authorize-admin, which must
+      # introspect caller tokens with X-Forwarded-* set to this same
+      # host/proto — Keycloak computes its issuer from those headers
+      # (KC_PROXY_HEADERS=xforwarded), and a token minted via the public
+      # domain fails introspection otherwise (issuer mismatch).
       FZL_PUBLIC_HOSTNAME: ${FZL_PUBLIC_HOSTNAME:-localhost}
+      FZL_PUBLIC_PROTO: ${FZL_PUBLIC_PROTO:-https}
       FZL_WEBAPP_CLIENT_ID: ${FZL_WEBAPP_CLIENT_ID:?}
       FZL_MOODLE_CLIENT_ID: ${FZL_MOODLE_CLIENT_ID:?}
       FZL_MOODLE_CLIENT_SECRET: ${FZL_MOODLE_CLIENT_SECRET:?}

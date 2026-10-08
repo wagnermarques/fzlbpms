@@ -16,6 +16,13 @@
         <mat-icon matListItemIcon>apps</mat-icon>
         <span matListItemTitle>Aplicações</span>
       </a>
+
+      @if (isAdmin()) {
+        <a mat-list-item routerLink="/users" (click)="drawer.close()">
+          <mat-icon matListItemIcon>people</mat-icon>
+          <span matListItemTitle>Usuários</span>
+        </a>
+      }
     </mat-nav-list>
   </mat-drawer>
 

@@ -58,10 +58,22 @@
 		</onException>
 
 		<!-- Jetty REST Server on Port 9094 (proxied by Nginx /chamadas/ -> /fzlbpms/chamadas/) -->
+		<!-- Bare enableCORS="true" uses Camel's built-in default
+		     Access-Control-Allow-Headers (Origin, Accept, X-Requested-With,
+		     Content-Type, Access-Control-Request-Method,
+		     Access-Control-Request-Headers) — it does NOT include
+		     Authorization. /auth/me (and any other call sending a Bearer
+		     token) triggers a preflight asking for "authorization", which
+		     the browser then blocks since the default list doesn't allow
+		     it. The onException handler above already sets the right
+		     headers for its own (error) responses; this does the same for
+		     every normal preflight. -->
 		<restConfiguration component="jetty"
 			port="9094"
 			bindingMode="off"
-			enableCORS="true" />
+			enableCORS="true">
+			<corsHeaders key="Access-Control-Allow-Headers" value="Origin, Accept, X-Requested-With, Content-Type, Authorization" />
+		</restConfiguration>
 
 		<rest path="/fzlbpms/chamadas">
 			<!-- Auth Endpoints -->

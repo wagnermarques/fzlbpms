@@ -1,0 +1,36 @@
+<h2>Configurações</h2>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+@if (loading()) {
+  <p>Carregando...</p>
+} @else {
+  <mat-card class="panel">
+    <mat-card-header>
+      <mat-card-title>Acesso ao Keycloak</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-slide-toggle [checked]="keycloakAdminPublic()" (change)="toggle()">
+        Console de administração do Keycloak acessível pela internet
+      </mat-slide-toggle>
+      <p class="hint">
+        Quando desativado, <code>/auth/admin/</code> e <code>/auth/realms/master/</code> só
+        respondem a partir do acesso local/LAN (via Cloudflare Tunnel, mesmo que a
+        requisição tenha um token válido, é bloqueada). O login, refresh e demais
+        rotas de <code>/auth/realms/fzlbpms/</code> usadas pelos apps nunca são afetados.
+      </p>
+    </mat-card-content>
+    <mat-card-actions>
+      <button mat-flat-button color="primary" [disabled]="saving()" (click)="save()">
+        <mat-icon inline>save</mat-icon> Salvar
+      </button>
+      @if (saved()) {
+        <span class="saved-hint">
+          <mat-icon inline>check_circle</mat-icon> Salvo.
+        </span>
+      }
+    </mat-card-actions>
+  </mat-card>
+}

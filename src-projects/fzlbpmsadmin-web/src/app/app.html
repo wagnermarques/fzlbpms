@@ -22,6 +22,11 @@
           <mat-icon matListItemIcon>people</mat-icon>
           <span matListItemTitle>Usuários</span>
         </a>
+
+        <a mat-list-item routerLink="/settings" (click)="drawer.close()">
+          <mat-icon matListItemIcon>settings</mat-icon>
+          <span matListItemTitle>Configurações</span>
+        </a>
       }
     </mat-nav-list>
   </mat-drawer>

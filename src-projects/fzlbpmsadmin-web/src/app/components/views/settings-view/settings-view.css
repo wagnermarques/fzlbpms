@@ -1,0 +1,28 @@
+.panel {
+  max-width: 700px;
+}
+
+.hint {
+  margin-top: 16px;
+  color: #666;
+}
+
+.hint code {
+  background-color: #e0e0e0;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: monospace;
+}
+
+.saved-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #2e7d32;
+  margin-left: 8px;
+}
+
+.error {
+  color: #b00020;
+  font-weight: 500;
+}

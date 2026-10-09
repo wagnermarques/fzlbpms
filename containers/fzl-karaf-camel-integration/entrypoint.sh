@@ -56,6 +56,15 @@ find "$KARAF_HOME" \( -path "$KARAF_HOME/deploy_bundles" -o -path "$KARAF_HOME/d
   -o -exec chown appuser:appuser {} +
 chmod a+rwx "$KARAF_HOME/deploy"
 
+# /opt/fzlbpms-settings (host bind mount, see docker-compose.yml) is where
+# keycloak-admin-camel-context.xml persists its small settings.json blob.
+# Same host-authored-directory-vs-container-uid problem as $KARAF_HOME/deploy
+# above — appuser (uid 999) can't write into a dir the host user owns, so
+# same fix: world-writable rather than chown, since the host side
+# (mkdir -p containers/fzl-karaf-camel-integration/fzlbpms-settings) never
+# runs as uid 999 either.
+chmod a+rwx /opt/fzlbpms-settings
+
 echo "==== INSPECIONANDO PERMISS�ES DEPOIS DO CHOWN ===="
 ls -la /opt/karaf
 

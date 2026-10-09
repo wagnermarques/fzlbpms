@@ -88,6 +88,11 @@ export class AppsHomeView {
       description: 'Gerencia usuários e roles no Keycloak (fzl-tasktodayapp, Chamadas Online e futuras apps) — requer a role "admin". Mesma seção também disponível no menu lateral "Usuários".',
     },
     {
+      name: 'Configurações',
+      url: '/fzlbpmsadmin/settings',
+      description: 'Configurações persistidas do stack — ex.: acesso público ao console do Keycloak. Requer a role "admin". Mesma seção também disponível no menu lateral "Configurações".',
+    },
+    {
       name: 'Karaf Console',
       url: '/karafconsole/',
       description: 'Web console for Apache Karaf (OSGi container), managing bundles and services.',

@@ -167,6 +167,32 @@
       </get>
     </rest>
 
+    <!-- Small persisted settings blob ("Configurações" UI) — see
+         kc-get-settings/kc-put-settings below for storage details. -->
+    <rest path="/fzlbpms/admin/settings">
+      <get>
+        <to uri="direct:kc-get-settings"/>
+      </get>
+      <put consumes="application/json">
+        <to uri="direct:kc-put-settings"/>
+      </put>
+    </rest>
+
+    <!-- nginx auth_request subrequest target ONLY — see
+         kc-internal-keycloak-admin-gate below. Deliberately NOT behind
+         kc-authorize-admin: nginx's subrequest carries no user bearer
+         token, only the original request's own headers (notably
+         CF-Connecting-IP). Not reachable from outside: nginx's
+         "location = /internal/keycloak-admin-gate { internal; ... }"
+         (app-server.conf) only lets nginx itself reach this path, and even
+         if that changed, /fzlbpms/internal/* isn't exposed as a public app
+         route anywhere. -->
+    <rest path="/fzlbpms/internal/keycloak-admin-gate">
+      <get>
+        <to uri="direct:kc-internal-keycloak-admin-gate"/>
+      </get>
+    </rest>
+
     <!-- ═══════════════════════════════════════════════════════════════════
          STARTUP PROVISIONING
          Fires once, 40 s after Karaf boots.
@@ -176,6 +202,7 @@
       <from uri="timer:kc-setup?repeatCount=1&amp;delay=40000"/>
       <doTry>
         <log message="[KC-SETUP] Starting Keycloak provisioning..."/>
+        <to uri="direct:kc-ensure-default-settings"/>
         <to uri="direct:kc-get-admin-token"/>
         <to uri="direct:kc-ensure-realm"/>
         <to uri="direct:kc-ensure-client"/>
@@ -1624,6 +1651,137 @@
                was tried first — this bundle only has the Jetty consumer
                feature installed, not the producer.) -->
           <toD uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/users/${exchangeProperty.kc.userId}/role-mappings/realm?httpMethod=DELETE&amp;deleteWithBody=true&amp;throwExceptionOnFailure=false"/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SETTINGS STORAGE — a small JSON blob at
+         /opt/fzlbpms-settings/settings.json (bind-mounted, survives
+         container recreation — see docker-compose.yml). Deliberately a
+         plain file, not a Keycloak realm attribute or a new Postgres
+         table: camel-file is a core Camel component (always available,
+         no extra Karaf feature/DataSource bean to install), and GET-merge-
+         PUT on the full Keycloak RealmRepresentation risks clobbering
+         unrelated realm config for a ~10-byte flag. Start small; move this
+         to a real table if/when "SOME configurations" grows into many.
+
+         ENSURE DEFAULT SETTINGS — startup-only. Never overwrites a file
+         that already exists (so a value you've since changed survives a
+         restart) — only seeds the default the very first time.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-default-settings">
+      <from uri="direct:kc-ensure-default-settings"/>
+      <setBody><constant></constant></setBody>
+      <pollEnrich timeout="2000">
+        <constant>file:/opt/fzlbpms-settings?fileName=settings.json&amp;noop=true&amp;idempotent=false</constant>
+      </pollEnrich>
+      <choice>
+        <when>
+          <simple>${header.CamelFileName} == null</simple>
+          <setBody>
+            <constant>{"keycloakAdminPublic":true}</constant>
+          </setBody>
+          <to uri="file:/opt/fzlbpms-settings?fileName=settings.json"/>
+          <log message="[KC-SETUP] Settings file created with defaults (keycloakAdminPublic=true — Keycloak admin console open to the internet by default; change it from Configurações)."/>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Settings file already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GET SETTINGS — GET /fzlbpms/admin/settings (kc-authorize-admin)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-get-settings">
+      <from uri="direct:kc-get-settings"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <setBody><constant></constant></setBody>
+      <pollEnrich timeout="2000">
+        <constant>file:/opt/fzlbpms-settings?fileName=settings.json&amp;noop=true&amp;idempotent=false</constant>
+      </pollEnrich>
+      <choice>
+        <when>
+          <simple>${header.CamelFileName} == null</simple>
+          <setBody>
+            <constant>{"keycloakAdminPublic":true}</constant>
+          </setBody>
+        </when>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PUT SETTINGS — PUT /fzlbpms/admin/settings (kc-authorize-admin)
+         Body: the full settings JSON (currently just {"keycloakAdminPublic":
+         true|false}) — written verbatim, overwriting the file whole, so
+         the UI must send the complete object back, not a partial patch.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-put-settings">
+      <from uri="direct:kc-put-settings"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <to uri="file:/opt/fzlbpms-settings?fileName=settings.json"/>
+      <setBody><constant></constant></setBody>
+      <setHeader name="CamelHttpResponseCode"><constant>204</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         INTERNAL — nginx auth_request target for /auth/admin/* and
+         /auth/realms/master/* (app-server.conf). NOT behind
+         kc-authorize-admin (see the REST declaration's comment above).
+
+         Local/LAN requests (no CF-Connecting-IP header — Cloudflare adds
+         it to every tunnel request and a client can't strip it) are
+         ALWAYS allowed, regardless of the setting — same guarantee the old
+         $keycloak_admin_from_internet nginx map used to provide directly.
+         Only requests that actually came through the public tunnel get
+         checked against keycloakAdminPublic. A missing/corrupt settings
+         file defaults OPEN (true), matching kc-ensure-default-settings —
+         fails open here, not closed, so a storage hiccup can't lock you
+         out of your own Keycloak admin console.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-internal-keycloak-admin-gate">
+      <from uri="direct:kc-internal-keycloak-admin-gate"/>
+      <!-- Capture BEFORE pollEnrich — its default aggregation strategy
+           replaces the WHOLE message (headers included, not just the
+           body) with the polled file's own metadata headers
+           (CamelFileName etc.), silently wiping CF-Connecting-IP. Same
+           "capture into an exchangeProperty first" fix as
+           kc-authorize-admin above, which hit the equivalent issue with
+           the Authorization header. -->
+      <setProperty name="kc.cfConnectingIp">
+        <simple>${header[CF-Connecting-IP]}</simple>
+      </setProperty>
+      <setBody><constant></constant></setBody>
+      <pollEnrich timeout="2000">
+        <constant>file:/opt/fzlbpms-settings?fileName=settings.json&amp;noop=true&amp;idempotent=false</constant>
+      </pollEnrich>
+      <choice>
+        <when>
+          <simple>${header.CamelFileName} == null</simple>
+          <setProperty name="kc.settingsPublic"><constant>true</constant></setProperty>
+        </when>
+        <otherwise>
+          <setProperty name="kc.settingsPublic">
+            <jsonpath suppressExceptions="true">$.keycloakAdminPublic</jsonpath>
+          </setProperty>
+        </otherwise>
+      </choice>
+      <setBody><constant></constant></setBody>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.cfConnectingIp} == null</simple>
+          <log message="[KC-GATE] Local/LAN request to admin console/master realm — allowed."/>
+          <setHeader name="CamelHttpResponseCode"><constant>200</constant></setHeader>
+        </when>
+        <when>
+          <simple>${exchangeProperty.kc.settingsPublic} == true</simple>
+          <log message="[KC-GATE] Public-internet request to admin console/master realm — allowed (keycloakAdminPublic=true)."/>
+          <setHeader name="CamelHttpResponseCode"><constant>200</constant></setHeader>
+        </when>
+        <otherwise>
+          <log message="[KC-GATE] Public-internet request to admin console/master realm — blocked (keycloakAdminPublic=false)."/>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
         </otherwise>
       </choice>
     </route>

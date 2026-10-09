@@ -331,6 +331,10 @@ services:
     volumes:
       - ./src-projects/karaf_bundles:/opt/karaf/deploy_bundles
       - ./src-projects/karaf_deploy_dir:/opt/karaf/deploy
+      # Small persisted settings blob (e.g. the "Keycloak acessível pela
+      # internet" toggle) read/written by keycloak-admin-camel-context.xml.
+      # Survives container recreation; see containers/fzl-karaf-camel-integration/.gitignore.
+      - ./containers/fzl-karaf-camel-integration/fzlbpms-settings:/opt/fzlbpms-settings
       # mkcert CA so the JVM trusts https://fzlbpms.local (see entrypoint.sh).
       - ./containers/fzl-karaf-camel-integration/certs:/run/mkcert-certs:ro
       - ./src-projects/karaf_input_dir:/opt/karaf/input_data

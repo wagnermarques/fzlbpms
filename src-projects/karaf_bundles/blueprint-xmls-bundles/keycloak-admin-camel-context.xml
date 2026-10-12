@@ -214,6 +214,7 @@
         <to uri="direct:kc-ensure-theia-role"/>
         <to uri="direct:kc-ensure-tasktoday-client"/>
         <to uri="direct:kc-ensure-tasktoday-role"/>
+        <to uri="direct:kc-ensure-evasaoescolar-client"/>
         <to uri="direct:kc-ensure-admin-user"/>
         <!-- After the user exists — the grants need its id. -->
         <to uri="direct:kc-grant-admin-role"/>
@@ -1088,6 +1089,51 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] Client 'fzl-tasktodayapp' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE EVASAOESCOLAR CLIENT (public, PKCE, GitHub Pages SPA)
+         publicClient=true + PKCE S256 — same shape as kc-ensure-tasktoday-client:
+         a pure browser SPA, static-hosted outside the stack on GitHub Pages
+         (RNF-10). No realm role yet: the evasaoescolar bundle has no
+         admin-only endpoint (unlike tasktoday-admin).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-evasaoescolar-client">
+      <from uri="direct:kc-ensure-evasaoescolar-client"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?clientId=evasaoescolar&amp;httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <choice>
+        <when>
+          <simple>${body} == '[]'</simple>
+          <setBody>
+            <simple>{"clientId":"evasaoescolar","name":"Evasão Escolar (GitHub Pages)","enabled":true,"publicClient":true,"standardFlowEnabled":true,"directAccessGrantsEnabled":false,"rootUrl":"https://wagnermarques.github.io/evasaoescolar","baseUrl":"https://wagnermarques.github.io/evasaoescolar/","redirectUris":["https://wagnermarques.github.io/evasaoescolar/*","http://localhost:5173/*","http://localhost:4173/*","http://127.0.0.1:5173/*","http://127.0.0.1:4173/*"],"webOrigins":["https://wagnermarques.github.io","http://localhost:5173","http://localhost:4173","http://127.0.0.1:5173","http://127.0.0.1:4173"],"attributes":{"pkce.code.challenge.method":"S256","post.logout.redirect.uris":"https://wagnermarques.github.io/evasaoescolar/*##http://localhost:5173/*##http://localhost:4173/*##http://127.0.0.1:5173/*##http://127.0.0.1:4173/*"}}</simple>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/clients?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 201</simple>
+              <log message="[KC-SETUP] Public client 'evasaoescolar' created."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Evasão Escolar client create returned ${header.CamelHttpResponseCode} — may already exist."/>
+            </otherwise>
+          </choice>
+        </when>
+        <otherwise>
+          <log message="[KC-SETUP] Client 'evasaoescolar' already exists."/>
         </otherwise>
       </choice>
     </route>

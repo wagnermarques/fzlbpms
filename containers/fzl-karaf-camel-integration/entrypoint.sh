@@ -36,6 +36,17 @@ _g_\\:admingroup = group,admin,manager,viewer,systembundles,ssh
 USERS_EOF
   chmod 600 "$KARAF_HOME/etc/users.properties"
   echo "  Wrote etc/users.properties for user '${FZL_KARAF_USER}'."
+
+  # Precomputed "user:pass" Basic-auth value for Camel routes that call
+  # Karaf's OWN local Hawtio/Jolokia endpoint (8181) — same credential,
+  # same base64(user:pass) nginx's 11-karaf-basic-auth.sh already computes
+  # for the SAME purpose from the outside. Computed here (plain shell),
+  # not inside a Camel route, because this Karaf's camel-base64 dataformat
+  # feature isn't installed — a route depending on it never starts
+  # ("waiting for dependencies [...dataformat=base64...]"), confirmed the
+  # hard way. `export` survives the `exec gosu appuser` below, so Camel's
+  # env:* PropertyPlaceholder sees it as {{FZL_KARAF_BASIC_AUTH_B64}}.
+  export FZL_KARAF_BASIC_AUTH_B64=$(printf '%s:%s' "$FZL_KARAF_USER" "$FZL_KARAF_PASSWORD" | base64 | tr -d '\n')
 else
   echo "  FATAL: FZL_KARAF_USER / FZL_KARAF_PASSWORD are unset."
   echo "  Set them in .env — see .env.template. Refusing to start with no"

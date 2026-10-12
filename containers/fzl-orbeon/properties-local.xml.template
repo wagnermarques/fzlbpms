@@ -146,4 +146,44 @@
         name="oxf.fr.resource.fzlbpms.*.pt.detail.buttons.create-user"
         value="Criar usuário"/>
 
+    <!-- =====================================================================
+         fzlbpms — create-organization start form: submit bridge to Flowable
+
+         Form-SPECIFIC properties (app.form, not app.*) — deliberately NOT
+         added to the fzlbpms.* wildcard above, which is what create-user
+         already owns. A wildcard would make every fzlbpms form (this one
+         included) show the "Criar usuário" button instead of its own; see
+         the orbeon-form-for-human-tasks skill.
+
+         X-Orbeon-Shared-Secret: send() runs server-to-server (fzl-orbeon ->
+         fzl-karaf-camel-integration, no browser/nginx/oauth2-proxy in
+         between), so the target carries no caller identity at all. This
+         header is the only thing stopping a random script from hitting the
+         bridge directly — see kc-provision-organization-from-form in
+         keycloak-admin-camel-context.xml. ${ORBEON_BRIDGE_SECRET} is
+         substituted by docker-entrypoint-fzl.sh's envsubst at container
+         start, before Orbeon ever parses this file.
+         ===================================================================== -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.buttons.fzlbpms.create-organization"
+        value="home summary create-organization"/>
+
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.process.create-organization.fzlbpms.create-organization">
+        require-valid
+        then send(
+            uri = "http://fzl-karaf-camel-integration:9090/fzlbpms/admin/organizations/provision-from-form",
+            content = "json",
+            headers = "X-Orbeon-Shared-Secret: ${ORBEON_BRIDGE_SECRET}",
+            replace = "all"
+        )
+    </property>
+
+    <property
+        as="xs:string"
+        name="oxf.fr.resource.fzlbpms.create-organization.pt.detail.buttons.create-organization"
+        value="Criar organização"/>
+
 </properties>

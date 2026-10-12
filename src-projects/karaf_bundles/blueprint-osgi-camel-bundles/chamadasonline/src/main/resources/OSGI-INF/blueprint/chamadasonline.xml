@@ -28,7 +28,7 @@
 		<property name="dataSource" ref="dataSource" />
 	</bean>
 
-	<camelContext id="chamadasOnlineContext"
+	<camelContext id="chamadasOnlineContext" trace="true"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
 		<onException>

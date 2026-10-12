@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<camelContext id="evasaoescolarContext" trace="true"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<onException>
+			<exception>java.lang.Exception</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<removeHeaders pattern="*" />
+			<setHeader name="CamelHttpResponseCode">
+				<constant>500</constant>
+			</setHeader>
+			<setHeader name="Content-Type">
+				<constant>application/json; charset=UTF-8</constant>
+			</setHeader>
+			<setHeader name="Access-Control-Allow-Origin">
+				<constant>*</constant>
+			</setHeader>
+			<setHeader name="Access-Control-Allow-Methods">
+				<constant>GET, POST, PATCH, OPTIONS</constant>
+			</setHeader>
+			<setHeader name="Access-Control-Allow-Headers">
+				<constant>Authorization, Content-Type, Accept</constant>
+			</setHeader>
+			<setBody>
+				<simple>{"error":"server_error","message":"${exception.message}"}</simple>
+			</setBody>
+		</onException>
+
+		<!-- Jetty REST Server on Port 9096 (9092-9095 are already used by sibling bundles) -->
+		<!-- Bare enableCORS="true" uses Camel's built-in default
+		     Access-Control-Allow-Headers (Origin, Accept, X-Requested-With,
+		     Content-Type, Access-Control-Request-Method,
+		     Access-Control-Request-Headers) — it does NOT include
+		     Authorization. The onException handler above already sets the
+		     right headers for its own (error) responses; this does the same
+		     for every normal preflight. -->
+		<restConfiguration component="jetty"
+			port="9096"
+			bindingMode="off"
+			enableCORS="true">
+			<corsHeaders key="Access-Control-Allow-Headers" value="Origin, Accept, X-Requested-With, Content-Type, Authorization" />
+		</restConfiguration>
+
+		<rest path="/fzlbpms/evasaoescolar">
+			<get path="/health">
+				<to uri="direct:evasao-health" />
+			</get>
+		</rest>
+
+		<route id="route-evasao-health">
+			<from uri="direct:evasao-health" />
+			<setHeader name="Content-Type">
+				<constant>application/json; charset=UTF-8</constant>
+			</setHeader>
+			<setBody>
+				<constant>{"status":"ok","bundle":"evasaoescolar"}</constant>
+			</setBody>
+		</route>
+
+	</camelContext>
+
+</blueprint>

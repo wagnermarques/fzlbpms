@@ -50,7 +50,7 @@
 		<property name="pushService" ref="pushService" />
 	</bean>
 
-	<camelContext id="taskTodayContext"
+	<camelContext id="taskTodayContext" trace="true"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
 		<!-- ApiError → its 4xx JSON; anything else → logged 500 JSON. -->

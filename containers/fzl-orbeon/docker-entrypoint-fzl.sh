@@ -13,6 +13,7 @@ set -euo pipefail
 : "${FZL_POSTGRES_USER:?FZL_POSTGRES_USER is required}"
 : "${FZL_POSTGRES_PASSWORD:?FZL_POSTGRES_PASSWORD is required}"
 : "${FZL_ORBEON_CRYPTO_PASSWORD:?FZL_ORBEON_CRYPTO_PASSWORD is required}"
+: "${FZL_ORBEON_BRIDGE_SECRET:?FZL_ORBEON_BRIDGE_SECRET is required}"
 
 DB_HOST="${FZL_ORBEON_DB_HOST:-fzl-postgresql}"
 DB_PORT="${FZL_ORBEON_DB_PORT:-5432}"
@@ -47,10 +48,11 @@ fi
 export ORBEON_DB_HOST="$DB_HOST" ORBEON_DB_PORT="$DB_PORT" ORBEON_DB_NAME="$DB_NAME"
 export ORBEON_DB_USER="$FZL_POSTGRES_USER" ORBEON_DB_PASSWORD="$FZL_POSTGRES_PASSWORD"
 export ORBEON_CRYPTO_PASSWORD="$FZL_ORBEON_CRYPTO_PASSWORD"
+export ORBEON_BRIDGE_SECRET="$FZL_ORBEON_BRIDGE_SECRET"
 
 envsubst '${ORBEON_DB_HOST} ${ORBEON_DB_PORT} ${ORBEON_DB_NAME} ${ORBEON_DB_USER} ${ORBEON_DB_PASSWORD}' \
     < /opt/fzl/context.xml.template > "${CATALINA_HOME}/conf/context.xml"
-envsubst '${ORBEON_CRYPTO_PASSWORD}' \
+envsubst '${ORBEON_CRYPTO_PASSWORD} ${ORBEON_BRIDGE_SECRET}' \
     < /opt/fzl/properties-local.xml.template \
     > "${CATALINA_HOME}/webapps/orbeon/WEB-INF/resources/config/properties-local.xml"
 

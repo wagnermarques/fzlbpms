@@ -26,3 +26,19 @@
   color: #b00020;
   font-weight: 500;
 }
+
+.log-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.level-badge {
+  font-family: monospace;
+  font-size: 0.85em;
+  color: #666;
+  background-color: #e0e0e0;
+  padding: 1px 6px;
+  border-radius: 2px;
+}

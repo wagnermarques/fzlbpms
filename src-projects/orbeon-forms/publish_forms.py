@@ -35,6 +35,14 @@ FORMS = [
         "title": "Processo de Aproveitamento de Estudos (Docs 13.1 e 13.2)",
         "description": "Emissão simultânea do Parecer da Comissão e Despacho do Diretor para Aproveitamento de Estudos.",
     },
+    {
+        "dir": "create-organization",
+        "app": "fzlbpms",
+        "form": "create-organization",
+        "doc_id": "fb-create-organization",
+        "title": "Criar organização",
+        "description": "Cria uma organização no Keycloak e seus papéis padrão (dono/membro), via o processo create-organization.",
+    },
 ]
 
 

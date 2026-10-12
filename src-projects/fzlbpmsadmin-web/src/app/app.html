@@ -23,6 +23,11 @@
           <span matListItemTitle>Usuários</span>
         </a>
 
+        <a mat-list-item routerLink="/organizations" (click)="drawer.close()">
+          <mat-icon matListItemIcon>add_business</mat-icon>
+          <span matListItemTitle>Organizações</span>
+        </a>
+
         <a mat-list-item routerLink="/settings" (click)="drawer.close()">
           <mat-icon matListItemIcon>settings</mat-icon>
           <span matListItemTitle>Configurações</span>

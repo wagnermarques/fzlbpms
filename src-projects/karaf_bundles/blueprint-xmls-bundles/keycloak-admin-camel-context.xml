@@ -165,6 +165,27 @@
       <get>
         <to uri="direct:kc-list-roles"/>
       </get>
+      <post consumes="application/json">
+        <to uri="direct:kc-create-role"/>
+      </post>
+    </rest>
+
+    <!-- Organizations (Keycloak 26 native feature — see
+         kc-ensure-organizations-enabled above) + the admin-gated bridge
+         that starts the create-organization Flowable process. -->
+    <rest path="/fzlbpms/admin/organizations">
+      <get>
+        <to uri="direct:kc-list-organizations"/>
+      </get>
+      <post consumes="application/json">
+        <to uri="direct:kc-create-organization"/>
+      </post>
+      <post path="/provision" consumes="application/json">
+        <to uri="direct:kc-provision-organization"/>
+      </post>
+      <post path="/provision-from-form" consumes="application/json">
+        <to uri="direct:kc-provision-organization-from-form"/>
+      </post>
     </rest>
 
     <!-- Small persisted settings blob ("Configurações" UI) — see
@@ -175,6 +196,18 @@
       </get>
       <put consumes="application/json">
         <to uri="direct:kc-put-settings"/>
+      </put>
+    </rest>
+
+    <!-- Per-bundle DEBUG/INFO toggle ("Configurações" UI), backed directly
+         by Karaf's own log MBean via its local Jolokia endpoint — no file
+         storage needed, see kc-get-log-levels/kc-set-log-level below. -->
+    <rest path="/fzlbpms/admin/logs">
+      <get path="/levels">
+        <to uri="direct:kc-get-log-levels"/>
+      </get>
+      <put path="/levels/{bundle}" consumes="application/json">
+        <to uri="direct:kc-set-log-level"/>
       </put>
     </rest>
 
@@ -205,6 +238,7 @@
         <to uri="direct:kc-ensure-default-settings"/>
         <to uri="direct:kc-get-admin-token"/>
         <to uri="direct:kc-ensure-realm"/>
+        <to uri="direct:kc-ensure-organizations-enabled"/>
         <to uri="direct:kc-ensure-client"/>
         <to uri="direct:kc-ensure-webapp-client"/>
         <to uri="direct:kc-ensure-moodle-client"/>
@@ -320,9 +354,9 @@
            headers here, not just Authorization — otherwise the Camel HTTP
            producer below targets the ORIGINAL /fzlbpms/admin/... request
            path instead of the Keycloak introspect URL. excludePattern keeps
-           the REST path params (id/roleName) alive for the routes that use
-           them after this guard returns. -->
-      <removeHeaders pattern="*" excludePattern="id|roleName"/>
+           the REST path params (id/roleName/bundle) alive for the routes
+           that use them after this guard returns. -->
+      <removeHeaders pattern="*" excludePattern="id|roleName|bundle"/>
       <setHeader name="Content-Type">
         <constant>application/x-www-form-urlencoded</constant>
       </setHeader>
@@ -403,6 +437,67 @@
         </when>
         <otherwise>
           <log message="[KC-SETUP] Realm '{{FZL_REALM}}' already exists."/>
+        </otherwise>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ENSURE ORGANIZATIONS ENABLED — Keycloak 26's native Organizations
+         feature is GA but OFF per-realm by default (RealmRepresentation.
+         organizationsEnabled=false until flipped). Idempotent: GET the
+         realm, PUT the whole representation back with the flag flipped
+         only if it isn't already true — same GET-before-write shape as
+         kc-ensure-admin-role, to avoid clobbering unrelated realm config
+         with a partial PUT.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-ensure-organizations-enabled">
+      <from uri="direct:kc-ensure-organizations-enabled"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}?httpMethod=GET&amp;throwExceptionOnFailure=true"/>
+      <setProperty name="kc.organizationsEnabled">
+        <jsonpath>$.organizationsEnabled</jsonpath>
+      </setProperty>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.organizationsEnabled} == true</simple>
+          <log message="[KC-SETUP] Organizations already enabled on realm '{{FZL_REALM}}'."/>
+        </when>
+        <otherwise>
+          <!-- PUT /admin/realms/{realm} is a PARTIAL update on Keycloak's
+               server side (RepresentationToModel only applies fields
+               present in the body; confirmed empirically against this
+               stack's own realm — displayName/loginWithEmailAllowed
+               survived a PUT containing only organizationsEnabled) — no
+               need to GET-merge-PUT the full RealmRepresentation. Far
+               simpler and more robust than patching the fetched JSON text
+               in Camel Simple (tried that first: Simple's bean-method
+               argument parser doesn't evaluate nested/arithmetic
+               expressions passed as arguments, e.g. substring(0, X-1)
+               fails type conversion). -->
+          <setBody>
+            <constant>{"organizationsEnabled":true}</constant>
+          </setBody>
+          <removeHeaders pattern="*"/>
+          <setHeader name="Authorization">
+            <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+          </setHeader>
+          <setHeader name="Content-Type">
+            <constant>application/json</constant>
+          </setHeader>
+          <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}?httpMethod=PUT&amp;throwExceptionOnFailure=false"/>
+          <choice>
+            <when>
+              <simple>${header.CamelHttpResponseCode} == 204</simple>
+              <log message="[KC-SETUP] Organizations enabled on realm '{{FZL_REALM}}'."/>
+            </when>
+            <otherwise>
+              <log message="[KC-SETUP] Enabling organizations on realm '{{FZL_REALM}}' returned ${header.CamelHttpResponseCode}."/>
+            </otherwise>
+          </choice>
         </otherwise>
       </choice>
     </route>
@@ -1378,6 +1473,18 @@
          Forwards a password-grant request to Keycloak using the
          fzlbpms-camel confidential client. Returns the Keycloak token
          response ({access_token, refresh_token, expires_in, ...}) as-is.
+
+         X-Forwarded-Host/Proto: without these, Keycloak computes this
+         token's issuer from its own internal view
+         (http://{{KC_HOST}}:8080/...), but kc-authorize-admin's
+         introspection call (used by every /fzlbpms/admin/* route) forces
+         X-Forwarded-Host/Proto to the public hostname when checking a
+         token — a mismatched issuer makes introspection report ANY token
+         minted here as inactive ("Invalid or expired token"), even though
+         it's perfectly fresh. Confirmed by testing: a token from this
+         route previously failed kc-authorize-admin 100% of the time.
+         Mirrors the fix already applied to kc-authorize-admin's own
+         introspect call and to kc-get-fzlbpms-admin-token.
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="auth-login">
       <from uri="direct:auth-login"/>
@@ -1394,13 +1501,21 @@
       <setHeader name="Content-Type">
         <constant>application/x-www-form-urlencoded</constant>
       </setHeader>
+      <setHeader name="X-Forwarded-Host">
+        <simple>{{FZL_PUBLIC_HOSTNAME}}</simple>
+      </setHeader>
+      <setHeader name="X-Forwarded-Proto">
+        <simple>{{FZL_PUBLIC_PROTO}}</simple>
+      </setHeader>
       <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/realms/{{FZL_REALM}}/protocol/openid-connect/token?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
          AUTH — REFRESH
          POST /fzlbpms/auth/refresh  body: {"refresh_token":"..."}
-         Exchanges a refresh token for a new token pair.
+         Exchanges a refresh token for a new token pair. Same issuer-mismatch
+         fix as auth-login above — a refreshed token needs the same
+         X-Forwarded-Host/Proto or it inherits the identical bug.
          ═══════════════════════════════════════════════════════════════════ -->
     <route id="auth-refresh">
       <from uri="direct:auth-refresh"/>
@@ -1413,6 +1528,12 @@
       <removeHeaders pattern="*"/>
       <setHeader name="Content-Type">
         <constant>application/x-www-form-urlencoded</constant>
+      </setHeader>
+      <setHeader name="X-Forwarded-Host">
+        <simple>{{FZL_PUBLIC_HOSTNAME}}</simple>
+      </setHeader>
+      <setHeader name="X-Forwarded-Proto">
+        <simple>{{FZL_PUBLIC_PROTO}}</simple>
       </setHeader>
       <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/realms/{{FZL_REALM}}/protocol/openid-connect/token?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
     </route>
@@ -1702,6 +1823,218 @@
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════
+         CRUD — CREATE REALM ROLE
+         POST /fzlbpms/admin/roles  body: {"name":"...","description":"..."}
+         Used by create-organization (one call per default org role) but
+         generic — any admin-gated caller can create a plain realm role.
+         Keycloak returns 201 + empty body.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-create-role">
+      <from uri="direct:kc-create-role"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <to uri="direct:kc-get-admin-token"/>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <setHeader name="Content-Type">
+        <constant>application/json</constant>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/roles?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ORGANIZATIONS — CREATE
+         POST /fzlbpms/admin/organizations
+         body: {"name":"...","alias":"...","domains":[...]}
+         Requires kc-ensure-organizations-enabled to have run (realm attr).
+         Keycloak returns 201 + Location header.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-create-organization">
+      <from uri="direct:kc-create-organization"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <to uri="direct:kc-get-admin-token"/>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <setHeader name="Content-Type">
+        <constant>application/json</constant>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/organizations?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ORGANIZATIONS — LIST
+         GET /fzlbpms/admin/organizations
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-list-organizations">
+      <from uri="direct:kc-list-organizations"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <to uri="direct:kc-get-admin-token"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Authorization">
+        <simple>Bearer ${exchangeProperty.kc.adminToken}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/admin/realms/{{FZL_REALM}}/organizations?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ORGANIZATIONS — PROVISION BRIDGE
+         POST /fzlbpms/admin/organizations/provision
+         body: {"name":"...","alias":"..."}
+
+         Admin-gated start of the create-organization Flowable process
+         (see src-projects/flowable-processes/create-organization.bpmn20.xml).
+         Same shape as bpms-start-create-moodle-user (moodle-admin-camel-
+         context.xml) for the Flowable call itself, but THIS bridge sits in
+         the keycloak bundle so it can call direct:kc-authorize-admin
+         locally (direct: endpoints don't cross CamelContext/bundle
+         boundaries — vm: would, but there's no need when the gate already
+         lives here).
+
+         The process's own HTTP tasks call back into
+         /fzlbpms/admin/organizations and /fzlbpms/admin/roles, which are
+         ALSO behind kc-authorize-admin — so the caller's bearer token is
+         forwarded through as the 'callerAuthHeader' process variable
+         (kc.callerAuth survives kc-authorize-admin's removeHeaders calls
+         because it's an exchangeProperty, not a header). Token lifetime
+         (minutes) comfortably covers this short, synchronous sequence of
+         calls.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-provision-organization">
+      <from uri="direct:kc-provision-organization"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <setProperty name="kc.orgName">
+        <jsonpath>$.name</jsonpath>
+      </setProperty>
+      <setProperty name="kc.orgAlias">
+        <jsonpath>$.alias</jsonpath>
+      </setProperty>
+      <setBody>
+        <simple>{"processDefinitionKey":"create-organization","variables":[{"name":"orgName","value":"${exchangeProperty.kc.orgName}"},{"name":"orgAlias","value":"${exchangeProperty.kc.orgAlias}"},{"name":"callerAuthHeader","value":"${exchangeProperty.kc.callerAuth}"}]}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type">
+        <constant>application/json</constant>
+      </setHeader>
+      <setHeader name="Authorization">
+        <constant>Basic YWRtaW46dGVzdA==</constant>
+      </setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         FZLBPMS-REALM ADMIN TOKEN HELPER — direct:kc-get-fzlbpms-admin-token
+         Like kc-get-admin-token, but mints a token in the {{FZL_REALM}}
+         realm for the FZLBPMS_ADMIN_USERNAME identity (holds the 'admin'
+         realm role from bootstrap — see kc-ensure-admin-user/
+         kc-grant-admin-role), not a master-realm admin-cli token.
+
+         Used by server-to-server bridges that have no human caller token
+         to forward (Orbeon's send() process action — see the
+         orbeon-form-for-human-tasks skill) but still need to call routes
+         gated by kc-authorize-admin, which only accepts a real bearer
+         token with that role. No new secret: FZLBPMS_ADMIN_USERNAME/
+         PASSWORD already exist in this container's env for bootstrap.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-get-fzlbpms-admin-token">
+      <from uri="direct:kc-get-fzlbpms-admin-token"/>
+      <setProperty name="kc.savedBody">
+        <simple>${body}</simple>
+      </setProperty>
+      <setBody>
+        <simple>client_id=fzlbpms-camel&amp;client_secret={{KC_CAMEL_CLIENT_SECRET}}&amp;grant_type=password&amp;username={{FZLBPMS_ADMIN_USERNAME}}&amp;password={{FZLBPMS_ADMIN_PASSWORD}}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type">
+        <constant>application/x-www-form-urlencoded</constant>
+      </setHeader>
+      <!-- Without these, Keycloak computes this token's issuer from its own
+           internal view (http://{{KC_HOST}}:8080/...), but
+           kc-authorize-admin's introspection call (below, when this token
+           is later used) forces X-Forwarded-Host/Proto to the public
+           hostname — a mismatched issuer makes introspection report the
+           token inactive ("Invalid or expired token") even though it's
+           perfectly fresh. Same fix kc-authorize-admin itself already
+           applies to its own introspect call; mirrored here so a token
+           minted by THIS route is actually usable against it. (The
+           existing auth-login route has this exact bug and does NOT have
+           this fix — pre-existing, unrelated, not touched here.) -->
+      <setHeader name="X-Forwarded-Host">
+        <simple>{{FZL_PUBLIC_HOSTNAME}}</simple>
+      </setHeader>
+      <setHeader name="X-Forwarded-Proto">
+        <simple>{{FZL_PUBLIC_PROTO}}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/realms/{{FZL_REALM}}/protocol/openid-connect/token?httpMethod=POST&amp;throwExceptionOnFailure=true"/>
+      <setProperty name="kc.fzlbpmsAdminToken">
+        <jsonpath>$.access_token</jsonpath>
+      </setProperty>
+      <setBody>
+        <simple>${exchangeProperty.kc.savedBody}</simple>
+      </setBody>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ORGANIZATIONS — PROVISION BRIDGE, FROM ORBEON FORM
+         POST /fzlbpms/admin/organizations/provision-from-form
+         body (Orbeon send(content="json"), see
+         src-projects/orbeon-forms/create-organization/form.xhtml):
+         {"secaoOrganizacao":{"orgName":"...","orgAlias":"..."}}
+
+         Orbeon's send() runs server-to-server (fzl-orbeon -> this
+         container, straight over the Docker network) — it never goes
+         through the browser/nginx/oauth2-proxy, so there is no caller
+         bearer token and no X-Forwarded-User here, unlike
+         kc-provision-organization above. Two consequences, both covered by
+         the orbeon-form-for-human-tasks skill:
+
+         1. Nothing stops a random script from calling this path directly
+            (same gap as the pre-existing, unrelated
+            bpms-start-create-moodle-user). Closed here with a shared
+            secret only Orbeon's own properties-local.xml config knows —
+            NOT a substitute for real per-user authorization, just closes
+            the "skip Orbeon entirely" hole.
+         2. The process's HTTP tasks still need a bearer token with the
+            'admin' role to pass kc-authorize-admin on the inner
+            /fzlbpms/admin/organizations + /fzlbpms/admin/roles calls — so
+            mint one server-side via kc-get-fzlbpms-admin-token instead of
+            forwarding a (nonexistent) caller token.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-provision-organization-from-form">
+      <from uri="direct:kc-provision-organization-from-form"/>
+      <choice>
+        <when>
+          <simple>${header[X-Orbeon-Shared-Secret]} != '{{FZL_ORBEON_BRIDGE_SECRET}}'</simple>
+          <setBody><constant>{"error":"Invalid or missing bridge secret"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
+          <log message="[ORBEON-BRIDGE] Rejected create-organization submit — bad or missing X-Orbeon-Shared-Secret."/>
+          <stop/>
+        </when>
+      </choice>
+      <setProperty name="kc.orgName">
+        <jsonpath>$.secaoOrganizacao.orgName</jsonpath>
+      </setProperty>
+      <setProperty name="kc.orgAlias">
+        <jsonpath>$.secaoOrganizacao.orgAlias</jsonpath>
+      </setProperty>
+      <to uri="direct:kc-get-fzlbpms-admin-token"/>
+      <setBody>
+        <simple>{"processDefinitionKey":"create-organization","variables":[{"name":"orgName","value":"${exchangeProperty.kc.orgName}"},{"name":"orgAlias","value":"${exchangeProperty.kc.orgAlias}"},{"name":"callerAuthHeader","value":"Bearer ${exchangeProperty.kc.fzlbpmsAdminToken}"}]}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type">
+        <constant>application/json</constant>
+      </setHeader>
+      <setHeader name="Authorization">
+        <constant>Basic YWRtaW46dGVzdA==</constant>
+      </setHeader>
+      <to uri="http://fzl-flowable-ui:8080/flowable-ui/process-api/runtime/process-instances?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
          SETTINGS STORAGE — a small JSON blob at
          /opt/fzlbpms-settings/settings.json (bind-mounted, survives
          container recreation — see docker-compose.yml). Deliberately a
@@ -1769,6 +2102,128 @@
       <to uri="file:/opt/fzlbpms-settings?fileName=settings.json"/>
       <setBody><constant></constant></setBody>
       <setHeader name="CamelHttpResponseCode"><constant>204</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GET LOG LEVELS — GET /fzlbpms/admin/logs/levels (kc-authorize-admin)
+         Returns the current DEBUG/INFO level of each app bundle's own
+         logger category, e.g. {"chamadasonline":"INFO","tasktoday":"DEBUG",
+         "evasaoescolar":"INFO"}.
+
+         Backed directly by Karaf's own log MBean (org.apache.karaf:name=
+         root,type=log, operation getLevel(String)) via its LOCAL Jolokia
+         endpoint on this same container's port 8181 (the one Hawtio also
+         uses — see containers/fzl-nginx/nginx-shared/app-server.conf's
+         /hawtio location and 11-karaf-basic-auth.sh for the credential).
+         No settings.json needed: Karaf's own MBean IS the persisted state
+         (it writes back to etc/org.ops4j.pax.logging.cfg on every
+         setLevel — confirmed empirically). A level set here is exactly
+         what Hawtio's own Log plugin would show/set, just one click away
+         instead of several.
+
+         {{FZL_KARAF_BASIC_AUTH_B64}} is the base-64 encoding of
+         FZL_KARAF_USER:FZL_KARAF_PASSWORD, precomputed by entrypoint.sh
+         (plain shell) and exported as an env var — NOT computed in
+         Camel. A route-level attempt at doing this encoding via a Camel
+         data-format step failed hard: this Karaf has no corresponding
+         feature installed, so the whole bundle got stuck "waiting for
+         dependencies" and every other route in it went down too (even
+         just naming that data format inside an XML COMMENT was enough to
+         trip Blueprint's dependency scanner — it isn't a real XML
+         parser). Camel's http producer authUsername/authPassword/
+         authMethod=Basic URI options were tried first too and silently
+         didn't authenticate at all (403 Hawtio-Forbidden-Reason: NONE).
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-get-log-levels">
+      <from uri="direct:kc-get-log-levels"/>
+      <to uri="direct:kc-authorize-admin"/>
+
+      <setBody><constant>{"type":"exec","mbean":"org.apache.karaf:name=root,type=log","operation":"getLevel(java.lang.String)","arguments":["fzlbpms.chamadas"]}</constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><simple>Basic {{FZL_KARAF_BASIC_AUTH_B64}}</simple></setHeader>
+      <to uri="http://localhost:8181/hawtio/jolokia/?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setProperty name="kc.levelChamadas"><jsonpath>$.value['fzlbpms.chamadas']</jsonpath></setProperty>
+
+      <setBody><constant>{"type":"exec","mbean":"org.apache.karaf:name=root,type=log","operation":"getLevel(java.lang.String)","arguments":["fzlbpms.tasktoday"]}</constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><simple>Basic {{FZL_KARAF_BASIC_AUTH_B64}}</simple></setHeader>
+      <to uri="http://localhost:8181/hawtio/jolokia/?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setProperty name="kc.levelTasktoday"><jsonpath>$.value['fzlbpms.tasktoday']</jsonpath></setProperty>
+
+      <setBody><constant>{"type":"exec","mbean":"org.apache.karaf:name=root,type=log","operation":"getLevel(java.lang.String)","arguments":["fzlbpms.evasaoescolar"]}</constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><simple>Basic {{FZL_KARAF_BASIC_AUTH_B64}}</simple></setHeader>
+      <to uri="http://localhost:8181/hawtio/jolokia/?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setProperty name="kc.levelEvasao"><jsonpath>$.value['fzlbpms.evasaoescolar']</jsonpath></setProperty>
+
+      <setBody>
+        <simple>{"chamadasonline":"${exchangeProperty.kc.levelChamadas}","tasktoday":"${exchangeProperty.kc.levelTasktoday}","evasaoescolar":"${exchangeProperty.kc.levelEvasao}"}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SET LOG LEVEL — PUT /fzlbpms/admin/logs/levels/{bundle}
+         (kc-authorize-admin)  body: {"debug": true|false}
+
+         {bundle} is validated against a fixed allowlist mapped to each
+         bundle's real logger category — not passed through to the MBean
+         call directly — so this can't be used to set an arbitrary logger
+         (e.g. root, or something noisy/unrelated) via a crafted path.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-set-log-level">
+      <from uri="direct:kc-set-log-level"/>
+      <to uri="direct:kc-authorize-admin"/>
+      <setProperty name="kc.bundle">
+        <simple>${header.bundle}</simple>
+      </setProperty>
+      <setProperty name="kc.debug">
+        <jsonpath>$.debug</jsonpath>
+      </setProperty>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.bundle} == 'chamadasonline'</simple>
+          <setProperty name="kc.loggerCategory"><constant>fzlbpms.chamadas</constant></setProperty>
+        </when>
+        <when>
+          <simple>${exchangeProperty.kc.bundle} == 'tasktoday'</simple>
+          <setProperty name="kc.loggerCategory"><constant>fzlbpms.tasktoday</constant></setProperty>
+        </when>
+        <when>
+          <simple>${exchangeProperty.kc.bundle} == 'evasaoescolar'</simple>
+          <setProperty name="kc.loggerCategory"><constant>fzlbpms.evasaoescolar</constant></setProperty>
+        </when>
+        <otherwise>
+          <setBody><constant>{"error":"Unknown bundle"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>400</constant></setHeader>
+          <stop/>
+        </otherwise>
+      </choice>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.debug} == true</simple>
+          <setProperty name="kc.loggerLevel"><constant>DEBUG</constant></setProperty>
+        </when>
+        <otherwise>
+          <setProperty name="kc.loggerLevel"><constant>INFO</constant></setProperty>
+        </otherwise>
+      </choice>
+      <setBody>
+        <simple>{"type":"exec","mbean":"org.apache.karaf:name=root,type=log","operation":"setLevel(java.lang.String,java.lang.String)","arguments":["${exchangeProperty.kc.loggerCategory}","${exchangeProperty.kc.loggerLevel}"]}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
+      <setHeader name="Authorization"><simple>Basic {{FZL_KARAF_BASIC_AUTH_B64}}</simple></setHeader>
+      <to uri="http://localhost:8181/hawtio/jolokia/?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setBody>
+        <simple>{"bundle":"${exchangeProperty.kc.bundle}","level":"${exchangeProperty.kc.loggerLevel}"}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="Content-Type"><constant>application/json</constant></setHeader>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════

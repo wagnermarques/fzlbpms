@@ -5,6 +5,7 @@ import { AuthCallbackView } from './components/views/auth-callback-view/auth-cal
 import { ProcessDiagramView } from './components/views/process-diagram-view/process-diagram-view';
 import { UsersView } from './components/views/users-view/users-view';
 import { SettingsView } from './components/views/settings-view/settings-view';
+import { OrganizationCreateView } from './components/views/organization-create-view/organization-create-view';
 import { adminGuard } from './services/admin-guard';
 
 export const routes: Routes = [
@@ -15,5 +16,6 @@ export const routes: Routes = [
   { path: 'process-diagram/:key', component: ProcessDiagramView },
   { path: 'process-instances', component: ProcessDiagramView },
   { path: 'users', component: UsersView, canActivate: [adminGuard] },
+  { path: 'organizations', component: OrganizationCreateView, canActivate: [adminGuard] },
   { path: 'settings', component: SettingsView, canActivate: [adminGuard] },
 ];

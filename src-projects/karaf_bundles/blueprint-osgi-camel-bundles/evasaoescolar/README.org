@@ -1,0 +1,40 @@
+#+TITLE: Evasão Escolar - Apache Camel OSGi Blueprint Bundle
+#+AUTHOR: fzlbpms
+#+DATE: 2026-10-10
+#+STARTUP: showall
+
+* Visão Geral
+
+O bundle *evasaoescolar* é um serviço OSGi Blueprint baseado em Apache Camel 3.21 executado no Apache Karaf, concebido como backend REST para o sistema *Evasão Escolar* (acompanhamento de frequência, identificação de alunos em risco de evasão e registro de intervenções pedagógicas).
+
+Por decisão da equipe, este bundle substitui o backend originalmente planejado em Supabase: a aplicação passa a consumir a mesma infraestrutura Karaf/Camel/PostgreSQL já utilizada pelos demais sistemas do fzlbpms, em vez de um serviço externo gerenciado.
+
+*Este é apenas o esqueleto de boot/health-check do bundle.* Nenhum endpoint de negócio (frequência, alunos em risco, intervenções, etc.) foi implementado ainda — eles serão adicionados em uma sessão futura, junto com acesso a banco de dados e processors.
+
+* Arquitetura e Componentes
+
+- *Porta Interna do Camel Jetty:* ~9096~ (as portas ~9092~–~9095~ já estão em uso pelos bundles irmãos: aproveitamento-docs, contatemeantes, chamadasonline e tasktoday, respectivamente).
+- *Prefixo da API:* ~/fzlbpms/evasaoescolar~
+- *Banco de Dados:* ainda não configurado neste esqueleto — será adicionado quando os primeiros endpoints de negócio forem implementados.
+
+* Endpoint de Verificação (Proof of Life)
+
+- ~GET /fzlbpms/evasaoescolar/health~:
+  - Retorno: ~{"status":"ok","bundle":"evasaoescolar"}~
+  - Finalidade: confirmar que o bundle compilou, foi empacotado como bundle OSGi e subiu corretamente no Karaf, antes da implementação dos endpoints de negócio.
+
+* Compilação e Deploy
+
+O bundle utiliza o ~maven-bundle-plugin~ configurado no ~pom.xml~:
+
+#+begin_src bash
+mvn clean install -f src-projects/karaf_bundles/blueprint-osgi-camel-bundles/evasaoescolar/pom.xml
+#+end_src
+
+O artefato gerado é automaticamente copiado para ~src-projects/karaf_deploy_dir/evasaoescolar-1.0-SNAPSHOT.jar~, onde o Apache Karaf efetua o hot-deploy instantâneo através do Felix FileInstall.
+
+* Próximos Passos
+
+- Definir e criar o esquema de tabelas no PostgreSQL (~fzl-postgresql~ / ~fzldb~) para frequência, alunos em risco e intervenções.
+- Implementar os processors de negócio e os endpoints REST correspondentes.
+- Avaliar necessidade de autenticação (Keycloak) seguindo o padrão dos demais bundles.

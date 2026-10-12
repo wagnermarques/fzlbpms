@@ -32,6 +32,9 @@ Redeploying the same file creates a new version automatically. The response of a
 
 4. **Reading files from a script task**: mount the file into flowable-ui via docker-compose (see the `/opt/fzlbpms/csvs` mount) and read with `new File(path).readLines('UTF-8')`. Strip a leading BOM (`if (lines[0].startsWith('﻿')) ...`). The default groovy engine allows File I/O.
 
+5. **`flowable:string` does NOT evaluate `${...}`** in an HTTP task field — only `flowable:expression` does. This bites `requestHeaders` specifically: `Authorization: ${someToken}` wrapped in `<flowable:string>` is sent to the wire *literally* as the text `${someToken}` (no substitution, no error at deploy or runtime), which a downstream auth check then rejects as an invalid token — a confusing failure that looks like the token itself is wrong. Any field containing a variable placeholder must use `<flowable:expression>`, e.g. `<flowable:field name="requestHeaders"><flowable:expression>Content-Type: application/json
+Authorization: ${callerAuthHeader}</flowable:expression></flowable:field>` (multiple headers = multiple lines in the same field; confirmed against Flowable's `HttpHeaders.parseFromString`, which reads line-by-line and splits each on the first `:`).
+
 ## Working patterns (copy from moodle-provision-courses.bpmn20.xml)
 
 - **HTTP task**: `<serviceTask flowable:type="http">` with `<flowable:field name="requestMethod|requestUrl|requestHeaders|requestBody|responseVariableName|saveResponseParameters">`. `requestBody` uses `<flowable:expression>` for `${var}` substitution. Response body is stored as the string named by `responseVariableName`.

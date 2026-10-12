@@ -241,6 +241,8 @@ services:
       - "${FZL_KARAF_CHAMADAS_PORT:-9094}:9094"
       # Task Today REST API — direct LAN access / dev port (nginx: /api/tasktoday/)
       - "${FZL_KARAF_TASKTODAY_PORT:-9095}:9095"
+      # Evasão Escolar REST API — direct LAN access / dev port
+      - "${FZL_KARAF_EVASAOESCOLAR_PORT:-9096}:9096"
     environment:
       # Host is already NTP-synced and set to America/Sao_Paulo. Containers
       # share the host's clock but default to UTC for timezone *rendering*
@@ -293,6 +295,13 @@ services:
       FZL_MICROSOFT_CLIENT_ID: ${FZL_MICROSOFT_CLIENT_ID:-}
       FZL_MICROSOFT_CLIENT_SECRET: ${FZL_MICROSOFT_CLIENT_SECRET:-}
       FZL_MICROSOFT_TENANT_ID: ${FZL_MICROSOFT_TENANT_ID:-}
+      # Shared secret Orbeon's server-to-server send() calls present on
+      # {{FZL_ORBEON_BRIDGE_SECRET}}-checked routes (e.g.
+      # kc-provision-organization-from-form) — see the
+      # orbeon-form-for-human-tasks skill. FZLBPMS_ADMIN_USERNAME/PASSWORD
+      # (already set above) double as the identity kc-get-fzlbpms-admin-token
+      # mints a real admin-role token for, since Orbeon's call carries none.
+      FZL_ORBEON_BRIDGE_SECRET: ${FZL_ORBEON_BRIDGE_SECRET:?}
       # Moodle REST web service (consumed by moodle-admin-camel-context.xml).
       # Uses the canonical https host so Moodle sees its own wwwroot; the JVM
       # trusts the mkcert CA via the certs mount below + entrypoint import.
@@ -835,6 +844,10 @@ services:
       FZL_POSTGRES_PASSWORD: ${FZL_POSTGRES_PASSWORD:?}
       FZL_ORBEON_DB_NAME: ${FZL_ORBEON_DB_NAME:-orbeon}
       FZL_ORBEON_CRYPTO_PASSWORD: ${FZL_ORBEON_CRYPTO_PASSWORD:?}
+      # Shared secret for Orbeon's server-to-server send() calls into the
+      # Camel bundles — see containers/fzl-orbeon/README.md and the
+      # orbeon-form-for-human-tasks skill.
+      FZL_ORBEON_BRIDGE_SECRET: ${FZL_ORBEON_BRIDGE_SECRET:?}
     depends_on:
       fzl-postgresql:
         condition: service_healthy

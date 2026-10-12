@@ -33,4 +33,29 @@
       }
     </mat-card-actions>
   </mat-card>
+
+  <mat-card class="panel">
+    <mat-card-header>
+      <mat-card-title>Logs de desenvolvimento</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (logsError()) {
+        <p class="error">{{ logsError() }}</p>
+      }
+      @for (t of logToggles(); track t.bundle) {
+        <div class="log-toggle-row">
+          <mat-slide-toggle [checked]="t.debug" [disabled]="t.busy" (change)="toggleLog(t.bundle)">
+            {{ t.label }}
+          </mat-slide-toggle>
+          <span class="level-badge">{{ t.debug ? 'DEBUG' : 'INFO' }}</span>
+        </div>
+      }
+      <p class="hint">
+        Ativa o nível <code>DEBUG</code> do logger do bundle no Karaf, aplicado na hora (sem
+        precisar de "Salvar"). Acompanhe os logs no
+        <a href="/hawtio" target="_blank" rel="noopener">Hawtio</a> (aba Log) ou no console do
+        Karaf. Volta pra <code>INFO</code> quando desligar o toggle.
+      </p>
+    </mat-card-content>
+  </mat-card>
 }

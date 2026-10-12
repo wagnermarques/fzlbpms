@@ -5,6 +5,14 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { SettingsApi, FzlbpmsSettings } from '../../../services/settings-api';
+import { LogsApi, LogBundle, LogLevels } from '../../../services/logs-api';
+
+interface LogToggle {
+  bundle: LogBundle;
+  label: string;
+  debug: boolean;
+  busy: boolean;
+}
 
 @Component({
   selector: 'app-settings-view',
@@ -16,6 +24,7 @@ import { SettingsApi, FzlbpmsSettings } from '../../../services/settings-api';
 })
 export class SettingsView implements OnInit {
   private api = inject(SettingsApi);
+  private logsApi = inject(LogsApi);
 
   loading = signal(true);
   saving = signal(false);
@@ -27,6 +36,16 @@ export class SettingsView implements OnInit {
   // internet access to the Keycloak admin console).
   keycloakAdminPublic = signal(true);
 
+  // Logs de desenvolvimento — cada toggle aqui chama a API na hora (sem
+  // "Salvar"), porque reflete direto o MBean de log do Karaf, não um
+  // arquivo de configuração — mesmo nível que o Hawtio mostraria.
+  logsError = signal<string | null>(null);
+  logToggles = signal<LogToggle[]>([
+    { bundle: 'chamadasonline', label: 'Chamadas Online', debug: false, busy: false },
+    { bundle: 'tasktoday', label: 'Task Today', debug: false, busy: false },
+    { bundle: 'evasaoescolar', label: 'Evasão Escolar', debug: false, busy: false },
+  ]);
+
   ngOnInit(): void {
     this.api.get().subscribe({
       next: (settings) => {
@@ -37,6 +56,15 @@ export class SettingsView implements OnInit {
         this.error.set('Falha ao carregar as configurações.');
         this.loading.set(false);
       },
+    });
+
+    this.logsApi.getLevels().subscribe({
+      next: (levels: LogLevels) => {
+        this.logToggles.set(
+          this.logToggles().map((t) => ({ ...t, debug: levels[t.bundle] === 'DEBUG' }))
+        );
+      },
+      error: () => this.logsError.set('Falha ao carregar os níveis de log.'),
     });
   }
 
@@ -57,6 +85,31 @@ export class SettingsView implements OnInit {
       error: () => {
         this.error.set('Falha ao salvar as configurações.');
         this.saving.set(false);
+      },
+    });
+  }
+
+  toggleLog(bundle: LogBundle): void {
+    const current = this.logToggles().find((t) => t.bundle === bundle);
+    if (!current || current.busy) return;
+    const nextDebug = !current.debug;
+    this.logsError.set(null);
+    this.logToggles.set(
+      this.logToggles().map((t) => (t.bundle === bundle ? { ...t, busy: true } : t))
+    );
+    this.logsApi.setDebug(bundle, nextDebug).subscribe({
+      next: () => {
+        this.logToggles.set(
+          this.logToggles().map((t) =>
+            t.bundle === bundle ? { ...t, debug: nextDebug, busy: false } : t
+          )
+        );
+      },
+      error: () => {
+        this.logsError.set(`Falha ao mudar o nível de log de ${current.label}.`);
+        this.logToggles.set(
+          this.logToggles().map((t) => (t.bundle === bundle ? { ...t, busy: false } : t))
+        );
       },
     });
   }

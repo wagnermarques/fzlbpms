@@ -1,0 +1,90 @@
+<xh:html xmlns:xh="http://www.w3.org/1999/xhtml"
+         xmlns:xf="http://www.w3.org/2002/xforms"
+         xmlns:xs="http://www.w3.org/2001/XMLSchema"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:ev="http://www.w3.org/2001/xml-events"
+         xmlns:xi="http://www.w3.org/2001/XInclude"
+         xmlns:xxi="http://orbeon.org/oxf/xml/xinclude"
+         xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+         xmlns:fr="http://orbeon.org/oxf/xml/form-runner"
+         xmlns:saxon="http://saxon.sf.net/">
+    <xh:head>
+        <xh:title>Criar organização</xh:title>
+        <xf:model id="fr-form-model" xxf:expose-xpath-types="true">
+            <xf:instance id="fr-form-instance" xxf:exclude-result-prefixes="#all">
+                <form>
+                    <secaoOrganizacao>
+                        <orgName/>
+                        <orgAlias/>
+                    </secaoOrganizacao>
+                </form>
+            </xf:instance>
+
+            <xf:bind id="fr-form-binds" ref="instance('fr-form-instance')">
+                <xf:bind id="secaoOrganizacao-bind" name="secaoOrganizacao" ref="secaoOrganizacao">
+                    <xf:bind id="orgName-bind" name="orgName" ref="orgName" required="true()"/>
+                    <xf:bind id="orgAlias-bind" name="orgAlias" ref="orgAlias" required="true()"/>
+                </xf:bind>
+            </xf:bind>
+
+            <xf:instance id="fr-form-metadata" xxf:readonly="true" xxf:exclude-result-prefixes="#all">
+                <metadata>
+                    <application-name>fzlbpms</application-name>
+                    <form-name>create-organization</form-name>
+                    <title xml:lang="pt">Criar organização</title>
+                    <description xml:lang="pt">Cria uma organização no Keycloak e seus papéis padrão (dono/membro), via o processo create-organization.</description>
+                    <version-comment>1.0.0</version-comment>
+                </metadata>
+            </xf:instance>
+
+            <xf:instance id="fr-form-attachments" xxf:exclude-result-prefixes="#all">
+                <attachments/>
+            </xf:instance>
+
+            <xf:instance id="fr-form-resources" xxf:readonly="false" xxf:exclude-result-prefixes="#all">
+                <resources>
+                    <resource xml:lang="pt">
+                        <secaoOrganizacao>
+                            <label>Nova organização</label>
+                        </secaoOrganizacao>
+                        <orgName>
+                            <label>Nome da organização</label>
+                            <hint>Nome completo, com acentos se quiser</hint>
+                        </orgName>
+                        <orgAlias>
+                            <label>Alias (identificador)</label>
+                            <hint>Normalizado automaticamente (minúsculas, sem acentos/espaços) pelo processo — usado para nomear os papéis org-&lt;alias&gt;-dono e org-&lt;alias&gt;-membro</hint>
+                        </orgAlias>
+                    </resource>
+                </resources>
+            </xf:instance>
+        </xf:model>
+    </xh:head>
+    <xh:body>
+        <fr:view>
+            <fr:body>
+                <fr:section id="secaoOrganizacao-section" bind="secaoOrganizacao-bind">
+                    <xf:label ref="$form-resources/secaoOrganizacao/label"/>
+                    <fr:grid id="secaoOrganizacao-grid">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="orgName-control" bind="orgName-bind">
+                                    <xf:label ref="$form-resources/orgName/label"/>
+                                    <xf:hint ref="$form-resources/orgName/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="orgAlias-control" bind="orgAlias-bind">
+                                    <xf:label ref="$form-resources/orgAlias/label"/>
+                                    <xf:hint ref="$form-resources/orgAlias/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+            </fr:body>
+        </fr:view>
+    </xh:body>
+</xh:html>

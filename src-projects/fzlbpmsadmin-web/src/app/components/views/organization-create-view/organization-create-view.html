@@ -1,0 +1,43 @@
+<h2>Organizações</h2>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+@if (created()) {
+  <p class="created-hint">
+    <mat-icon inline>check_circle</mat-icon> Organização "{{ created() }}" criada — processo
+    <code>create-organization</code> também já gerou os papéis padrão (dono/membro).
+  </p>
+}
+
+<mat-card class="panel">
+  <mat-card-header>
+    <mat-card-title>Nova organização</mat-card-title>
+  </mat-card-header>
+  <mat-card-content>
+    <mat-form-field>
+      <mat-label>Nome da organização</mat-label>
+      <input matInput [(ngModel)]="name" required />
+    </mat-form-field>
+    <mat-form-field>
+      <mat-label>Alias (identificador)</mat-label>
+      <input matInput [(ngModel)]="alias" required />
+    </mat-form-field>
+    <p class="hint">
+      O alias é normalizado automaticamente (minúsculas, sem acentos/espaços) e usado para
+      nomear os papéis padrão: <code>org-&lt;alias&gt;-dono</code> e
+      <code>org-&lt;alias&gt;-membro</code>.
+    </p>
+  </mat-card-content>
+  <mat-card-actions>
+    <button
+      mat-flat-button
+      color="primary"
+      [disabled]="submitting() || !name.trim() || !alias.trim()"
+      (click)="create()"
+    >
+      <mat-icon inline>add_business</mat-icon> Criar organização
+    </button>
+  </mat-card-actions>
+</mat-card>

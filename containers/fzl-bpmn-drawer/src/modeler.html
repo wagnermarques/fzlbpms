@@ -81,6 +81,10 @@ const FIELDS = {
     ['name', 'Nome'],
     ['$condition', 'Condição', 'Expressão UEL, ex.: ${aprovado == true}.'],
   ],
+  'bpmn:CallActivity': [
+    ['name', 'Nome'],
+    ['calledElement', 'Processo chamado', 'Chave do processo executado como subprocesso. Pode ser uma expressão, ex.: ${chaveProcesso}.'],
+  ],
 };
 FIELDS['bpmn:SendTask'] = FIELDS['bpmn:ServiceTask'];
 
@@ -129,9 +133,15 @@ function renderPanel() {
   } else {
     for (const [key, label, hint] of FIELDS[type]) {
       const val = readField(bo, key);
-      const input = key === '$condition' || key === 'flowable:expression'
-        ? `<textarea data-key="${key}">${esc(val)}</textarea>`
-        : `<input type="text" data-key="${key}" value="${esc(val)}">`;
+      let input;
+      if (key === '$condition' || key === 'flowable:expression') {
+        input = `<textarea data-key="${key}">${esc(val)}</textarea>`;
+      } else if (key === 'calledElement') {
+        const own = rootProcess();
+        input = calledElementPickerHtml(own ? own.businessObject.id : null, val);
+      } else {
+        input = `<input type="text" data-key="${key}" value="${esc(val)}">`;
+      }
       html += `<label>${esc(label)}</label>${input}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}`;
     }
   }
@@ -145,6 +155,40 @@ function renderPanel() {
   });
   const exec = panel.querySelector('#fExec');
   if (exec) exec.addEventListener('change', () => modeling.updateProperties(element, { isExecutable: exec.checked }));
+  const picker = panel.querySelector('#fCalledElementPicker');
+  if (picker) picker.addEventListener('change', () => onCalledElementPicked(element, picker));
+}
+
+// ---------- Seleção de processo chamado (Call Activity) ----------
+function calledElementPickerHtml(ownId, val) {
+  const diagramas = Storage.getAll().filter(d => d.processKey && d.processKey !== ownId);
+  const options = diagramas.map(d => `<option value="${esc(d.processKey)}" ${d.processKey === val ? 'selected' : ''}>${esc(d.name)} (${esc(d.processKey)})</option>`).join('');
+  return `
+    <select id="fCalledElementPicker">
+      <option value="">— selecionar processo existente —</option>
+      ${options}
+      <option value="__new__">+ Criar novo processo…</option>
+    </select>
+    <input type="text" data-key="calledElement" value="${esc(val)}" placeholder="chave do processo ou expressão">`;
+}
+
+function onCalledElementPicked(element, picker) {
+  const textInput = picker.nextElementSibling;
+  if (picker.value === '__new__') {
+    const name = prompt('Nome do novo processo:');
+    picker.value = '';
+    if (!name || !name.trim()) return;
+    const xml = newDiagramXml(name.trim());
+    const processKey = xml.match(/<bpmn:process id="([^"]+)"/)[1];
+    const novo = Storage.save({ name: name.trim(), xml, processKey });
+    textInput.value = novo.processKey;
+    writeField(element, 'calledElement', novo.processKey);
+    window.open(`modeler.html?id=${encodeURIComponent(novo.id)}`, '_blank');
+    toast('Novo processo criado e vinculado. Editando em outra aba.', 'ok');
+  } else if (picker.value) {
+    textInput.value = picker.value;
+    writeField(element, 'calledElement', picker.value);
+  }
 }
 
 // ---------- Imagem de documentação ----------

@@ -10,9 +10,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.camel.Exchange;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** /push endpoints. */
 public class PushProcessor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(PushProcessor.class);
 
 	private Db db;
 	private KeycloakJwtVerifier verifier;
@@ -35,6 +39,7 @@ public class PushProcessor {
 	 * pushManager.subscribe(). Public by nature, so no token required.
 	 */
 	public void vapidPublicKey(Exchange exchange) throws SQLException, GeneralSecurityException {
+		LOG.debug("Consulta da chave publica VAPID");
 		Map<String, Object> body = new LinkedHashMap<>();
 		body.put("publicKey", pushService.publicKeyBase64());
 		Http.sendJson(exchange, 200, body);
@@ -83,6 +88,9 @@ public class PushProcessor {
 		Map<String, Object> resp = new LinkedHashMap<>();
 		resp.put("id", id);
 		resp.put("endpoint", endpoint);
+
+		LOG.info("Inscricao push registrada: id={} userId={}", id, userId);
+
 		Http.sendJson(exchange, 201, resp);
 	}
 
@@ -105,6 +113,8 @@ public class PushProcessor {
 		if (result.sent + result.failed + result.removed == 0) {
 			throw Http.notFound("Nenhuma inscricao push registrada para este usuario");
 		}
+		LOG.info("Push de teste enviado: userId={} sent={} failed={} removed={}",
+				userId, result.sent, result.failed, result.removed);
 		Http.sendJson(exchange, 200, result.toJson());
 	}
 

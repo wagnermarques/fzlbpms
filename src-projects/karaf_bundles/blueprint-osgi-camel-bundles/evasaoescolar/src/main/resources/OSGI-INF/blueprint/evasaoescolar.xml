@@ -7,7 +7,7 @@
 		http://camel.apache.org/schema/blueprint
 			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
 
-	<camelContext id="evasaoescolarContext" trace="true"
+	<camelContext id="evasaoescolarContext"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
 		<onException>

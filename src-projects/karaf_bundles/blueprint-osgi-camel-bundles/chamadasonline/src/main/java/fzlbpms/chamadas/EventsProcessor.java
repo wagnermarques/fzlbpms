@@ -11,9 +11,12 @@ import java.util.*;
 import javax.sql.DataSource;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class EventsProcessor implements Processor {
 
+	private static final Logger LOG = LoggerFactory.getLogger(EventsProcessor.class);
 	private static final String CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 	private static final SecureRandom RANDOM = new SecureRandom();
 	private DataSource dataSource;
@@ -77,6 +80,7 @@ public class EventsProcessor implements Processor {
 					resp.put("active", true);
 					resp.put("event", event);
 					resp.put("period", period);
+					LOG.debug("Periodo ativo encontrado: periodId={} eventId={}", period.get("id"), event.get("id"));
 					AuthProcessor.sendJson(exchange, 200, resp);
 					return;
 				}
@@ -115,11 +119,14 @@ public class EventsProcessor implements Processor {
 				resp.put("active", true);
 				resp.put("event", event);
 				resp.put("period", period);
+				LOG.debug("Nenhum periodo ativo agora; usando fallback do ultimo evento: periodId={} eventId={}",
+						period.get("id"), event.get("id"));
 				AuthProcessor.sendJson(exchange, 200, resp);
 				return;
 			}
 		}
 
+		LOG.debug("Nenhum evento/periodo encontrado para /events/active");
 		resp.put("active", false);
 		AuthProcessor.sendJson(exchange, 200, resp);
 	}
@@ -168,6 +175,8 @@ public class EventsProcessor implements Processor {
 		result.put("geofenceLng", geofenceLng);
 		result.put("geofenceRadiusMeters", radiusMeters);
 		result.put("geofencePolygon", polygonObj);
+
+		LOG.info("Evento criado: id={} name={}", id, name);
 
 		AuthProcessor.sendJson(exchange, 201, result);
 	}
@@ -223,6 +232,8 @@ public class EventsProcessor implements Processor {
 		result.put("startsAt", startsAt.toString());
 		result.put("endsAt", endsAt.toString());
 
+		LOG.info("Periodo criado: id={} eventId={} label={}", periodId, eventId, label);
+
 		AuthProcessor.sendJson(exchange, 201, result);
 	}
 
@@ -264,6 +275,7 @@ public class EventsProcessor implements Processor {
 			// Generate new 5-character rotating code (45 seconds validity)
 			code = generateCode(5);
 			expiresAt = now.plus(45, ChronoUnit.SECONDS);
+			LOG.debug("Codigo rotativo expirado/ausente para periodId={}; gerando novo", periodId);
 
 			String insertSql = "INSERT INTO \"ChamadasCheckinCode\" (\"id\", \"eventPeriodId\", \"code\", \"issuedAt\", \"expiresAt\") "
 					+ "VALUES (?, ?, ?, ?, ?)";
@@ -276,6 +288,8 @@ public class EventsProcessor implements Processor {
 				ps.setTimestamp(5, Timestamp.from(expiresAt));
 				ps.executeUpdate();
 			}
+		} else {
+			LOG.debug("Reaproveitando codigo rotativo valido para periodId={}", periodId);
 		}
 
 		long secondsRemaining = Math.max(0, ChronoUnit.SECONDS.between(now, expiresAt));

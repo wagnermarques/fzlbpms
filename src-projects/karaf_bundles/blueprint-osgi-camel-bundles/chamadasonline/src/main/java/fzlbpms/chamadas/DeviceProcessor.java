@@ -11,9 +11,12 @@ import java.util.*;
 import javax.sql.DataSource;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DeviceProcessor implements Processor {
 
+	private static final Logger LOG = LoggerFactory.getLogger(DeviceProcessor.class);
 	private static final SecureRandom RANDOM = new SecureRandom();
 	private DataSource dataSource;
 
@@ -58,6 +61,8 @@ public class DeviceProcessor implements Processor {
 			AuthProcessor.sendJson(exchange, 400, Map.of("error", "bad_request", "message", "registrationNumber obrigatorio"));
 			return;
 		}
+
+		LOG.debug("Busca de aluno por registrationNumber/email/id={}", rm);
 
 		Map<String, Object> student = null;
 		try (Connection conn = dataSource.getConnection()) {
@@ -144,6 +149,8 @@ public class DeviceProcessor implements Processor {
 			return;
 		}
 
+		LOG.debug("Gerando codigo de vinculacao de dispositivo: studentId={} staffId={}", studentId, staffId);
+
 		// 6-digit numeric code, expires in 120 seconds
 		String code = String.format("%06d", RANDOM.nextInt(1000000));
 		Instant now = Instant.now();
@@ -180,6 +187,8 @@ public class DeviceProcessor implements Processor {
 		resp.put("expiresAt", expiresAt.toString());
 		resp.put("studentId", studentId);
 
+		LOG.info("Codigo de vinculacao gerado: studentId={} staffId={} expiresAt={}", studentId, staffId, expiresAt);
+
 		AuthProcessor.sendJson(exchange, 201, resp);
 	}
 
@@ -195,6 +204,8 @@ public class DeviceProcessor implements Processor {
 			AuthProcessor.sendJson(exchange, 400, Map.of("error", "bad_request", "message", "code e clientToken obrigatorios"));
 			return;
 		}
+
+		LOG.debug("Vinculacao de dispositivo recebida (code oculto)");
 
 		String enrollmentId = null;
 		String studentId = null;
@@ -241,7 +252,9 @@ public class DeviceProcessor implements Processor {
 				}
 			}
 
+			String deviceId;
 			if (devExists) {
+				deviceId = "(existente)";
 				String updSql = "UPDATE \"ChamadasDevice\" SET "
 						+ "\"studentId\" = ?, \"fingerprintHash\" = ?, \"verified\" = true, "
 						+ "\"verifiedAt\" = CURRENT_TIMESTAMP, \"verifiedByStaffId\" = ?, \"lastSeenAt\" = CURRENT_TIMESTAMP "
@@ -254,11 +267,12 @@ public class DeviceProcessor implements Processor {
 					ps.executeUpdate();
 				}
 			} else {
+				deviceId = "dev_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
 				String insSql = "INSERT INTO \"ChamadasDevice\" "
 						+ "(\"id\", \"clientToken\", \"studentId\", \"fingerprintHash\", \"verified\", \"verifiedAt\", \"verifiedByStaffId\", \"lastSeenAt\") "
 						+ "VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)";
 				try (PreparedStatement ps = conn.prepareStatement(insSql)) {
-					ps.setString(1, "dev_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
+					ps.setString(1, deviceId);
 					ps.setString(2, clientToken);
 					ps.setString(3, studentId);
 					ps.setString(4, fingerprintHash);
@@ -266,6 +280,9 @@ public class DeviceProcessor implements Processor {
 					ps.executeUpdate();
 				}
 			}
+
+			LOG.info("Dispositivo vinculado: studentId={} deviceId={} novoDispositivo={} staffId={}",
+					studentId, deviceId, !devExists, staffId);
 		}
 
 		AuthProcessor.sendJson(exchange, 200, Map.of(

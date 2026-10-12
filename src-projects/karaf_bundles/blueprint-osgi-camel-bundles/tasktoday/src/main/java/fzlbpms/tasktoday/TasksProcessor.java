@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.camel.Exchange;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * /tasks endpoints. Every statement is scoped to the caller's Keycloak "sub",
@@ -22,6 +24,8 @@ import org.apache.camel.Exchange;
  * columns are the spec's snake_case.
  */
 public class TasksProcessor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(TasksProcessor.class);
 
 	private static final String COLUMNS = "id, category_id, title, description, priority, status, deadline, "
 			+ "alert_type, trigger_minutes, is_archived, completed_at, alarm_fired, created_at, updated_at";
@@ -114,6 +118,8 @@ public class TasksProcessor {
 				while (rs.next()) tasks.add(toJson(rs));
 			}
 		}
+		LOG.debug("Listagem de tarefas: userId={} scope={} category={} priority={} status={} q={} -> {} encontradas",
+				userId, scope, categoryId, priority, status, search, tasks.size());
 		Http.sendJson(exchange, 200, tasks);
 	}
 
@@ -158,6 +164,7 @@ public class TasksProcessor {
 					rs.next();
 					Http.sendJson(exchange, 201, toJson(rs));
 				}
+				LOG.info("Tarefa criada: id={} userId={} priority={} status={}", id, userId, priority, status);
 			} catch (SQLException e) {
 				if ("23505".equals(e.getSQLState())) {
 					throw new Http.ApiError(409, "conflict", "Ja existe uma tarefa com o id " + id);
@@ -178,11 +185,14 @@ public class TasksProcessor {
 		String id = Http.pathParam(exchange, "id");
 		Map<String, Object> patch = Http.jsonBody(exchange);
 
+		LOG.debug("Atualizacao de tarefa recebida: id={} userId={} campos={}", id, userId, patch.keySet());
+
 		try (Connection conn = db.getConnection()) {
 			conn.setAutoCommit(false);
 			try {
 				Map<String, Object> result = applyUpdate(conn, userId, id, patch);
 				conn.commit();
+				LOG.info("Tarefa atualizada: id={} userId={} campos={}", id, userId, patch.keySet());
 				Http.sendJson(exchange, 200, result);
 			} catch (RuntimeException | SQLException e) {
 				conn.rollback();
@@ -284,6 +294,7 @@ public class TasksProcessor {
 			ps.setString(2, userId);
 			if (ps.executeUpdate() == 0) throw Http.notFound("Tarefa nao encontrada");
 		}
+		LOG.info("Tarefa excluida: id={} userId={}", id, userId);
 		Http.sendJson(exchange, 204, null);
 	}
 

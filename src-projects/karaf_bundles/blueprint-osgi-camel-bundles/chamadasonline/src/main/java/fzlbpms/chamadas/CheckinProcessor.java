@@ -8,8 +8,12 @@ import java.util.*;
 import javax.sql.DataSource;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CheckinProcessor implements Processor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CheckinProcessor.class);
 
 	private DataSource dataSource;
 
@@ -66,6 +70,8 @@ public class CheckinProcessor implements Processor {
 			AuthProcessor.sendJson(exchange, 400, Map.of("error", "bad_request", "message", "eventPeriodId, code e clientToken sao obrigatorios"));
 			return;
 		}
+
+		LOG.debug("Check-in recebido: studentId={} eventPeriodId={} lat={} lng={}", studentId, eventPeriodId, lat, lng);
 
 		List<String> flagReasons = new ArrayList<>();
 
@@ -214,6 +220,9 @@ public class CheckinProcessor implements Processor {
 				flagReasons.add("outside_geofence");
 			}
 
+			LOG.debug("Geofence para eventPeriodId={}: distancia={}m raio={}m outside={}",
+					eventPeriodId, distanceMeters, radiusMeters, outside);
+
 			boolean flagged = !flagReasons.isEmpty();
 
 			// 5. Insert Checkin (idempotent ON CONFLICT)
@@ -243,6 +252,9 @@ public class CheckinProcessor implements Processor {
 				ps.setArray(9, reasonsSqlArray);
 				ps.executeUpdate();
 			}
+
+			LOG.info("Check-in registrado: checkinId={} studentId={} eventPeriodId={} flagged={} flagReasons={}",
+					checkinId, studentId, eventPeriodId, flagged, flagReasons);
 		}
 
 		// Always return 200 OK for student to avoid alerting fraudsters
@@ -305,6 +317,8 @@ public class CheckinProcessor implements Processor {
 		resp.put("count", checkins.size());
 		resp.put("checkins", checkins);
 
+		LOG.debug("Listagem de checkins do periodo {}: {} encontrados", periodId, checkins.size());
+
 		AuthProcessor.sendJson(exchange, 200, resp);
 	}
 
@@ -362,6 +376,8 @@ public class CheckinProcessor implements Processor {
 		resp.put("count", flaggedList.size());
 		resp.put("flaggedCheckins", flaggedList);
 
+		LOG.debug("Listagem de checkins sinalizados do evento {}: {} encontrados", eventId, flaggedList.size());
+
 		AuthProcessor.sendJson(exchange, 200, resp);
 	}
 
@@ -389,6 +405,8 @@ public class CheckinProcessor implements Processor {
 			return;
 		}
 
+		LOG.debug("Revisao de checkin recebida: checkinId={} decision={}", checkinId, decision);
+
 		String updateSql = "UPDATE \"ChamadasCheckin\" SET \"reviewed\" = true, \"reviewDecision\" = ? WHERE \"id\" = ?";
 		try (Connection conn = dataSource.getConnection();
 			 PreparedStatement ps = conn.prepareStatement(updateSql)) {
@@ -400,6 +418,8 @@ public class CheckinProcessor implements Processor {
 				return;
 			}
 		}
+
+		LOG.info("Checkin revisado: checkinId={} decision={}", checkinId, decision);
 
 		AuthProcessor.sendJson(exchange, 200, Map.of("status", "ok", "checkinId", checkinId, "decision", decision));
 	}

@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.camel.Exchange;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * /categories endpoints: the shared native categories plus the caller's own.
@@ -19,6 +21,8 @@ import org.apache.camel.Exchange;
  * delete them.
  */
 public class CategoriesProcessor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CategoriesProcessor.class);
 
 	private static final String COLUMNS = "id, name, color, icon, is_native, created_at";
 
@@ -45,6 +49,7 @@ public class CategoriesProcessor {
 				while (rs.next()) categories.add(toJson(rs));
 			}
 		}
+		LOG.debug("Listagem de categorias: userId={} -> {} encontradas", userId, categories.size());
 		Http.sendJson(exchange, 200, categories);
 	}
 
@@ -73,6 +78,7 @@ public class CategoriesProcessor {
 				rs.next();
 				Http.sendJson(exchange, 201, toJson(rs));
 			}
+			LOG.info("Categoria criada: id={} userId={} isNative={} name={}", id, caller.userId, isNative, name);
 		} catch (SQLException e) {
 			if ("23505".equals(e.getSQLState())) {
 				throw new Http.ApiError(409, "conflict", "Ja existe uma categoria com o id " + id);
@@ -105,6 +111,7 @@ public class CategoriesProcessor {
 					Http.sendJson(exchange, 200, toJson(rs));
 				}
 			}
+			LOG.info("Categoria atualizada: id={} userId={} campos={}", id, caller.userId, patch.keySet());
 		}
 	}
 
@@ -123,6 +130,7 @@ public class CategoriesProcessor {
 				ps.executeUpdate();
 			}
 		}
+		LOG.info("Categoria excluida: id={} userId={}", id, caller.userId);
 		Http.sendJson(exchange, 204, null);
 	}
 

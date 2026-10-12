@@ -8,8 +8,12 @@ import javax.sql.DataSource;
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
 import org.apache.camel.Processor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class AuthProcessor implements Processor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(AuthProcessor.class);
 
 	private DataSource dataSource;
 
@@ -48,6 +52,7 @@ public class AuthProcessor implements Processor {
 		// Verified, not just decoded: the roles below decide STAFF vs STUDENT.
 		Map<String, Object> claims = JwtHelper.verifyKeycloakToken(keycloakToken);
 		if (claims == null || !claims.containsKey("sub")) {
+			LOG.debug("Login Keycloak rejeitado: token invalido");
 			sendJson(exchange, 401, Map.of("error", "invalid_token", "message", "Token Keycloak invalido"));
 			return;
 		}
@@ -173,6 +178,8 @@ public class AuthProcessor implements Processor {
 		resp.put("accessToken", sessionToken);
 		resp.put("user", userMap);
 
+		LOG.info("Login Keycloak processado: sub={} role={} registrationNumber={}", sub, role, registrationNumber);
+
 		sendJson(exchange, 200, resp);
 	}
 
@@ -189,6 +196,8 @@ public class AuthProcessor implements Processor {
 		if (sub == null) {
 			sub = (String) tokenPayload.get("preferred_username");
 		}
+
+		LOG.debug("Consulta /auth/me para sub={}", sub);
 
 		Map<String, Object> userMap = new LinkedHashMap<>();
 		try (Connection conn = dataSource.getConnection();

@@ -1,40 +1,97 @@
 #+TITLE: Evasão Escolar - Apache Camel OSGi Blueprint Bundle
 #+AUTHOR: fzlbpms
-#+DATE: 2026-10-10
+#+DATE: 2026-10-12
 #+STARTUP: showall
 
 * Visão Geral
 
-O bundle *evasaoescolar* é um serviço OSGi Blueprint baseado em Apache Camel 3.21 executado no Apache Karaf, concebido como backend REST para o sistema *Evasão Escolar* (acompanhamento de frequência, identificação de alunos em risco de evasão e registro de intervenções pedagógicas).
+O bundle *evasaoescolar* é um serviço OSGi Blueprint baseado em Apache Camel 3.21 executado no Apache Karaf, concebido como backend REST para o sistema *Evasão Escolar* (acompanhamento de frequência escolar, cálculo automático de risco de evasão e registro de intervenções pedagógicas).
 
-Por decisão da equipe, este bundle substitui o backend originalmente planejado em Supabase: a aplicação passa a consumir a mesma infraestrutura Karaf/Camel/PostgreSQL já utilizada pelos demais sistemas do fzlbpms, em vez de um serviço externo gerenciado.
-
-*Este é apenas o esqueleto de boot/health-check do bundle.* Nenhum endpoint de negócio (frequência, alunos em risco, intervenções, etc.) foi implementado ainda — eles serão adicionados em uma sessão futura, junto com acesso a banco de dados e processors.
+Substitui o backend originalmente planejado em Supabase, integrando-se nativamente à infraestrutura Apache Karaf, PostgreSQL (~fzldb~) e Keycloak SSO (~realm fzlbpms~).
 
 * Arquitetura e Componentes
 
-- *Porta Interna do Camel Jetty:* ~9096~ (as portas ~9092~–~9095~ já estão em uso pelos bundles irmãos: aproveitamento-docs, contatemeantes, chamadasonline e tasktoday, respectivamente).
-- *Prefixo da API:* ~/fzlbpms/evasaoescolar~
-- *Banco de Dados:* ainda não configurado neste esqueleto — será adicionado quando os primeiros endpoints de negócio forem implementados.
+- *Porta Interna do Camel Jetty:* ~9096~ (definida via ~FZL_KARAF_EVASAOESCOLAR_PORT=9096~)
+- *Proxy Reverso Nginx:*
+  - Caminho externo: ~https://fzlbpms.local/api/evasaoescolar/...~
+  - Destino interno: ~http://fzl-karaf-camel-integration:9096/fzlbpms/evasaoescolar/$1~
+  - Suporte completo a CORS para métodos ~GET, POST, PUT, PATCH, DELETE, OPTIONS~
+- *Autenticação Keycloak:*
+  - Realm: ~fzlbpms~
+  - Cliente OIDC: ~evasaoescolar~ (Public client com PKCE S256)
+  - Validação de tokens JWT via assinatura RS256 contra o JWKS do Keycloak com cache em memória
+- *Banco de Dados:*
+  - PostgreSQL container ~fzl-postgresql~, database ~fzldb~
+  - Tabelas com prefixo ~evasao_*~ inicializadas e migradas automaticamente via ~src/main/resources/sql/schema.sql~
 
-* Endpoint de Verificação (Proof of Life)
+* Esquema de Tabelas (PostgreSQL / ~fzldb~)
 
-- ~GET /fzlbpms/evasaoescolar/health~:
-  - Retorno: ~{"status":"ok","bundle":"evasaoescolar"}~
-  - Finalidade: confirmar que o bundle compilou, foi empacotado como bundle OSGi e subiu corretamente no Karaf, antes da implementação dos endpoints de negócio.
+| Tabela | Finalidade |
+|---|---|
+| ~evasao_classes~ | Turmas e cursos cadastrados (ano letivo, período, curso) |
+| ~evasao_students~ | Cadastro de alunos (RM, nome, e-mail, telefone, status acadêmico) |
+| ~evasao_attendance~ | Frequência acumulada, aulas dadas/assistidas, faltas consecutivas e % de presença |
+| ~evasao_grades~ | Notas por disciplina e bimestre, com flag automática de reprovação (< 6.0) |
+| ~evasao_risk_evaluations~ | Nível de risco calculado (~BAIXO~, ~MEDIO~, ~ALTO~, ~CRITICO~), pontuação (0-100) e justificativas |
+| ~evasao_interventions~ | Registro de intervenções pedagógicas (contato com responsáveis, reuniões, reforço) |
+
+* Motor de Avaliação de Risco (Heurística)
+
+O cálculo de risco é acionado automaticamente em cascata ao lançar frequências ou notas:
+1. *Frequência abaixo de 75%* (limite legal LDB): +40 pontos, motivo ~frequencia_abaixo_75~.
+2. *Frequência entre 75% e 85%*: +20 pontos, motivo ~frequencia_abaixo_85~.
+3. *Faltas consecutivas >= 5*: +30 pontos, motivo ~faltas_consecutivas_5~.
+4. *Faltas consecutivas >= 3*: +15 pontos, motivo ~faltas_consecutivas_3~.
+5. *Reprovações (notas < 6.0)*:
+   - >= 3 disciplinas: +25 pontos.
+   - 1 a 2 disciplinas: +10 pontos.
+6. *Classificação*:
+   - 0–24 pts: ~BAIXO~ (aluno com status ~ATIVO~)
+   - 25–49 pts: ~MEDIO~
+   - 50–74 pts: ~ALTO~ (atualiza status do aluno para ~EM_RISCO~)
+   - 75–100 pts: ~CRITICO~ (atualiza status do aluno para ~EM_RISCO~)
+
+* Contrato da API REST (/api/evasaoescolar/...)
+
+Todas as rotas (exceto ~/health~ e pré-voo ~OPTIONS~) exigem o header:
+~Authorization: Bearer <access_token_keycloak>~
+
+** Healthcheck
+- ~GET /health~ → ~{"status":"ok","bundle":"evasaoescolar","version":"1.0.0"}~
+
+** Dashboard & Alertas
+- ~GET /dashboard/stats~ → Estatísticas consolidadas (total de alunos, distribuição por risco, status e intervenções ativas)
+- ~GET /dashboard/alerts~ → Lista de alunos em risco ~CRITICO~ ou ~ALTO~ que necessitam de intervenção imediata
+
+** Turmas (~/classes~)
+- ~GET /classes~ → Lista de turmas cadastradas
+- ~POST /classes~ → Cadastro de nova turma (~{"name":"...", "course":"...", "year":2026, "period":"MATUTINO"}~)
+
+** Alunos (~/students~)
+- ~GET /students?classId=...&riskLevel=...&status=...&q=...~ → Listagem com filtros
+- ~POST /students~ → Cadastro de aluno (~{"registrationNumber":"RM123", "name":"...", "classId":"..."}~)
+- ~GET /students/{id}~ → Detalhes completos do aluno (dados, turma, frequência, notas e avaliação de risco)
+- ~PUT /students/{id}~ → Atualização de dados cadastrais
+- ~POST /students/{id}/evaluate~ → Reavaliação de risco manual sob demanda
+
+** Frequência (~/students/{id}/attendance~)
+- ~GET /students/{id}/attendance~ → Dados de frequência do aluno
+- ~POST /students/{id}/attendance~ → Lançamento/atualização de frequência (~{"totalClasses":120, "attendedClasses":80, "consecutiveAbsences":6}~)
+
+** Desempenho / Notas (~/students/{id}/grades~)
+- ~GET /students/{id}/grades~ → Notas do aluno
+- ~POST /students/{id}/grades~ → Registro de nota (~{"subject":"Matemática", "term":"1_BIMESTRE", "grade":4.5}~)
+
+** Intervenções Pedagógicas
+- ~GET /students/{id}/interventions~ → Lista intervenções de um aluno específico
+- ~POST /students/{id}/interventions~ → Registra intervenção (~{"type":"CONTATO_RESPONSAVEIS", "description":"...", "assignedTo":"..."}~)
+- ~GET /interventions?status=...~ → Lista geral de intervenções para a equipe pedagógica
+- ~PATCH /interventions/{id}~ → Atualiza status ou desfecho da intervenção (~{"status":"CONCLUIDA", "outcome":"..."}~)
 
 * Compilação e Deploy
-
-O bundle utiliza o ~maven-bundle-plugin~ configurado no ~pom.xml~:
 
 #+begin_src bash
 mvn clean install -f src-projects/karaf_bundles/blueprint-osgi-camel-bundles/evasaoescolar/pom.xml
 #+end_src
 
-O artefato gerado é automaticamente copiado para ~src-projects/karaf_deploy_dir/evasaoescolar-1.0-SNAPSHOT.jar~, onde o Apache Karaf efetua o hot-deploy instantâneo através do Felix FileInstall.
-
-* Próximos Passos
-
-- Definir e criar o esquema de tabelas no PostgreSQL (~fzl-postgresql~ / ~fzldb~) para frequência, alunos em risco e intervenções.
-- Implementar os processors de negócio e os endpoints REST correspondentes.
-- Avaliar necessidade de autenticação (Keycloak) seguindo o padrão dos demais bundles.
+O build gera e copia automaticamente o JAR para ~src-projects/karaf_deploy_dir/evasaoescolar-1.0-SNAPSHOT.jar~, onde o Apache Karaf efetua o hot-deploy imediato.

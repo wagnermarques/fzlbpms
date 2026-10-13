@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Evasão Escolar - Backend REST Service (Apache Camel OSGi Blueprint Bundle).
+
+  Porta Jetty Interna : 9096 (exposta via FZL_KARAF_EVASAOESCOLAR_PORT=9096)
+  Proxy Nginx         : /api/evasaoescolar/ -> http://fzl-karaf-camel-integration:9096/fzlbpms/evasaoescolar/
+  Autenticação        : Keycloak Bearer Token (realm fzlbpms), cliente 'evasaoescolar'
+  Banco de Dados      : PostgreSQL fzl-postgresql / fzldb, tabelas evasao_*
+-->
 <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="
@@ -6,6 +14,39 @@
 			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
 		http://camel.apache.org/schema/blueprint
 			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="db" class="fzlbpms.evasaoescolar.Db" init-method="init" />
+	<bean id="jwtVerifier" class="fzlbpms.evasaoescolar.KeycloakJwtVerifier" />
+	<bean id="riskEvaluator" class="fzlbpms.evasaoescolar.RiskEvaluator" />
+	<bean id="errorResponder" class="fzlbpms.evasaoescolar.ErrorResponder" />
+
+	<bean id="dashboardProcessor" class="fzlbpms.evasaoescolar.DashboardProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+	</bean>
+
+	<bean id="studentsProcessor" class="fzlbpms.evasaoescolar.StudentsProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+		<property name="riskEvaluator" ref="riskEvaluator" />
+	</bean>
+
+	<bean id="attendanceProcessor" class="fzlbpms.evasaoescolar.AttendanceProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+		<property name="riskEvaluator" ref="riskEvaluator" />
+	</bean>
+
+	<bean id="gradesProcessor" class="fzlbpms.evasaoescolar.GradesProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+		<property name="riskEvaluator" ref="riskEvaluator" />
+	</bean>
+
+	<bean id="interventionsProcessor" class="fzlbpms.evasaoescolar.InterventionsProcessor">
+		<property name="db" ref="db" />
+		<property name="verifier" ref="jwtVerifier" />
+	</bean>
 
 	<camelContext id="evasaoescolarContext"
 		xmlns="http://camel.apache.org/schema/blueprint">
@@ -15,46 +56,86 @@
 			<handled>
 				<constant>true</constant>
 			</handled>
-			<removeHeaders pattern="*" />
-			<setHeader name="CamelHttpResponseCode">
-				<constant>500</constant>
-			</setHeader>
-			<setHeader name="Content-Type">
-				<constant>application/json; charset=UTF-8</constant>
-			</setHeader>
-			<setHeader name="Access-Control-Allow-Origin">
-				<constant>*</constant>
-			</setHeader>
-			<setHeader name="Access-Control-Allow-Methods">
-				<constant>GET, POST, PATCH, OPTIONS</constant>
-			</setHeader>
-			<setHeader name="Access-Control-Allow-Headers">
-				<constant>Authorization, Content-Type, Accept</constant>
-			</setHeader>
-			<setBody>
-				<simple>{"error":"server_error","message":"${exception.message}"}</simple>
-			</setBody>
+			<bean ref="errorResponder" method="handle" />
 		</onException>
 
-		<!-- Jetty REST Server on Port 9096 (9092-9095 are already used by sibling bundles) -->
-		<!-- Bare enableCORS="true" uses Camel's built-in default
-		     Access-Control-Allow-Headers (Origin, Accept, X-Requested-With,
-		     Content-Type, Access-Control-Request-Method,
-		     Access-Control-Request-Headers) — it does NOT include
-		     Authorization. The onException handler above already sets the
-		     right headers for its own (error) responses; this does the same
-		     for every normal preflight. -->
+		<!-- Jetty REST Server on Port 9096 with CORS enabled -->
 		<restConfiguration component="jetty"
 			port="9096"
 			bindingMode="off"
 			enableCORS="true">
-			<corsHeaders key="Access-Control-Allow-Headers" value="Origin, Accept, X-Requested-With, Content-Type, Authorization" />
+			<corsHeaders key="Access-Control-Allow-Methods" value="GET, POST, PUT, PATCH, DELETE, OPTIONS" />
+			<corsHeaders key="Access-Control-Allow-Headers" value="Authorization, Content-Type, Accept" />
 		</restConfiguration>
 
 		<rest path="/fzlbpms/evasaoescolar">
+			<!-- Healthcheck (público) -->
 			<get path="/health">
 				<to uri="direct:evasao-health" />
 			</get>
+
+			<!-- Dashboard & Estatísticas -->
+			<get path="/dashboard/stats">
+				<to uri="bean:dashboardProcessor?method=getStats" />
+			</get>
+			<get path="/dashboard/alerts">
+				<to uri="bean:dashboardProcessor?method=getAlerts" />
+			</get>
+
+			<!-- Turmas -->
+			<get path="/classes">
+				<to uri="bean:studentsProcessor?method=listClasses" />
+			</get>
+			<post path="/classes" consumes="application/json">
+				<to uri="bean:studentsProcessor?method=createClass" />
+			</post>
+
+			<!-- Alunos -->
+			<get path="/students">
+				<to uri="bean:studentsProcessor?method=listStudents" />
+			</get>
+			<post path="/students" consumes="application/json">
+				<to uri="bean:studentsProcessor?method=createStudent" />
+			</post>
+			<get path="/students/{id}">
+				<to uri="bean:studentsProcessor?method=getStudent" />
+			</get>
+			<put path="/students/{id}" consumes="application/json">
+				<to uri="bean:studentsProcessor?method=updateStudent" />
+			</put>
+			<post path="/students/{id}/evaluate">
+				<to uri="bean:studentsProcessor?method=evaluateStudent" />
+			</post>
+
+			<!-- Frequência -->
+			<get path="/students/{id}/attendance">
+				<to uri="bean:attendanceProcessor?method=getAttendance" />
+			</get>
+			<post path="/students/{id}/attendance" consumes="application/json">
+				<to uri="bean:attendanceProcessor?method=recordAttendance" />
+			</post>
+
+			<!-- Desempenho / Notas -->
+			<get path="/students/{id}/grades">
+				<to uri="bean:gradesProcessor?method=listGrades" />
+			</get>
+			<post path="/students/{id}/grades" consumes="application/json">
+				<to uri="bean:gradesProcessor?method=recordGrade" />
+			</post>
+
+			<!-- Intervenções Pedagógicas -->
+			<get path="/students/{id}/interventions">
+				<to uri="bean:interventionsProcessor?method=listStudentInterventions" />
+			</get>
+			<post path="/students/{id}/interventions" consumes="application/json">
+				<to uri="bean:interventionsProcessor?method=createIntervention" />
+			</post>
+			<get path="/interventions">
+				<to uri="bean:interventionsProcessor?method=listAllInterventions" />
+			</get>
+			<patch path="/interventions/{id}" consumes="application/json">
+				<to uri="bean:interventionsProcessor?method=updateIntervention" />
+			</patch>
 		</rest>
 
 		<route id="route-evasao-health">
@@ -63,7 +144,7 @@
 				<constant>application/json; charset=UTF-8</constant>
 			</setHeader>
 			<setBody>
-				<constant>{"status":"ok","bundle":"evasaoescolar"}</constant>
+				<constant>{"status":"ok","bundle":"evasaoescolar","version":"1.0.0"}</constant>
 			</setBody>
 		</route>
 

@@ -14,12 +14,11 @@
 <header class="top">
   <a class="brand" href="./">← Início</a>
   <input type="text" id="nome" placeholder="Nome do diagrama" aria-label="Nome do diagrama">
-  <span id="dirty" class="badge" hidden>não salvo</span>
   <span class="spacer"></span>
   <button id="btnXml" title="Baixar arquivo XML do BPMN">Baixar XML</button>
   <button id="btnSvg" title="Baixar arquivo vetorial SVG">Baixar SVG</button>
   <button id="btnPng" title="PNG do diagrama inteiro, com imagens de documentação">Baixar imagem</button>
-  <button class="primary" id="btnSalvar">Salvar</button>
+  <button class="primary" id="btnSalvar" disabled>Salvar</button>
 </header>
 
 <div class="editor">
@@ -46,8 +45,7 @@ let selected = null;
 
 function setDirty(v) {
   dirty = v;
-  const el = document.getElementById('dirty');
-  if (el) el.hidden = !v;
+  document.getElementById('btnSalvar').disabled = !v;
 }
 
 // ---------- Painel de propriedades Flowable ----------
@@ -172,7 +170,7 @@ function calledElementPickerHtml(ownId, val) {
     <input type="text" data-key="calledElement" value="${esc(val)}" placeholder="chave do processo ou expressão">`;
 }
 
-function onCalledElementPicked(element, picker) {
+async function onCalledElementPicked(element, picker) {
   const textInput = picker.nextElementSibling;
   if (picker.value === '__new__') {
     const name = prompt('Nome do novo processo:');
@@ -180,11 +178,13 @@ function onCalledElementPicked(element, picker) {
     if (!name || !name.trim()) return;
     const xml = newDiagramXml(name.trim());
     const processKey = xml.match(/<bpmn:process id="([^"]+)"/)[1];
-    const novo = Storage.save({ name: name.trim(), xml, processKey });
-    textInput.value = novo.processKey;
-    writeField(element, 'calledElement', novo.processKey);
-    window.open(`modeler.html?id=${encodeURIComponent(novo.id)}`, '_blank');
-    toast('Novo processo criado e vinculado. Editando em outra aba.', 'ok');
+    try {
+      const novo = await Storage.save({ name: name.trim(), xml, processKey });
+      textInput.value = novo.processKey;
+      writeField(element, 'calledElement', novo.processKey);
+      window.open(`modeler.html?id=${encodeURIComponent(novo.id)}`, '_blank');
+      toast('Novo processo criado e vinculado. Editando em outra aba.', 'ok');
+    } catch (e) { toast(e.message, 'error'); }
   } else if (picker.value) {
     textInput.value = picker.value;
     writeField(element, 'calledElement', picker.value);
@@ -256,6 +256,11 @@ modeler.on('import.done', () => Imagens.desenhar(modeler));
 
 // ---------- Persistência ----------
 async function load() {
+  try {
+    await Storage.init();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
   if (!id) {
     const name = 'Novo Processo';
     document.getElementById('nome').value = name;
@@ -265,7 +270,7 @@ async function load() {
     renderPanel();
     return;
   }
-  const d = Storage.get(id);
+  const d = await Storage.get(id);
   if (!d) {
     toast('Diagrama não encontrado.', 'error');
     setTimeout(() => { location.href = './'; }, 1500);
@@ -290,7 +295,7 @@ async function save() {
   const { xml } = await modeler.saveXML({ format: true });
   const root = rootProcess();
   const processKey = root ? root.businessObject.id : null;
-  const saved = Storage.save({ id, name, xml, processKey });
+  const saved = await Storage.save({ id, name, xml, processKey });
   id = saved.id;
   // Atualiza URL sem recarregar
   const newUrl = `${location.pathname}?id=${encodeURIComponent(id)}`;
@@ -313,7 +318,7 @@ function fileBase() {
 document.getElementById('nome').addEventListener('input', () => setDirty(true));
 
 document.getElementById('btnSalvar').onclick = async () => {
-  try { if (await save()) toast('Salvo no navegador.', 'ok'); } catch (e) { toast(e.message, 'error'); }
+  try { if (await save()) toast('Salvo.', 'ok'); } catch (e) { toast(e.message, 'error'); }
 };
 
 document.getElementById('btnXml').onclick = async () => {

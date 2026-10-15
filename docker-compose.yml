@@ -243,6 +243,8 @@ services:
       - "${FZL_KARAF_TASKTODAY_PORT:-9095}:9095"
       # Evasão Escolar REST API — direct LAN access / dev port
       - "${FZL_KARAF_EVASAOESCOLAR_PORT:-9096}:9096"
+      # BPMN Drawer REST API — direct LAN access / dev port (nginx: /api/bpmndrawer/)
+      - "${FZL_KARAF_BPMNDRAWER_PORT:-9097}:9097"
     environment:
       # Host is already NTP-synced and set to America/Sao_Paulo. Containers
       # share the host's clock but default to UTC for timezone *rendering*

@@ -1,47 +1,78 @@
-// Local storage management for diagrams in fzl-bpmn-drawer
+// Server-side persistence for diagrams in fzl-bpmn-drawer (bpmndrawer REST API,
+// same-origin behind nginx's oauth2-proxy gate — no token handling needed here,
+// the session cookie rides along with fetch() automatically).
 const Storage = {
-  KEY: 'fzlbpms_diagrams',
+  API_BASE: '/api/bpmndrawer/diagrams',
+  LOCAL_KEY: 'fzlbpms_diagrams',
+  _list: [],
+  _full: new Map(),
+
+  async init() {
+    const res = await fetch(Storage.API_BASE);
+    if (!res.ok) throw new Error('Falha ao carregar diagramas (HTTP ' + res.status + ')');
+    Storage._list = await res.json();
+  },
 
   getAll() {
+    return Storage._list;
+  },
+
+  async get(id) {
+    if (Storage._full.has(id)) return Storage._full.get(id);
+    const res = await fetch(`${Storage.API_BASE}/${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    Storage._full.set(id, d);
+    return d;
+  },
+
+  async save(diagram) {
+    const isUpdate = !!diagram.id;
+    const res = await fetch(isUpdate ? `${Storage.API_BASE}/${encodeURIComponent(diagram.id)}` : Storage.API_BASE, {
+      method: isUpdate ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: diagram.name, xml: diagram.xml, processKey: diagram.processKey }),
+    });
+    if (!res.ok) throw new Error('Falha ao salvar diagrama (HTTP ' + res.status + ')');
+    const saved = await res.json();
+    Storage._full.set(saved.id, saved);
+    await Storage.init();
+    return saved;
+  },
+
+  async delete(id) {
+    const res = await fetch(`${Storage.API_BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Falha ao excluir diagrama (HTTP ' + res.status + ')');
+    Storage._full.delete(id);
+    await Storage.init();
+  },
+};
+
+// ---------- Migração única a partir do localStorage (bug de origem/domínio) ----------
+// Diagramas salvos antes deste backend existir ficaram presos no localStorage
+// do navegador/origem em que foram criados. Oferece importá-los uma vez.
+const LocalImport = {
+  pending() {
     try {
-      const data = localStorage.getItem(Storage.KEY);
-      return data ? JSON.parse(data) : [];
+      const raw = localStorage.getItem(Storage.LOCAL_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
     } catch (e) {
-      console.error('Failed to load diagrams from localStorage', e);
       return [];
     }
   },
 
-  get(id) {
-    const list = Storage.getAll();
-    return list.find(d => String(d.id) === String(id)) || null;
-  },
-
-  save(diagram) {
-    const list = Storage.getAll();
-    const now = new Date().toISOString();
-    let existingIndex = list.findIndex(d => String(d.id) === String(diagram.id));
-
-    if (existingIndex >= 0) {
-      diagram.updatedAt = now;
-      diagram.version = (list[existingIndex].version || 1) + 1;
-      list[existingIndex] = { ...list[existingIndex], ...diagram };
-    } else {
-      diagram.id = diagram.id || 'd_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-      diagram.createdAt = now;
-      diagram.updatedAt = now;
-      diagram.version = 1;
-      list.unshift(diagram);
+  async importAll(localList) {
+    const existingNames = new Set(Storage.getAll().map(d => d.name));
+    let imported = 0;
+    for (const d of localList) {
+      if (existingNames.has(d.name)) continue;
+      await Storage.save({ name: d.name, xml: d.xml, processKey: d.processKey });
+      imported++;
     }
-
-    localStorage.setItem(Storage.KEY, JSON.stringify(list));
-    return diagram;
+    localStorage.removeItem(Storage.LOCAL_KEY);
+    return imported;
   },
-
-  delete(id) {
-    const list = Storage.getAll().filter(d => String(d.id) !== String(id));
-    localStorage.setItem(Storage.KEY, JSON.stringify(list));
-  }
 };
 
 function toast(msg, kind = '') {

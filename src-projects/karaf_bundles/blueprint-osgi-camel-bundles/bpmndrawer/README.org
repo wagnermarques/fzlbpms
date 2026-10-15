@@ -1,0 +1,34 @@
+#+TITLE: BPMN Drawer - Apache Camel OSGi Blueprint Bundle
+#+AUTHOR: fzlbpms
+#+DATE: 2026-10-15
+#+STARTUP: showall
+
+* Visão Geral
+
+O bundle *bpmndrawer* é um serviço OSGi Blueprint baseado em Apache Camel 3.21 executado no Apache Karaf, concebido como backend REST para o *Modelador BPMN* (~fzl-bpmn-drawer~, servido em ~/bpmndrawer/~).
+
+Antes deste bundle, os diagramas eram salvos apenas no ~localStorage~ do navegador — sem persistência real, sem compartilhamento entre máquinas/navegadores e invisíveis ao trocar de origem (ex.: ~fzlbpms.local~ vs ~fzlbpms.com.br~ via ~bin/switch-domain.sh~). Este bundle substitui isso por armazenamento real em PostgreSQL.
+
+* Arquitetura e Componentes
+
+- *Porta Interna do Camel Jetty:* ~9097~ (definida via ~FZL_KARAF_BPMNDRAWER_PORT=9097~)
+- *Proxy Reverso Nginx:*
+  - Caminho externo: ~https://fzlbpms.local/api/bpmndrawer/...~
+  - Destino interno: ~http://fzl-karaf-camel-integration:9097/fzlbpms/bpmndrawer/$1~
+- *Autenticação:*
+  - Não há verificação de JWT neste bundle. Tanto ~/bpmndrawer/~ quanto ~/api/bpmndrawer/~ são protegidos no nginx por ~auth_request~ contra o ~fzl-oauth2-proxy~ já existente — o mesmo gate usado por ~/theia/~ e ~/orbeon/~, exigindo a role de realm ~theia-user~.
+  - O nginx injeta o header ~X-Forwarded-User~ com o usuário autenticado; este bundle apenas confia nesse header (~Http.requireUser~), já que o bundle só é alcançável através desse gate.
+  - Visibilidade: biblioteca compartilhada — qualquer usuário com a role ~theia-user~ vê e edita todos os diagramas.
+- *Banco de Dados:*
+  - PostgreSQL container ~fzl-postgresql~, database ~fzldb~
+  - Tabela ~bpmndrawer_diagrams~ inicializada automaticamente via ~src/main/resources/sql/schema.sql~
+
+* Esquema de Tabelas (PostgreSQL / ~fzldb~)
+
+| Tabela | Finalidade |
+|---|---|
+| ~bpmndrawer_diagrams~ | Diagramas BPMN (nome, chave do processo, XML, versão, autor/editor, timestamps) |
+
+* Build e Deploy
+
+~mvn clean install~ neste diretório compila o bundle e copia o jar para ~../../../karaf_deploy_dir~, a pasta de hot-deploy do Karaf (bind-mounted) — não há passo manual de deploy nem reinício do container.

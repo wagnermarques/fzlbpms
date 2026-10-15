@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BPMN Drawer - Backend REST Service (Apache Camel OSGi Blueprint Bundle).
+
+  Porta Jetty Interna : 9097 (exposta via FZL_KARAF_BPMNDRAWER_PORT=9097)
+  Proxy Nginx         : /api/bpmndrawer/ -> http://fzl-karaf-camel-integration:9097/fzlbpms/bpmndrawer/
+  Autenticação        : nginx auth_request contra fzl-oauth2-proxy (mesmo gate de /theia/ e
+                        /orbeon/, role 'theia-user'); este bundle confia no header
+                        X-Forwarded-User que o gate injeta — não há verificação de JWT aqui.
+  Banco de Dados      : PostgreSQL fzl-postgresql / fzldb, tabela bpmndrawer_diagrams
+-->
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="db" class="fzlbpms.bpmndrawer.Db" init-method="init" />
+	<bean id="errorResponder" class="fzlbpms.bpmndrawer.ErrorResponder" />
+
+	<bean id="diagramsProcessor" class="fzlbpms.bpmndrawer.DiagramsProcessor">
+		<property name="db" ref="db" />
+	</bean>
+
+	<camelContext id="bpmndrawerContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<onException>
+			<exception>java.lang.Exception</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<bean ref="errorResponder" method="handle" />
+		</onException>
+
+		<!-- Jetty REST Server on Port 9097 with CORS enabled -->
+		<restConfiguration component="jetty"
+			port="9097"
+			bindingMode="off"
+			enableCORS="true">
+			<corsHeaders key="Access-Control-Allow-Methods" value="GET, POST, PUT, PATCH, DELETE, OPTIONS" />
+			<corsHeaders key="Access-Control-Allow-Headers" value="Authorization, Content-Type, Accept" />
+		</restConfiguration>
+
+		<rest path="/fzlbpms/bpmndrawer">
+			<!-- Healthcheck (público) -->
+			<get path="/health">
+				<to uri="direct:bpmndrawer-health" />
+			</get>
+
+			<!-- Diagramas BPMN -->
+			<get path="/diagrams">
+				<to uri="bean:diagramsProcessor?method=listDiagrams" />
+			</get>
+			<post path="/diagrams" consumes="application/json">
+				<to uri="bean:diagramsProcessor?method=createDiagram" />
+			</post>
+			<get path="/diagrams/{id}">
+				<to uri="bean:diagramsProcessor?method=getDiagram" />
+			</get>
+			<put path="/diagrams/{id}" consumes="application/json">
+				<to uri="bean:diagramsProcessor?method=updateDiagram" />
+			</put>
+			<delete path="/diagrams/{id}">
+				<to uri="bean:diagramsProcessor?method=deleteDiagram" />
+			</delete>
+		</rest>
+
+		<route id="route-bpmndrawer-health">
+			<from uri="direct:bpmndrawer-health" />
+			<setHeader name="Content-Type">
+				<constant>application/json; charset=UTF-8</constant>
+			</setHeader>
+			<setBody>
+				<constant>{"status":"ok","bundle":"bpmndrawer","version":"1.0.0"}</constant>
+			</setBody>
+		</route>
+
+	</camelContext>
+
+</blueprint>

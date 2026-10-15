@@ -14,6 +14,11 @@
 </header>
 
 <main>
+  <section class="card" id="cardImportLocal" hidden>
+    <p id="importLocalMsg"></p>
+    <button class="primary" id="btnImportLocal">Importar</button>
+    <button id="btnDismissImportLocal">Ignorar</button>
+  </section>
   <section class="card">
     <h2>Diagramas de Processos BPMN <span class="spacer"></span><button id="btnImportar">Importar .bpmn</button></h2>
     <input type="file" id="fileImport" accept=".bpmn,.xml,.bpmn20.xml" hidden>
@@ -48,14 +53,16 @@ function loadDiagramas() {
     </tr>`).join('');
 }
 
-document.getElementById('btnNovo').onclick = () => {
+document.getElementById('btnNovo').onclick = async () => {
   const name = prompt('Nome do diagrama:');
   if (!name || !name.trim()) return;
-  const d = Storage.save({
-    name: name.trim(),
-    xml: newDiagramXml(name.trim()),
-  });
-  location.href = `modeler.html?id=${encodeURIComponent(d.id)}`;
+  try {
+    const d = await Storage.save({
+      name: name.trim(),
+      xml: newDiagramXml(name.trim()),
+    });
+    location.href = `modeler.html?id=${encodeURIComponent(d.id)}`;
+  } catch (e) { toast(e.message, 'error'); }
 };
 
 document.getElementById('btnImportar').onclick = () => document.getElementById('fileImport').click();
@@ -65,22 +72,51 @@ document.getElementById('fileImport').onchange = async (ev) => {
   try {
     const xml = await file.text();
     const name = file.name.replace(/\.(bpmn20\.xml|bpmn|xml)$/i, '');
-    const d = Storage.save({ name, xml });
+    const d = await Storage.save({ name, xml });
     location.href = `modeler.html?id=${encodeURIComponent(d.id)}`;
   } catch (e) { toast('Erro ao ler arquivo: ' + e.message, 'error'); }
   ev.target.value = '';
 };
 
-document.body.addEventListener('click', (ev) => {
+document.body.addEventListener('click', async (ev) => {
   const b = ev.target.closest('button[data-del]');
   if (!b) return;
   if (!confirm(`Excluir o diagrama "${b.dataset.name}"?`)) return;
-  Storage.delete(b.dataset.del);
-  loadDiagramas();
-  toast('Diagrama excluído.', 'ok');
+  try {
+    await Storage.delete(b.dataset.del);
+    loadDiagramas();
+    toast('Diagrama excluído.', 'ok');
+  } catch (e) { toast(e.message, 'error'); }
 });
 
-loadDiagramas();
+// ---------- Migração única de diagramas presos no localStorage ----------
+function setupLocalImportBanner() {
+  const localList = LocalImport.pending();
+  if (!localList.length) return;
+  const card = document.getElementById('cardImportLocal');
+  document.getElementById('importLocalMsg').textContent =
+    `Encontramos ${localList.length} diagrama(s) salvos apenas neste navegador (armazenamento antigo). Importar para o servidor?`;
+  card.hidden = false;
+  document.getElementById('btnImportLocal').onclick = async () => {
+    try {
+      const n = await LocalImport.importAll(localList);
+      card.hidden = true;
+      loadDiagramas();
+      toast(`${n} diagrama(s) importado(s).`, 'ok');
+    } catch (e) { toast('Falha ao importar: ' + e.message, 'error'); }
+  };
+  document.getElementById('btnDismissImportLocal').onclick = () => { card.hidden = true; };
+}
+
+(async function start() {
+  try {
+    await Storage.init();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+  loadDiagramas();
+  setupLocalImportBanner();
+})();
 </script>
 </body>
 </html>

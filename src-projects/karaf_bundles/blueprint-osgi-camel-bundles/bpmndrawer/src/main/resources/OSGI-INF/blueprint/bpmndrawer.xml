@@ -24,6 +24,13 @@
 		<property name="db" ref="db" />
 	</bean>
 
+	<!-- Orbeon's own database (read-only): lists the forms a user task can use -->
+	<bean id="orbeonDb" class="fzlbpms.bpmndrawer.OrbeonDb" />
+
+	<bean id="orbeonFormsProcessor" class="fzlbpms.bpmndrawer.OrbeonFormsProcessor">
+		<property name="orbeonDb" ref="orbeonDb" />
+	</bean>
+
 	<camelContext id="bpmndrawerContext"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
@@ -66,6 +73,11 @@
 			<delete path="/diagrams/{id}">
 				<to uri="bean:diagramsProcessor?method=deleteDiagram" />
 			</delete>
+
+			<!-- Formulários Orbeon disponíveis para tarefas humanas -->
+			<get path="/orbeon-forms">
+				<to uri="bean:orbeonFormsProcessor?method=listForms" />
+			</get>
 		</rest>
 
 		<route id="route-bpmndrawer-health">

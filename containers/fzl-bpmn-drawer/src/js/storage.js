@@ -48,6 +48,47 @@ const Storage = {
   },
 };
 
+// ---------- Formulários Orbeon para tarefas humanas ----------
+// Criar e editar formulário acontece no próprio Form Builder do Orbeon (abrimos
+// numa nova aba) — aqui só listamos o que já está publicado e montamos as URLs.
+// O Orbeon fica na mesma origem, atrás do mesmo gate oauth2-proxy do bpmndrawer,
+// então a sessão do usuário vale nas duas pontas sem token nenhum.
+const OrbeonForms = {
+  API: '/api/bpmndrawer/orbeon-forms',
+  BASE: '/orbeon/fr',
+  _list: [],
+
+  async load() {
+    const res = await fetch(OrbeonForms.API);
+    if (!res.ok) throw new Error('Falha ao listar formulários Orbeon (HTTP ' + res.status + ')');
+    OrbeonForms._list = await res.json();
+    return OrbeonForms._list;
+  },
+
+  getAll() {
+    return OrbeonForms._list;
+  },
+
+  byKey(formKey) {
+    return OrbeonForms._list.find(f => f.formKey === formKey) || null;
+  },
+
+  // Preenche um formulário novo — serve de pré-visualização do que o usuário verá.
+  runUrl(f) {
+    return `${OrbeonForms.BASE}/${encodeURIComponent(f.app)}/${encodeURIComponent(f.form)}/new`;
+  },
+
+  // Abre o formulário no Form Builder para edição.
+  editUrl(f) {
+    return `${OrbeonForms.BASE}/orbeon/builder/edit/${encodeURIComponent(f.builderDocId)}`;
+  },
+
+  // Form Builder cria o formulário do zero (ele pergunta aplicação e nome).
+  newUrl() {
+    return `${OrbeonForms.BASE}/orbeon/builder/new`;
+  },
+};
+
 // ---------- Migração única a partir do localStorage (bug de origem/domínio) ----------
 // Diagramas salvos antes deste backend existir ficaram presos no localStorage
 // do navegador/origem em que foram criados. Oferece importá-los uma vez.

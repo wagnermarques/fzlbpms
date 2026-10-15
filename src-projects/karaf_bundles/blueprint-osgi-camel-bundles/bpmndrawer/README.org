@@ -23,6 +23,28 @@ Antes deste bundle, os diagramas eram salvos apenas no ~localStorage~ do navegad
   - PostgreSQL container ~fzl-postgresql~, database ~fzldb~
   - Tabela ~bpmndrawer_diagrams~ inicializada automaticamente via ~src/main/resources/sql/schema.sql~
 
+* Formulários Orbeon para tarefas humanas
+
+~GET /api/bpmndrawer/orbeon-forms~ lista os formulários Orbeon publicados, para o
+modelador oferecer um seletor no campo ~flowable:formKey~ de ~userTask~/~startEvent~
+em vez de texto livre. É somente leitura: lê o banco ~orbeon~ (mesmo servidor
+PostgreSQL, database diferente de ~fzldb~ — ver ~OrbeonDb.java~).
+
+Criar e editar formulário acontece no *Form Builder do Orbeon*, não aqui — o
+modelador apenas abre ~/orbeon/fr/orbeon/builder/new~ (ou ~.../edit/<docId>~) numa
+nova aba. Orbeon e bpmndrawer ficam na mesma origem e atrás do mesmo gate
+oauth2-proxy, então a sessão do usuário já vale nas duas pontas.
+
+Cada item traz ~editable~:
+
+- ~true~  — o documento do Form Builder guarda a definição completa (raiz ~xh:html~);
+  abre normalmente para edição visual.
+- ~false~ — formulário publicado por ~src-projects/orbeon-forms/publish_forms.py~,
+  cujo documento de builder é só um resumo ~<form>~. *Funciona normalmente em
+  tempo de execução*, mas o Form Builder não consegue abri-lo (erro 500,
+  ~FormRunnerDocContext.bodyElem~ → ~None.get~). Para editar visualmente, recrie o
+  formulário pelo Form Builder.
+
 * Esquema de Tabelas (PostgreSQL / ~fzldb~)
 
 | Tabela | Finalidade |

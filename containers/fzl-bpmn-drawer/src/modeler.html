@@ -57,14 +57,14 @@ const FIELDS = {
   'bpmn:StartEvent': [
     ['name', 'Nome'],
     ['flowable:initiator', 'Variável do iniciador', 'Ex.: initiator → ${initiator}'],
-    ['flowable:formKey', 'Form key'],
+    ['flowable:formKey', 'Formulário de início', 'Formulário Orbeon preenchido ao iniciar o processo.'],
   ],
   'bpmn:UserTask': [
     ['name', 'Nome'],
     ['flowable:assignee', 'Responsável', 'Usuário fixo ou expressão, ex.: ${initiator}'],
     ['flowable:candidateUsers', 'Usuários candidatos', 'Separados por vírgula'],
     ['flowable:candidateGroups', 'Grupos candidatos', 'Ex.: admin,gerentes'],
-    ['flowable:formKey', 'Form key', 'Identificador de formulário'],
+    ['flowable:formKey', 'Formulário', 'Formulário Orbeon que o responsável preenche nesta tarefa.'],
     ['flowable:dueDate', 'Prazo', 'Data ISO ou expressão, ex.: P3D'],
   ],
   'bpmn:ServiceTask': [
@@ -137,6 +137,8 @@ function renderPanel() {
       } else if (key === 'calledElement') {
         const own = rootProcess();
         input = calledElementPickerHtml(own ? own.businessObject.id : null, val);
+      } else if (key === 'flowable:formKey') {
+        input = formKeyPickerHtml(val);
       } else {
         input = `<input type="text" data-key="${key}" value="${esc(val)}">`;
       }
@@ -155,6 +157,75 @@ function renderPanel() {
   if (exec) exec.addEventListener('change', () => modeling.updateProperties(element, { isExecutable: exec.checked }));
   const picker = panel.querySelector('#fCalledElementPicker');
   if (picker) picker.addEventListener('change', () => onCalledElementPicked(element, picker));
+  const formPicker = panel.querySelector('#fFormKeyPicker');
+  if (formPicker) ligarPainelFormulario(panel, element);
+}
+
+// ---------- Seleção de formulário Orbeon (tarefas humanas) ----------
+function formKeyPickerHtml(val) {
+  const forms = OrbeonForms.getAll();
+  const options = forms.map(f =>
+    `<option value="${esc(f.formKey)}" ${f.formKey === val ? 'selected' : ''}>${esc(f.title || f.form)} (${esc(f.formKey)})</option>`).join('');
+  const atual = OrbeonForms.byKey(val);
+  // Um formKey preenchido que não está na lista é expressão (${...}) ou um
+  // formulário ainda não publicado — mantemos o texto livre e não o perdemos.
+  return `
+    <select id="fFormKeyPicker">
+      <option value="">— sem formulário —</option>
+      ${options}
+      <option value="__new__">+ Criar novo formulário no Form Builder…</option>
+    </select>
+    <input type="text" data-key="flowable:formKey" value="${esc(val)}" placeholder="aplicacao/formulario ou expressão">
+    <div class="linha-botoes">
+      <button id="btnFormAbrir" ${atual ? '' : 'disabled'} title="Preencher o formulário como o usuário verá">Pré-visualizar</button>
+      <button id="btnFormEditar" ${atual && atual.editable ? '' : 'disabled'}
+              title="${atual && !atual.editable ? 'Formulário publicado por script — o Form Builder não consegue abri-lo' : 'Editar no Form Builder'}">Editar</button>
+      <button id="btnFormRecarregar" title="Releia a lista depois de criar/alterar um formulário na outra aba">Atualizar lista</button>
+    </div>
+    ${atual && !atual.editable
+      ? `<div class="hint">Este formulário funciona normalmente nas tarefas, mas foi publicado via <span class="mono">publish_forms.py</span> e não abre no Form Builder. Para editá-lo visualmente, recrie-o pelo Form Builder.</div>`
+      : ''}`;
+}
+
+function ligarPainelFormulario(panel, element) {
+  const picker = panel.querySelector('#fFormKeyPicker');
+  const textInput = panel.querySelector('[data-key="flowable:formKey"]');
+
+  picker.addEventListener('change', () => {
+    if (picker.value === '__new__') {
+      picker.value = textInput.value;
+      window.open(OrbeonForms.newUrl(), '_blank');
+      toast('Crie o formulário no Form Builder e volte aqui para "Atualizar lista".', 'ok');
+      return;
+    }
+    textInput.value = picker.value;
+    // writeField dispara commandStack.changed, que já redesenha o painel.
+    writeField(element, 'flowable:formKey', picker.value);
+  });
+
+  panel.querySelector('#btnFormAbrir').onclick = () => {
+    const f = OrbeonForms.byKey(textInput.value);
+    if (f) window.open(OrbeonForms.runUrl(f), '_blank');
+  };
+
+  panel.querySelector('#btnFormEditar').onclick = () => {
+    const f = OrbeonForms.byKey(textInput.value);
+    if (f && f.editable) window.open(OrbeonForms.editUrl(f), '_blank');
+  };
+
+  panel.querySelector('#btnFormRecarregar').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    try {
+      await OrbeonForms.load();
+      renderPanel();
+      toast('Lista de formulários atualizada.', 'ok');
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
 }
 
 // ---------- Seleção de processo chamado (Call Activity) ----------
@@ -260,6 +331,12 @@ async function load() {
     await Storage.init();
   } catch (e) {
     toast(e.message, 'error');
+  }
+  // Lista de formulários: falha aqui não impede modelar, só deixa o seletor vazio.
+  try {
+    await OrbeonForms.load();
+  } catch (e) {
+    console.warn('Formulários Orbeon indisponíveis', e);
   }
   if (!id) {
     const name = 'Novo Processo';

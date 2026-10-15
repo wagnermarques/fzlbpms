@@ -80,6 +80,27 @@ These files are plain, readable XForms/XHTML. Look at `src-projects/orbeon-forms
 
 **Name every `xf:instance id="fr-form-instance"` element with a clean XML identifier — no hyphens.** `send(content="json")` serializes this exact data tree to JSON, verbatim. Clean names (`mySection.fieldOne`) let the Camel side read them with plain jsonpath dot notation (`$.mySection.fieldOne`); hyphenated names (as Form-Builder-generated forms like the old `create-moodle-user` draft used — `section-1`, `grid-1`) force ugly bracket notation (`$['section-1']['grid-1']['username']`) on the receiving end. Pick the clean names from the start.
 
+## Forms published by `publish_forms.py` cannot be opened in Form Builder
+
+Known, confirmed empirically (2026-10-15). A form seeded by the script renders
+fine in Form Runner (`/orbeon/fr/<app>/<form>/new` → 200) but `/orbeon/fr/orbeon/builder/edit/fb-<form>`
+returns **500** (`FormRunnerDocContext.bodyElem` → `None.get`, from
+`FormBuilderMigrationXPathApi.migrateGridsEnclosingElements`).
+
+Cause: the script writes only a `<form>` summary stub into the builder document
+(`orbeon_form_data` where `app='orbeon' AND form='builder'`), whereas Form
+Builder expects that row to hold the **full form definition** (root `xh:html`).
+Copying the real XHTML into that row is *not* enough either — Form Builder's
+on-open migration also chokes on the legacy `<xh:tr><xh:td>` grid markup this
+skill's template uses, versus the modern `<fr:c x y w>` cells Form Builder itself
+writes. Both were tested; neither alone fixes it.
+
+Practical consequence: **hand-written forms are runtime-only — treat them as
+code, edit the `.xhtml` and re-run the script.** If a form needs to be visually
+editable by a non-developer, create it through Form Builder from the start
+rather than hand-writing it here. The BPMN modeler's form picker surfaces this
+as an `editable` flag per form (see the `bpmndrawer` bundle's README).
+
 ## Wiring the submit button (`properties-local.xml.template`)
 
 Two properties, scoped `<app>.<form>` (specific — NOT `<app>.*`, see below):

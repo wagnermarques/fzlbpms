@@ -19,5 +19,8 @@ COPY --from=assets-stage /assets /usr/share/nginx/html/
 # Copy custom fzl-bpmn-drawer application files
 COPY src/ /usr/share/nginx/html/
 
+# Revalidation rules for the unhashed app assets — see the file's header.
+COPY nginx-cache.conf /etc/nginx/conf.d/default.conf
+
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

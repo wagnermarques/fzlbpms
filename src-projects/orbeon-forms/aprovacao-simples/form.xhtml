@@ -1,0 +1,72 @@
+<xh:html xmlns:xh="http://www.w3.org/1999/xhtml" xmlns:xf="http://www.w3.org/2002/xforms"
+         xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xi="http://www.w3.org/2001/XInclude"
+         xmlns:xxi="http://orbeon.org/oxf/xml/xinclude" xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+         xmlns:fr="http://orbeon.org/oxf/xml/form-runner" xmlns:saxon="http://saxon.sf.net/">
+    <xh:head>
+        <xh:title>Aprovação simples</xh:title>
+        <xf:model id="fr-form-model" xxf:expose-xpath-types="true">
+            <xf:instance id="fr-form-instance" xxf:exclude-result-prefixes="#all">
+                <form>
+                    <analise>
+                        <solicitacao/>
+                        <decisao/>
+                        <observacao/>
+                    </analise>
+                </form>
+            </xf:instance>
+            <xf:bind id="fr-form-binds" ref="instance('fr-form-instance')">
+                <xf:bind id="analise-bind" name="analise" ref="analise">
+                    <xf:bind id="solicitacao-bind" name="solicitacao" ref="solicitacao" readonly="true()"/>
+                    <xf:bind id="decisao-bind" name="decisao" ref="decisao" required="true()"/>
+                    <xf:bind id="observacao-bind" name="observacao" ref="observacao"/>
+                </xf:bind>
+            </xf:bind>
+            <xf:instance id="fr-form-metadata" xxf:readonly="true" xxf:exclude-result-prefixes="#all">
+                <metadata>
+                    <application-name>fzlbpms</application-name>
+                    <form-name>aprovacao-simples</form-name>
+                    <title xml:lang="pt">Aprovação simples</title>
+                    <description xml:lang="pt">Formulário genérico de aprovação para tarefas humanas do Flowable.</description>
+                    <version-comment>1.0.0</version-comment>
+                </metadata>
+            </xf:instance>
+            <xf:instance id="fr-form-attachments" xxf:exclude-result-prefixes="#all"><attachments/></xf:instance>
+            <xf:instance id="fr-form-resources" xxf:readonly="false" xxf:exclude-result-prefixes="#all">
+                <resources><resource xml:lang="pt">
+                    <analise><label>Análise</label></analise>
+                    <solicitacao><label>Solicitação</label><hint>Preenchido pelo processo</hint></solicitacao>
+                    <decisao><label>Decisão</label><hint>aprovado ou recusado</hint></decisao>
+                    <observacao><label>Observação</label><hint>Opcional</hint></observacao>
+                </resource></resources>
+            </xf:instance>
+        </xf:model>
+    </xh:head>
+    <xh:body>
+        <fr:view><fr:body>
+            <fr:section id="analise-section" bind="analise-bind">
+                <xf:label ref="$form-resources/analise/label"/>
+                <fr:grid id="analise-grid">
+                    <xh:tr><xh:td>
+                        <xf:input id="solicitacao-control" bind="solicitacao-bind">
+                            <xf:label ref="$form-resources/solicitacao/label"/>
+                            <xf:hint ref="$form-resources/solicitacao/hint"/>
+                        </xf:input>
+                    </xh:td></xh:tr>
+                    <xh:tr><xh:td>
+                        <xf:input id="decisao-control" bind="decisao-bind">
+                            <xf:label ref="$form-resources/decisao/label"/>
+                            <xf:hint ref="$form-resources/decisao/hint"/>
+                        </xf:input>
+                    </xh:td></xh:tr>
+                    <xh:tr><xh:td>
+                        <xf:textarea id="observacao-control" bind="observacao-bind">
+                            <xf:label ref="$form-resources/observacao/label"/>
+                            <xf:hint ref="$form-resources/observacao/hint"/>
+                        </xf:textarea>
+                    </xh:td></xh:tr>
+                </fr:grid>
+            </fr:section>
+        </fr:body></fr:view>
+    </xh:body>
+</xh:html>

@@ -17,6 +17,12 @@
         <span matListItemTitle>Aplicações</span>
       </a>
 
+      <!-- Fora do bloco isAdmin(): a caixa de tarefas é de todo usuário -->
+      <a mat-list-item routerLink="/tasks" (click)="drawer.close()">
+        <mat-icon matListItemIcon>assignment</mat-icon>
+        <span matListItemTitle>Minhas tarefas</span>
+      </a>
+
       @if (isAdmin()) {
         <a mat-list-item routerLink="/users" (click)="drawer.close()">
           <mat-icon matListItemIcon>people</mat-icon>

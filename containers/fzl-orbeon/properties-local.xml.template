@@ -125,14 +125,18 @@
          and forwards it with HTTP Basic admin:test — see
          bpms-start-create-moodle-user in moodle-admin-camel-context.xml.
          ===================================================================== -->
+    <!-- Form-SPECIFIC since 2026-10-15: these were on the fzlbpms.* wildcard,
+         which meant every other fzlbpms form inherited the "Criar usuário"
+         button. The wildcard now belongs to the generic task action at the
+         bottom of this file, so this form has to name itself. -->
     <property
         as="xs:string"
-        name="oxf.fr.detail.buttons.fzlbpms.*"
+        name="oxf.fr.detail.buttons.fzlbpms.create-moodle-user"
         value="home summary create-user"/>
 
     <property
         as="xs:string"
-        name="oxf.fr.detail.process.create-user.fzlbpms.*">
+        name="oxf.fr.detail.process.create-user.fzlbpms.create-moodle-user">
         require-valid
         then send(
             uri = "http://fzl-karaf-camel-integration:9091/fzlbpms/bpms/start/create-moodle-user",
@@ -143,7 +147,7 @@
 
     <property
         as="xs:string"
-        name="oxf.fr.resource.fzlbpms.*.pt.detail.buttons.create-user"
+        name="oxf.fr.resource.fzlbpms.create-moodle-user.pt.detail.buttons.create-user"
         value="Criar usuário"/>
 
     <!-- =====================================================================
@@ -185,5 +189,54 @@
         as="xs:string"
         name="oxf.fr.resource.fzlbpms.create-organization.pt.detail.buttons.create-organization"
         value="Criar organização"/>
+
+    <!-- =====================================================================
+         fzlbpms — GENERIC: concluir uma tarefa humana do Flowable
+
+         Esta é a única fiação necessária para qualquer formulário usado como
+         formulário de tarefa (flowable:formKey = "fzlbpms/<form>"): vale para
+         todos via o wildcard, não é preciso adicionar propriedade por
+         formulário nem reconstruir este container a cada processo novo.
+
+         Como a tarefa é identificada: o bundle orbeonforms semeia o documento
+         Orbeon com document-id IGUAL ao id da tarefa no Flowable e abre o
+         formulário em /fr/<app>/<form>/edit/<taskId>. Por isso
+         {fr:document-id()} abaixo é o próprio id da tarefa — resolvido por
+         Orbeon como AVT antes do envio. Isso é o que torna a ação genérica:
+         send() roda servidor-a-servidor, sem nenhuma identidade do autor, e
+         sem esse id na URL não haveria como correlacionar a submissão com a
+         tarefa.
+
+         LIMITE CONHECIDO (testado em 2026-10-15): um formulário que declara
+         botão próprio (app.form) mantém o dele também quando aberto como
+         tarefa — app.form vence app.* na resolução, e qualificar por modo
+         (oxf.fr.detail.buttons.edit.fzlbpms.*) NÃO resolve: esse nome
+         simplesmente não é resolvido pelo Orbeon aqui, o botão some. Ou seja,
+         um formulário de início com botão próprio (create-moodle-user,
+         create-organization) não serve como formulário de tarefa sem ganhar
+         uma propriedade específica. Formulário feito para ser tarefa não deve
+         declarar botão próprio — aí este wildcard vale.
+         ===================================================================== -->
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.buttons.fzlbpms.*"
+        value="home summary complete-task"/>
+
+    <property
+        as="xs:string"
+        name="oxf.fr.detail.process.complete-task.fzlbpms.*">
+        require-valid
+        then send(
+            uri = "http://fzl-karaf-camel-integration:9098/fzlbpms/orbeon/tasks/{fr:document-id()}/complete",
+            content = "json",
+            headers = "X-Orbeon-Shared-Secret: ${ORBEON_BRIDGE_SECRET}",
+            replace = "all"
+        )
+    </property>
+
+    <property
+        as="xs:string"
+        name="oxf.fr.resource.fzlbpms.*.pt.detail.buttons.complete-task"
+        value="Concluir tarefa"/>
 
 </properties>

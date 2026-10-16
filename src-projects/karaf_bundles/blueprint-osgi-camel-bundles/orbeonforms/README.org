@@ -72,6 +72,52 @@ Consequência prática: ~POST /forms~ publica para o *Form Runner*, útil para s
 programático — não torna o formulário editável no Form Builder. Formulário que
 precise ser editável por não-desenvolvedor deve nascer no Form Builder.
 
+* Tarefas humanas renderizadas em formulário Orbeon
+
+Um ~userTask~ com ~flowable:formKey="<app>/<form>"~ é aberto no formulário Orbeon em
+vez da UI nativa do Flowable. Sem ~formKey~ (ou com expressão ~${...}~), cai na UI do
+Flowable como sempre — nada regride.
+
+| Método | Caminho                      | Finalidade                                   |
+|--------+------------------------------+----------------------------------------------|
+| GET    | ~/tasks~                     | Tarefas pendentes do usuário autenticado     |
+| GET    | ~/tasks/{taskId}/open~       | Semeia o documento e redireciona (302)       |
+| POST   | ~/tasks/{taskId}/complete~   | Conclui a tarefa com os dados do formulário  |
+
+** Como a tarefa é correlacionada com a submissão
+
+O ponto central do desenho: ~openTask~ grava o documento Orbeon com *document-id
+igual ao id da tarefa* e redireciona para ~/fr/<app>/<form>/edit/<taskId>~. Assim a
+ação genérica de submit em ~properties-local.xml.template~ posta para
+~.../tasks/{fr:document-id()}/complete~ — o id da tarefa viaja na URL.
+
+Isso é necessário porque o ~send()~ do Orbeon roda servidor-a-servidor, *sem
+nenhuma identidade do autor* (ver a skill orbeon-form-for-human-tasks). Sem o id
+no caminho não haveria como saber qual tarefa concluir. É também o que torna a
+fiação genérica: uma propriedade só serve todos os formulários de tarefa.
+
+** Pré-preenchimento
+
+As variáveis do processo cujo nome bate com o nome de um campo do formulário
+chegam preenchidas (~FormData.buildPrefilled~). Variáveis sem campo
+correspondente são ignoradas — o Flowable cria muitas (~...ResponseHeaders~ etc.).
+Reabrir a tarefa regrava o documento, então o que o responsável vê reflete as
+variáveis atuais, não uma foto antiga.
+
+** Limites conhecidos
+
+- O formulário precisa estar sob o app ~fzlbpms~ e *não* declarar botão próprio:
+  ~app.form~ vence ~app.*~, então um formulário de início com botão próprio
+  (~create-organization~) mostra o botão dele, não "Concluir tarefa". Qualificar a
+  propriedade por modo (~...buttons.edit.fzlbpms.*~) foi testado e *não* funciona.
+- O documento semeado é apagado ao concluir a tarefa. Tarefa abandonada de outro
+  jeito (processo cancelado, reatribuição) deixa o documento órfão no banco do
+  Orbeon — inofensivo, mas não há faxina automática.
+- O ~assignee~ no Flowable precisa ser igual ao ~preferred_username~ do Keycloak,
+  senão a caixa de tarefas não acha nada.
+
+Exemplo pronto: ~src-projects/flowable-processes/exemplo-tarefa-orbeon.bpmn20.xml~.
+
 * Build e Deploy
 
 ~mvn clean install~ neste diretório compila o bundle e copia o jar para

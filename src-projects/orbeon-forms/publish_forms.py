@@ -43,6 +43,17 @@ FORMS = [
         "title": "Criar organização",
         "description": "Cria uma organização no Keycloak e seus papéis padrão (dono/membro), via o processo create-organization.",
     },
+    {
+        # Formulário de TAREFA (não de início): não declara botão próprio, para
+        # herdar o "Concluir tarefa" genérico — ver o README do bundle
+        # orbeonforms. Usado por exemplo-tarefa-orbeon.bpmn20.xml.
+        "dir": "aprovacao-simples",
+        "app": "fzlbpms",
+        "form": "aprovacao-simples",
+        "doc_id": "fb-aprovacao-simples",
+        "title": "Aprovação simples",
+        "description": "Formulário genérico de aprovação para tarefas humanas do Flowable.",
+    },
 ]
 
 

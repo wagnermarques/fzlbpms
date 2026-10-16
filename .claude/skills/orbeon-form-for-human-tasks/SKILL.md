@@ -127,6 +127,27 @@ Two properties, scoped `<app>.<form>` (specific — NOT `<app>.*`, see below):
 
 After editing the template, `fzl-orbeon` needs a rebuild+restart — `docker-entrypoint-fzl.sh` only renders it (via `envsubst`) at container start, it isn't a live mount.
 
+## Mid-process userTask forms are already wired — don't build a bridge per task
+
+Since 2026-10-15 a `userTask` only needs `flowable:formKey="fzlbpms/<form>"` to be
+rendered as an Orbeon form; the `orbeonforms` bundle does the rest, and the submit
+button is already wired generically. **Do not add a per-form property or a per-task
+bridge route for a userTask** — that is only needed for *process start* forms.
+
+How it dodges the no-caller-identity trap below: the bundle seeds the Orbeon
+document with `document-id` = the Flowable task id and opens
+`/fr/<app>/<form>/edit/<taskId>`, so one wildcard action can post to
+`.../tasks/{fr:document-id()}/complete` and the task id rides in the URL.
+(Orbeon process parameters are AVTs — `{...}` XPath is interpolated.)
+
+Constraints that follow from it: the form must live under app `fzlbpms` and must
+**not** declare its own `oxf.fr.detail.buttons.fzlbpms.<form>` — `app.form` beats
+`app.*`, so a start form with its own button shows that button instead of
+"Concluir tarefa". Qualifying by mode (`...buttons.edit.fzlbpms.*`) does NOT work;
+tested, the button just disappears. Also, Flowable's `assignee` must equal the
+Keycloak `preferred_username` or the inbox finds nothing. See the `orbeonforms`
+README and `src-projects/flowable-processes/exemplo-tarefa-orbeon.bpmn20.xml`.
+
 ## The trap: `send()` is server-to-server, with NO caller identity
 
 `send()` fires from the **Orbeon Java process itself** (`fzl-orbeon` container → target, straight over the Docker network) — it never goes through the browser, nginx, or oauth2-proxy. The target endpoint gets **no bearer token, no `X-Forwarded-User`, nothing** identifying who clicked the button. Confirmed by reading the existing `create-user` wiring and curl-testing its target directly: that endpoint (and the whole `/fzlbpms/bpms/*` surface) is reachable by anyone with zero authentication today — a pre-existing gap, not something to repeat.

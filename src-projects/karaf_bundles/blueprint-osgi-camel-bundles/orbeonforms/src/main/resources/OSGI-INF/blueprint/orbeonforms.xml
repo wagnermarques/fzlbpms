@@ -32,6 +32,14 @@
 		<property name="orbeonDb" ref="orbeonDb" />
 	</bean>
 
+	<bean id="flowable" class="fzlbpms.orbeonforms.Flowable" />
+
+	<!-- Renderizador genérico de formulário Orbeon para tarefas do Flowable -->
+	<bean id="tasksProcessor" class="fzlbpms.orbeonforms.TasksProcessor">
+		<property name="orbeonDb" ref="orbeonDb" />
+		<property name="flowable" ref="flowable" />
+	</bean>
+
 	<camelContext id="orbeonformsContext"
 		xmlns="http://camel.apache.org/schema/blueprint">
 
@@ -66,6 +74,17 @@
 			</get>
 			<post path="/forms" consumes="application/json">
 				<to uri="bean:formsProcessor?method=publishForm" />
+			</post>
+
+			<!-- Tarefas humanas renderizadas em formulário Orbeon -->
+			<get path="/tasks">
+				<to uri="bean:tasksProcessor?method=listMyTasks" />
+			</get>
+			<get path="/tasks/{taskId}/open">
+				<to uri="bean:tasksProcessor?method=openTask" />
+			</get>
+			<post path="/tasks/{taskId}/complete">
+				<to uri="bean:tasksProcessor?method=completeTask" />
 			</post>
 		</rest>
 

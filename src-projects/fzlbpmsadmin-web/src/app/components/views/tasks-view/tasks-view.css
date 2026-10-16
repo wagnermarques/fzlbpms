@@ -1,0 +1,48 @@
+.panel {
+  max-width: 700px;
+}
+
+.task {
+  margin-bottom: 12px;
+}
+
+.empty {
+  color: #666;
+}
+
+.empty mat-icon {
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #666;
+  margin-top: 8px;
+}
+
+.meta code {
+  background-color: #e0e0e0;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: monospace;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  margin-bottom: 12px;
+}
+
+.reload {
+  margin-top: 8px;
+}
+
+.error {
+  color: #b00020;
+  font-weight: 500;
+}

@@ -199,6 +199,19 @@
       </put>
     </rest>
 
+    <!-- Caixa de tarefas do usuário logado.
+
+         NÃO fica sob /fzlbpms/admin/: a caixa de tarefas é de QUALQUER usuário
+         autenticado, não só de quem tem o papel 'admin' — por isso usa
+         kc-authorize-user (token válido, sem exigir papel) em vez de
+         kc-authorize-admin. Cada um só enxerga as próprias tarefas, porque o
+         bundle orbeonforms filtra por assignee = usuário do token. -->
+    <rest path="/fzlbpms/tasks">
+      <get>
+        <to uri="direct:fzl-my-tasks"/>
+      </get>
+    </rest>
+
     <!-- Per-bundle DEBUG/INFO toggle ("Configurações" UI), backed directly
          by Karaf's own log MBean via its local Jolokia endpoint — no file
          storage needed, see kc-get-log-levels/kc-set-log-level below. -->
@@ -398,6 +411,100 @@
           <stop/>
         </when>
       </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         AUTHORIZE ANY AUTHENTICATED USER (sem exigir papel)
+
+         Igual ao kc-authorize-admin acima até a introspecção, mas sem a
+         checagem de papel: serve endpoints que são do próprio usuário, como a
+         caixa de tarefas. Guarda o username em kc.callerUsername para a rota
+         seguinte repassar — é ele que decide QUAIS tarefas o chamador vê.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="kc-authorize-user">
+      <from uri="direct:kc-authorize-user"/>
+      <setProperty name="kc.preAuthzBody">
+        <simple>${body}</simple>
+      </setProperty>
+      <choice>
+        <when>
+          <simple>${header.Authorization} == null</simple>
+          <!-- Limpar os headers ANTES de responder: com bindingMode=off o Camel
+               devolve os headers da requisição como headers da resposta, e os
+               cookies do navegador estouram o buffer do nginx ("upstream sent
+               too big header", 502) — não é erro de rota, é a resposta de erro
+               carregando a requisição inteira de volta. -->
+          <removeHeaders pattern="*"/>
+          <setBody><constant>{"error":"Missing Authorization header"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
+          <setHeader name="Content-Type"><constant>application/json; charset=UTF-8</constant></setHeader>
+          <log message="[KC-AUTHZ-USER] Rejected — no Authorization header."/>
+          <stop/>
+        </when>
+      </choice>
+      <!-- Sem ponto no nome da propriedade: o Camel Simple trata
+           'kc.callerAuth.substring(7)' como ambíguo e resolve para vazio — ver
+           o comentário no kc-authorize-admin acima. -->
+      <setProperty name="callerToken">
+        <simple>${header.Authorization.substring(7)}</simple>
+      </setProperty>
+      <removeHeaders pattern="*"/>
+      <setBody>
+        <simple>client_id=fzlbpms-camel&amp;client_secret={{KC_CAMEL_CLIENT_SECRET}}&amp;token=${exchangeProperty.callerToken}</simple>
+      </setBody>
+      <setHeader name="Content-Type">
+        <constant>application/x-www-form-urlencoded</constant>
+      </setHeader>
+      <setHeader name="X-Forwarded-Host">
+        <simple>{{FZL_PUBLIC_HOSTNAME}}</simple>
+      </setHeader>
+      <setHeader name="X-Forwarded-Proto">
+        <simple>{{FZL_PUBLIC_PROTO}}</simple>
+      </setHeader>
+      <to uri="http://{{KC_HOST}}:8080{{KC_HTTP_RELATIVE_PATH}}/realms/{{FZL_REALM}}/protocol/openid-connect/token/introspect?httpMethod=POST&amp;throwExceptionOnFailure=false"/>
+      <setProperty name="kc.callerUsername">
+        <jsonpath suppressExceptions="true">$.preferred_username</jsonpath>
+      </setProperty>
+      <setBody>
+        <simple>${exchangeProperty.kc.preAuthzBody}</simple>
+      </setBody>
+      <removeHeaders pattern="*"/>
+      <choice>
+        <when>
+          <simple>${exchangeProperty.kc.callerUsername} == null</simple>
+          <setBody><constant>{"error":"Invalid or expired token"}</constant></setBody>
+          <setHeader name="CamelHttpResponseCode"><constant>403</constant></setHeader>
+          <setHeader name="Content-Type"><constant>application/json; charset=UTF-8</constant></setHeader>
+          <log message="[KC-AUTHZ-USER] Rejected — introspection inactive or without preferred_username."/>
+          <stop/>
+        </when>
+      </choice>
+    </route>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MINHAS TAREFAS — repassa para o bundle orbeonforms (porta 9098)
+
+         O bundle é quem conhece Flowable e Orbeon; aqui só traduzimos a
+         autenticação: o navegador fala Bearer (Keycloak PKCE), o bundle espera
+         X-Forwarded-User + segredo compartilhado. O username vem do token
+         introspectado, nunca de um header do cliente.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <route id="fzl-my-tasks">
+      <from uri="direct:fzl-my-tasks"/>
+      <to uri="direct:kc-authorize-user"/>
+      <setBody><constant></constant></setBody>
+      <removeHeaders pattern="*"/>
+      <setHeader name="X-Forwarded-User">
+        <simple>${exchangeProperty.kc.callerUsername}</simple>
+      </setHeader>
+      <setHeader name="X-Orbeon-Shared-Secret">
+        <simple>{{FZL_ORBEON_BRIDGE_SECRET}}</simple>
+      </setHeader>
+      <to uri="http://fzl-karaf-camel-integration:9098/fzlbpms/orbeon/tasks?httpMethod=GET&amp;throwExceptionOnFailure=false"/>
+      <removeHeaders pattern="*" excludePattern="^(CamelHttpResponseCode)$"/>
+      <setHeader name="Content-Type">
+        <constant>application/json; charset=UTF-8</constant>
+      </setHeader>
     </route>
 
     <!-- ═══════════════════════════════════════════════════════════════════

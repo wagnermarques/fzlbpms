@@ -6,6 +6,7 @@ import { ProcessDiagramView } from './components/views/process-diagram-view/proc
 import { UsersView } from './components/views/users-view/users-view';
 import { SettingsView } from './components/views/settings-view/settings-view';
 import { OrganizationCreateView } from './components/views/organization-create-view/organization-create-view';
+import { TasksView } from './components/views/tasks-view/tasks-view';
 import { adminGuard } from './services/admin-guard';
 
 export const routes: Routes = [
@@ -15,6 +16,7 @@ export const routes: Routes = [
   { path: 'process-diagram', component: ProcessDiagramView },
   { path: 'process-diagram/:key', component: ProcessDiagramView },
   { path: 'process-instances', component: ProcessDiagramView },
+  { path: 'tasks', component: TasksView },
   { path: 'users', component: UsersView, canActivate: [adminGuard] },
   { path: 'organizations', component: OrganizationCreateView, canActivate: [adminGuard] },
   { path: 'settings', component: SettingsView, canActivate: [adminGuard] },

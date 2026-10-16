@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Exemplo mínimo de tarefa humana renderizada em formulário Orbeon.
+
+  O que importa aqui é uma linha só: flowable:formKey="fzlbpms/aprovacao-simples"
+  no userTask. É isso que faz o bundle orbeonforms abrir o formulário Orbeon no
+  lugar da UI nativa do Flowable — ver
+  src-projects/karaf_bundles/blueprint-osgi-camel-bundles/orbeonforms/README.org.
+
+  O formKey tem o formato <app>/<form>, exatamente como o seletor do modelador
+  BPMN grava. As variáveis do processo cujo nome bate com um campo do formulário
+  (aqui solicitacao) chegam preenchidas para o responsável.
+
+  Iniciar:
+    curl -sk -u admin:test -H "Content-Type: application/json" \
+      -d '{"processDefinitionKey":"exemplo-tarefa-orbeon",
+           "variables":[{"name":"solicitante","value":"<usuario>"},
+                        {"name":"solicitacao","value":"Criar turma de Informática 2027"}]}' \
+      https://fzlbpms.local/flowable-ui/process-api/runtime/process-instances
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://fzlbpms.com.br/processes">
+
+  <process id="exemplo-tarefa-orbeon" name="Exemplo: tarefa humana com formulário Orbeon" isExecutable="true">
+
+    <startEvent id="inicio" name="Início"/>
+
+    <sequenceFlow id="f1" sourceRef="inicio" targetRef="preencherDados"/>
+
+    <userTask id="preencherDados"
+              name="Preencher dados da organização"
+              flowable:assignee="${solicitante}"
+              flowable:formKey="fzlbpms/aprovacao-simples"/>
+
+    <sequenceFlow id="f2" sourceRef="preencherDados" targetRef="registrar"/>
+
+    <scriptTask id="registrar" name="Registrar o que foi preenchido" scriptFormat="groovy">
+      <script>
+        def decisao = execution.getVariable('decisao')
+        def observacao = execution.getVariable('observacao')
+        execution.setVariable('resumoTarefa', "Formulário Orbeon devolveu decisao=" + decisao + ", observacao=" + observacao)
+      </script>
+    </scriptTask>
+
+    <sequenceFlow id="f3" sourceRef="registrar" targetRef="fim"/>
+
+    <endEvent id="fim" name="Fim"/>
+
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_exemplo-tarefa-orbeon">
+    <bpmndi:BPMNPlane id="BPMNPlane_exemplo-tarefa-orbeon" bpmnElement="exemplo-tarefa-orbeon">
+      <bpmndi:BPMNShape id="S_inicio" bpmnElement="inicio">
+        <omgdc:Bounds x="100" y="100" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_preencherDados" bpmnElement="preencherDados">
+        <omgdc:Bounds x="180" y="85" width="120" height="60"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_registrar" bpmnElement="registrar">
+        <omgdc:Bounds x="350" y="85" width="120" height="60"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_fim" bpmnElement="fim">
+        <omgdc:Bounds x="520" y="100" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="E_f1" bpmnElement="f1">
+        <omgdi:waypoint x="130" y="115"/>
+        <omgdi:waypoint x="180" y="115"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_f2" bpmnElement="f2">
+        <omgdi:waypoint x="300" y="115"/>
+        <omgdi:waypoint x="350" y="115"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_f3" bpmnElement="f3">
+        <omgdi:waypoint x="470" y="115"/>
+        <omgdi:waypoint x="520" y="115"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

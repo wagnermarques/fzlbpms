@@ -1,0 +1,56 @@
+<h2>Minhas tarefas</h2>
+
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+
+@if (signedOut()) {
+  <mat-card class="panel empty">
+    <mat-card-content>
+      <mat-icon inline>lock</mat-icon>
+      Entre com a sua conta para ver as tarefas atribuídas a você.
+    </mat-card-content>
+  </mat-card>
+} @else if (loading()) {
+  <div class="loading"><mat-spinner diameter="32"></mat-spinner> <span>Carregando…</span></div>
+} @else if (tasks().length === 0) {
+  <mat-card class="panel empty">
+    <mat-card-content>
+      <mat-icon inline>inbox</mat-icon>
+      Nenhuma tarefa pendente para você no momento.
+    </mat-card-content>
+  </mat-card>
+} @else {
+  @for (t of tasks(); track t.id) {
+    <mat-card class="panel task">
+      <mat-card-header>
+        <mat-card-title>{{ t.name }}</mat-card-title>
+        <mat-card-subtitle>
+          @if (t.createTime) { Criada em {{ t.createTime | date: 'dd/MM/yyyy HH:mm' }} }
+          @if (t.dueDate) { · Prazo {{ t.dueDate | date: 'dd/MM/yyyy' }} }
+        </mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        @if (t.description) {
+          <p>{{ t.description }}</p>
+        }
+        <p class="meta">
+          @if (t.hasOrbeonForm) {
+            <mat-icon inline>description</mat-icon> Formulário <code>{{ t.formKey }}</code>
+          } @else {
+            <mat-icon inline>open_in_new</mat-icon> Sem formulário Orbeon — abre na interface do Flowable
+          }
+        </p>
+      </mat-card-content>
+      <mat-card-actions>
+        <button mat-flat-button color="primary" (click)="open(t)">
+          <mat-icon inline>edit_note</mat-icon> Abrir tarefa
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  }
+}
+
+<button mat-stroked-button class="reload" [disabled]="loading()" (click)="reload()">
+  <mat-icon inline>refresh</mat-icon> Atualizar
+</button>

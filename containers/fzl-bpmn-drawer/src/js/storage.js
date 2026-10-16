@@ -54,7 +54,8 @@ const Storage = {
 // O Orbeon fica na mesma origem, atrás do mesmo gate oauth2-proxy do bpmndrawer,
 // então a sessão do usuário vale nas duas pontas sem token nenhum.
 const OrbeonForms = {
-  API: '/api/bpmndrawer/orbeon-forms',
+  // Catálogo compartilhado (bundle orbeonforms) — não é específico do modelador.
+  API: '/api/orbeon/forms',
   BASE: '/orbeon/fr',
   _list: [],
 

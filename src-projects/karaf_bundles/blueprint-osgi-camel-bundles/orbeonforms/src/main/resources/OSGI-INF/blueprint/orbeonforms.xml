@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Orbeon Forms - Serviço REST compartilhado (Apache Camel OSGi Blueprint Bundle).
+
+  Porta Jetty Interna : 9098 (exposta via FZL_KARAF_ORBEONFORMS_PORT=9098)
+  Proxy Nginx         : /api/orbeon/ -> http://fzl-karaf-camel-integration:9098/fzlbpms/orbeon/
+  Autenticação        : nginx auth_request contra fzl-oauth2-proxy (mesmo gate de /orbeon/
+                        e /bpmndrawer/); o bundle confia no header X-Forwarded-User que o
+                        gate injeta, ou no X-Orbeon-Shared-Secret para chamadas
+                        servidor-a-servidor que não passam pelo navegador.
+  Banco de Dados      : PostgreSQL fzl-postgresql / database 'orbeon' (schema do Orbeon,
+                        somente leitura do catálogo + publicação de definições)
+
+  Catálogo compartilhado: qualquer app que precise associar um formulário Orbeon a
+  algo (hoje, as tarefas humanas no modelador BPMN) consome este bundle em vez de
+  ter nomes de formulário fixos no código. Rotas de ponte específicas de processo
+  (formulário X inicia processo Y) continuam no bundle dono do processo.
+-->
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.osgi.org/xmlns/blueprint/v1.0.0
+			https://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd
+		http://camel.apache.org/schema/blueprint
+			http://camel.apache.org/schema/blueprint/camel-blueprint.xsd">
+
+	<bean id="errorResponder" class="fzlbpms.orbeonforms.ErrorResponder" />
+
+	<bean id="orbeonDb" class="fzlbpms.orbeonforms.OrbeonDb" />
+
+	<bean id="formsProcessor" class="fzlbpms.orbeonforms.FormsProcessor">
+		<property name="orbeonDb" ref="orbeonDb" />
+	</bean>
+
+	<camelContext id="orbeonformsContext"
+		xmlns="http://camel.apache.org/schema/blueprint">
+
+		<onException>
+			<exception>java.lang.Exception</exception>
+			<handled>
+				<constant>true</constant>
+			</handled>
+			<bean ref="errorResponder" method="handle" />
+		</onException>
+
+		<restConfiguration component="jetty"
+			port="9098"
+			bindingMode="off"
+			enableCORS="true">
+			<corsHeaders key="Access-Control-Allow-Methods" value="GET, POST, PUT, PATCH, DELETE, OPTIONS" />
+			<corsHeaders key="Access-Control-Allow-Headers" value="Authorization, Content-Type, Accept, X-Orbeon-Shared-Secret" />
+		</restConfiguration>
+
+		<rest path="/fzlbpms/orbeon">
+			<!-- Healthcheck (público) -->
+			<get path="/health">
+				<to uri="direct:orbeonforms-health" />
+			</get>
+
+			<!-- Catálogo de formulários publicados -->
+			<get path="/forms">
+				<to uri="bean:formsProcessor?method=listForms" />
+			</get>
+			<get path="/forms/{app}/{form}">
+				<to uri="bean:formsProcessor?method=getForm" />
+			</get>
+			<post path="/forms" consumes="application/json">
+				<to uri="bean:formsProcessor?method=publishForm" />
+			</post>
+		</rest>
+
+		<route id="route-orbeonforms-health">
+			<from uri="direct:orbeonforms-health" />
+			<setHeader name="Content-Type">
+				<constant>application/json; charset=UTF-8</constant>
+			</setHeader>
+			<setBody>
+				<constant>{"status":"ok","bundle":"orbeonforms","version":"1.0.0"}</constant>
+			</setBody>
+		</route>
+
+	</camelContext>
+
+</blueprint>

@@ -245,6 +245,8 @@ services:
       - "${FZL_KARAF_EVASAOESCOLAR_PORT:-9096}:9096"
       # BPMN Drawer REST API — direct LAN access / dev port (nginx: /api/bpmndrawer/)
       - "${FZL_KARAF_BPMNDRAWER_PORT:-9097}:9097"
+      # Orbeon Forms REST API — catálogo compartilhado (nginx: /api/orbeon/)
+      - "${FZL_KARAF_ORBEONFORMS_PORT:-9098}:9098"
     environment:
       # Host is already NTP-synced and set to America/Sao_Paulo. Containers
       # share the host's clock but default to UTC for timezone *rendering*

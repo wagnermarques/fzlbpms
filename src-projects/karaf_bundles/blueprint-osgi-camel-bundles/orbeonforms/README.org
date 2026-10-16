@@ -1,0 +1,82 @@
+#+TITLE: Orbeon Forms - Apache Camel OSGi Blueprint Bundle
+#+AUTHOR: fzlbpms
+#+DATE: 2026-10-15
+#+STARTUP: showall
+
+* Visão Geral
+
+O bundle *orbeonforms* expõe o *catálogo compartilhado de formulários Orbeon*: quais
+formulários existem, como se chamam e se o Form Builder consegue abri-los.
+
+Qualquer aplicação que precise associar um formulário Orbeon a alguma coisa consome
+este bundle em vez de ter nomes de formulário fixos no código. O primeiro consumidor
+é o modelador BPMN (~/bpmndrawer/~), no campo ~flowable:formKey~ de ~userTask~ e
+~startEvent~.
+
+* Escopo: o que entra e o que NÃO entra
+
+Entra o que é genérico:
+
+- catálogo de formulários publicados
+- leitura de uma definição
+- publicação de uma definição (equivalente em runtime do ~publish_forms.py~)
+
+*Não entra* rota de ponte específica de processo — "formulário X inicia processo Y".
+Essas continuam no bundle dono do processo (ex.: ~kc-provision-organization-from-form~
+em ~keycloak-admin-camel-context.xml~). Mover essas rotas para cá transformaria este
+bundle num depósito que toda funcionalidade precisa editar, exatamente o acoplamento
+que a extração pretende evitar.
+
+* Arquitetura
+
+- *Porta Interna do Camel Jetty:* ~9098~ (via ~FZL_KARAF_ORBEONFORMS_PORT=9098~)
+- *Proxy Reverso Nginx:* ~/api/orbeon/~ -> ~http://fzl-karaf-camel-integration:9098/fzlbpms/orbeon/~
+- *Autenticação:* duas formas aceitas (~Http.requireUser~):
+  1. ~X-Forwarded-User~ injetado pelo gate ~auth_request~ do nginx contra o
+     ~fzl-oauth2-proxy~ — mesmo gate de ~/orbeon/~ e ~/bpmndrawer/~ (role ~theia-user~).
+     Como o Orbeon fica na mesma origem e atrás do mesmo gate, o navegador já
+     autenticado no Form Builder também está autenticado aqui.
+  2. ~X-Orbeon-Shared-Secret~ (= ~FZL_ORBEON_BRIDGE_SECRET~), para chamadas
+     servidor-a-servidor que nunca passam pelo navegador — uma rota Camel ou um
+     script de seed. Comparado em tempo constante.
+- *Banco de Dados:* PostgreSQL ~fzl-postgresql~, database ~orbeon~ (schema do próprio
+  Orbeon — este bundle nunca cria nem migra tabelas).
+
+* Endpoints
+
+| Método | Caminho                  | Finalidade                                  |
+|--------+--------------------------+---------------------------------------------|
+| GET    | ~/health~                | Healthcheck (público)                       |
+| GET    | ~/forms~                 | Catálogo de formulários publicados          |
+| GET    | ~/forms/{app}/{form}~    | Definição XHTML + metadata de um formulário |
+| POST   | ~/forms~                 | Publica uma definição (app, form, xml)      |
+
+Cada item do catálogo traz ~formKey~ (~app/form~, o valor gravado no BPMN) e ~editable~.
+
+* O campo ~editable~ e o limite do Form Builder
+
+- ~true~  — o documento de builder guarda a definição completa (raiz ~xh:html~); abre
+  normalmente para edição visual.
+- ~false~ — o documento de builder é só um resumo ~<form>~. O formulário *funciona
+  normalmente em tempo de execução*, mas o Form Builder devolve 500 ao abri-lo
+  (~FormRunnerDocContext.bodyElem~ -> ~None.get~).
+
+*Criar e editar formulário visualmente continua sendo no Form Builder do Orbeon* — o
+modelador apenas abre ~/orbeon/fr/orbeon/builder/new~ (ou ~.../edit/<docId>~) numa aba
+nova. Este bundle deliberadamente *não* sintetiza o formato interno do Form Builder:
+foi testado empiricamente (2026-10-15) que nem copiar o XHTML completo para o
+documento de builder, nem converter as grades legadas ~<xh:tr><xh:td>~ para o formato
+moderno ~<fr:c>~, é suficiente para o Form Builder abrir um formulário escrito à mão.
+
+Consequência prática: ~POST /forms~ publica para o *Form Runner*, útil para seed
+programático — não torna o formulário editável no Form Builder. Formulário que
+precise ser editável por não-desenvolvedor deve nascer no Form Builder.
+
+* Build e Deploy
+
+~mvn clean install~ neste diretório compila o bundle e copia o jar para
+~../../../karaf_deploy_dir~, a pasta de hot-deploy do Karaf (bind-mounted) — não há
+passo manual de deploy nem reinício do container.
+
+Alterar o bloco ~location /api/orbeon/~ exige rebuild do ~fzl-nginx~ (a config é
+embutida na imagem, não é mount).

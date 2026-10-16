@@ -1,4 +1,4 @@
-package fzlbpms.bpmndrawer;
+package fzlbpms.orbeonforms;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -6,9 +6,9 @@ import javax.sql.DataSource;
 import org.postgresql.ds.PGSimpleDataSource;
 
 /**
- * Read-only access to Orbeon's own PostgreSQL database (a different database on
- * the same server as {@link Db}'s fzldb — Orbeon owns its schema, so this class
- * never creates or migrates anything, it only reads the published form list.
+ * Access to Orbeon's own PostgreSQL database — the schema belongs to Orbeon, so
+ * this bundle never creates or migrates tables, it only reads the published form
+ * catalogue and writes form definitions the same way publish_forms.py does.
  */
 public class OrbeonDb {
 

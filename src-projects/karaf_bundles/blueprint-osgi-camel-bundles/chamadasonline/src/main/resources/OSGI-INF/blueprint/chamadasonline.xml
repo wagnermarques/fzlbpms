@@ -47,7 +47,7 @@
 				<constant>*</constant>
 			</setHeader>
 			<setHeader name="Access-Control-Allow-Methods">
-				<constant>GET, POST, PATCH, OPTIONS</constant>
+				<constant>GET, POST, PATCH, DELETE, OPTIONS</constant>
 			</setHeader>
 			<setHeader name="Access-Control-Allow-Headers">
 				<constant>Authorization, Content-Type, Accept</constant>
@@ -116,6 +116,15 @@
 			<get path="/students/lookup">
 				<to uri="direct:chamadas-devices-lookup" />
 			</get>
+			<get path="/devices/enrolled">
+				<to uri="direct:chamadas-devices-enrolled" />
+			</get>
+			<post path="/devices/{id}/unlink">
+				<to uri="direct:chamadas-devices-unlink" />
+			</post>
+			<delete path="/devices/{id}/unlink">
+				<to uri="direct:chamadas-devices-unlink" />
+			</delete>
 			<post path="/students/{id}/enrollment-code">
 				<to uri="direct:chamadas-devices-enrollment-code" />
 			</post>
@@ -174,6 +183,14 @@
 		<route id="route-chamadas-devices-lookup">
 			<from uri="direct:chamadas-devices-lookup" />
 			<to uri="bean:deviceProcessor?method=handleStudentLookup" />
+		</route>
+		<route id="route-chamadas-devices-enrolled">
+			<from uri="direct:chamadas-devices-enrolled" />
+			<to uri="bean:deviceProcessor?method=handleListEnrolledDevices" />
+		</route>
+		<route id="route-chamadas-devices-unlink">
+			<from uri="direct:chamadas-devices-unlink" />
+			<to uri="bean:deviceProcessor?method=handleUnlinkDevice" />
 		</route>
 		<route id="route-chamadas-devices-enrollment-code">
 			<from uri="direct:chamadas-devices-enrollment-code" />

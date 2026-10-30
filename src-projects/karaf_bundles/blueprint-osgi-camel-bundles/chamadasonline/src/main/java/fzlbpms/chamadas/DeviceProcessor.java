@@ -33,6 +33,10 @@ public class DeviceProcessor implements Processor {
 
 		if (uri.contains("/students/lookup") && "GET".equalsIgnoreCase(method)) {
 			handleStudentLookup(exchange);
+		} else if (uri.contains("/devices/enrolled") && "GET".equalsIgnoreCase(method)) {
+			handleListEnrolledDevices(exchange);
+		} else if (uri.matches(".*/devices/[^/]+/unlink$") && ("POST".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))) {
+			handleUnlinkDevice(exchange);
 		} else if (uri.matches(".*/students/[^/]+/enrollment-code$") && "POST".equalsIgnoreCase(method)) {
 			handleGenerateEnrollmentCode(exchange);
 		} else if (uri.endsWith("/devices/enroll") && "POST".equalsIgnoreCase(method)) {
@@ -116,9 +120,20 @@ public class DeviceProcessor implements Processor {
 
 			student.put("hasVerifiedDevice", hasVerified);
 			student.put("device", devMap);
-		}
 
-		AuthProcessor.sendJson(exchange, 200, student);
+			Map<String, Object> resp = new LinkedHashMap<>(student);
+			Map<String, Object> studentObj = new LinkedHashMap<>();
+			studentObj.put("id", student.get("id"));
+			studentObj.put("name", student.get("name"));
+			studentObj.put("registrationNumber", student.get("registrationNumber"));
+			resp.put("student", studentObj);
+			resp.put("verifiedDevice", (devMap != null && devMap.get("verifiedAt") != null)
+					? Map.of("verifiedAt", devMap.get("verifiedAt"))
+					: null);
+
+			AuthProcessor.sendJson(exchange, 200, resp);
+			return;
+		}
 	}
 
 	public void handleGenerateEnrollmentCode(Exchange exchange) throws Exception {
@@ -290,5 +305,71 @@ public class DeviceProcessor implements Processor {
 				"message", "Dispositivo vinculado e verificado com sucesso",
 				"studentId", studentId
 		));
+	}
+
+	public void handleListEnrolledDevices(Exchange exchange) throws Exception {
+		List<Map<String, Object>> list = new ArrayList<>();
+		String sql = "SELECT d.\"id\" AS \"deviceId\", d.\"clientToken\", d.\"studentId\", d.\"verifiedAt\", d.\"lastSeenAt\", "
+				+ "u.\"name\" AS \"studentName\", u.\"registrationNumber\", u.\"email\" "
+				+ "FROM \"ChamadasDevice\" d "
+				+ "JOIN \"ChamadasUser\" u ON d.\"studentId\" = u.\"id\" "
+				+ "WHERE d.\"verified\" = true "
+				+ "ORDER BY d.\"verifiedAt\" DESC";
+
+		try (Connection conn = dataSource.getConnection();
+			 PreparedStatement ps = conn.prepareStatement(sql);
+			 ResultSet rs = ps.executeQuery()) {
+			while (rs.next()) {
+				Map<String, Object> item = new LinkedHashMap<>();
+				item.put("deviceId", rs.getString("deviceId"));
+				item.put("clientToken", rs.getString("clientToken"));
+				item.put("studentId", rs.getString("studentId"));
+				item.put("studentName", rs.getString("studentName"));
+				item.put("registrationNumber", rs.getString("registrationNumber"));
+				item.put("email", rs.getString("email"));
+				Timestamp vat = rs.getTimestamp("verifiedAt");
+				item.put("verifiedAt", vat != null ? vat.toInstant().toString() : null);
+				Timestamp lsat = rs.getTimestamp("lastSeenAt");
+				item.put("lastSeenAt", lsat != null ? lsat.toInstant().toString() : null);
+				list.add(item);
+			}
+		}
+
+		AuthProcessor.sendJson(exchange, 200, Map.of("devices", list, "total", list.size()));
+	}
+
+	public void handleUnlinkDevice(Exchange exchange) throws Exception {
+		String id = exchange.getIn().getHeader("id", String.class);
+		if (id == null || id.isBlank()) {
+			String uri = exchange.getIn().getHeader(Exchange.HTTP_URI, String.class);
+			if (uri != null) {
+				String[] parts = uri.split("/");
+				for (int i = 0; i < parts.length; i++) {
+					if ("devices".equals(parts[i]) && i + 1 < parts.length) {
+						id = parts[i + 1];
+						break;
+					}
+				}
+			}
+		}
+
+		if (id == null || id.isBlank()) {
+			AuthProcessor.sendJson(exchange, 400, Map.of("error", "bad_request", "message", "ID do dispositivo ou aluno obrigatorio"));
+			return;
+		}
+
+		String sql = "UPDATE \"ChamadasDevice\" SET \"verified\" = false, \"verifiedAt\" = NULL, \"verifiedByStaffId\" = NULL "
+				+ "WHERE \"id\" = ? OR \"studentId\" = ?";
+
+		int updated = 0;
+		try (Connection conn = dataSource.getConnection();
+			 PreparedStatement ps = conn.prepareStatement(sql)) {
+			ps.setString(1, id);
+			ps.setString(2, id);
+			updated = ps.executeUpdate();
+		}
+
+		LOG.info("Dispositivo desvinculado: id={} linhasAtualizadas={}", id, updated);
+		AuthProcessor.sendJson(exchange, 200, Map.of("status", "ok", "unlinked", updated > 0));
 	}
 }

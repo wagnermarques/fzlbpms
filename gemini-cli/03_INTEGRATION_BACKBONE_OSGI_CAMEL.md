@@ -2,7 +2,7 @@
 
 > **Project**: `fzlbpms`  
 > **Component**: Apache Karaf 4.4.7 & Apache Camel 3.21 Integration Layer  
-> **Last Updated**: October 12, 2026
+> **Last Updated**: October 29, 2026
 
 ---
 
@@ -30,9 +30,13 @@ The custom Karaf container image (`containers/fzl-karaf-camel-integration`) prov
 | **8181** | HTTP / Jetty | Reverse proxied via Nginx | Hosts Felix Web Console (`/system/console`) and Hawtio (`/hawtio`). |
 | **9090** | HTTP / Jetty | Internal / Nginx `/fzlbpms/` | Keycloak Admin BFF, Auth endpoints, and Orbeon Form bridges. |
 | **9091** | HTTP / Jetty | Internal / Flowable | Moodle Admin integration bridge. |
-| **9094** | HTTP / Jetty | Nginx `/chamadas/` | Chamadas Online PWA backend. |
+| **9092** | HTTP / Jetty | Nginx `/fzlbpms/aproveitamento/` | Aproveitamento de Disciplinas document generation backend (ODT templates). |
+| **9093** | HTTP / Jetty | Direct LAN / Nginx | Contatemeantes GPS device tracking and battery status backend. |
+| **9094** | HTTP / Jetty | Nginx `/chamadas/` | Chamadas Online PWA backend (anti-fraud attendance). |
 | **9095** | HTTP / Jetty | Nginx `/api/tasktoday/` | Task Today PWA backend + Web Push engine. |
 | **9096** | HTTP / Jetty | Internal / Nginx | Evasão Escolar (early dropout prevention) backend. |
+| **9097** | HTTP / Jetty | Nginx `/api/bpmndrawer/` | BPMN Drawer diagram persistence and versioning backend. |
+| **9098** | HTTP / Jetty | Nginx `/api/orbeon/` | Orbeon Forms catalog and Flowable human task renderer bridge. |
 | **1099 / 44444** | JMX / RMI | Internal | Java Management Extensions monitoring. |
 
 ---
@@ -110,7 +114,36 @@ Implements an asynchronous file polling route:
 - **API Endpoints**: Dashboard stats (`/dashboard/stats`, `/dashboard/alerts`), classes, students CRUD, attendance tracking, grades logging, and pedagogical interventions management.
 
 ### 4. Processador de Arquivos (`processadordearquivos`)
-- **Role**: Background media and document conversion bundle executing native Linux utilities (`ffmpeg`, `imagemagick`, pandoc) through Camel Processors.
+- **Role**: Background media and document conversion bundle executing native Linux utilities (`ffmpeg`, `yt-dlp`) through Camel Processors. Consumes URL list files (`*.urls`, `*.txt`) from `/dir_input/` and invokes `yrdlp.sh`.
+
+### 5. BPMN Drawer (`bpmndrawer`)
+- **Role**: Backend REST service for persisting and versioning BPMN 2.0 XML diagram files authored in the frontend modeler.
+- **Port**: Jetty `:9097` (proxied via `https://fzlbpms.local/api/bpmndrawer/`).
+- **Database**: PostgreSQL (`fzldb` on `fzl-postgresql`), table `bpmndrawer_diagrams`.
+- **Security**: Nginx `auth_request` gate against `fzl-oauth2-proxy` (role `theia-user`). Confies in the inbound `X-Forwarded-User` header.
+- **Endpoints**: `/health`, `/diagrams` (GET/POST), `/diagrams/{id}` (GET/PUT/DELETE).
+
+### 6. Orbeon Forms Shared Bridge (`orbeonforms`)
+- **Role**: Shared REST backend that connects the platform with the Orbeon Forms runtime and bridges human task management with Flowable BPMN.
+- **Port**: Jetty `:9098` (proxied via `https://fzlbpms.local/api/orbeon/`).
+- **Database**: PostgreSQL (`orbeon` database on `fzl-postgresql`), reading published form definitions and schemas.
+- **Security**: Validates incoming `X-Forwarded-User` from Nginx or `X-Orbeon-Shared-Secret` on server-to-server calls.
+- **Endpoints**:
+  - `/forms` (GET/POST) & `/forms/{app}/{form}`: Lists and queries published Orbeon Form definitions.
+  - `/tasks` & `/tasks/{taskId}/open` / `complete`: Lists and interacts with user human tasks from Flowable, embedding Orbeon Form Runner URLs.
+
+### 7. Contatemeantes (`contatemeantes`)
+- **Role**: Backend for GPS telemetry, device battery monitoring, and geolocation tracking of connected field devices.
+- **Port**: Jetty `:9093` (direct LAN access / reverse proxied via Nginx).
+- **Database**: PostgreSQL (`fzl-postgresql`), tables `device_status`, `device_groups`.
+- **Endpoints**: `/contatemeantes/ping`, `/location` (POST telemetry), `/device/{deviceId}`, `/group/{groupId}/devices`, `/groups`, `/group/{groupId}/locations`.
+
+### 8. Aproveitamento de Disciplinas (`etec_coord_processo__aproveitamento_disciplina` / `aproveitamento-docs`)
+- **Role**: Document generation engine for academic course equivalence processes in vocational education (ETEC). Generates standardized OpenDocument (`.odt`) committee opinions and dispatches from templates (`Doc_13_1_anexo_I...odt` and `Doc_13_2_anexo_II...odt`).
+- **Port**: Jetty `:9092` (proxied via `https://fzlbpms.local/fzlbpms/aproveitamento/`).
+- **Endpoints**:
+  - `GET /fzlbpms/aproveitamento/components`: Returns curriculum components catalog.
+  - `POST /fzlbpms/aproveitamento/generate`: Accepts student, teachers, and decision payload to assemble and emit finalized `.odt` documents.
 
 ---
 
@@ -120,14 +153,16 @@ The developer workflow for modifying or adding OSGi bundles is streamlined:
 
 ```bash
 # 1. Compile bundle via Maven Bundle Plugin
-mvn clean install -f src-projects/karaf_bundles/blueprint-osgi-camel-bundles/<bundle>/pom.xml
+mvn clean install -DskipTests -f src-projects/karaf_bundles/blueprint-osgi-camel-bundles/<bundle>/pom.xml
 
 # 2. Deploy to Karaf
-# Maven outputs directly to src-projects/karaf_deploy_dir/
-# Karaf FileInstall detects the JAR file update within 2-5 seconds
+# Maven resources plugin outputs directly to src-projects/karaf_deploy_dir/
+# Karaf Felix FileInstall detects the JAR file update within 2-5 seconds
 
-# 3. Inspect deployment status inside Karaf
-./bin/karaf-console.sh
-bundle:list | grep -i <bundle>
-log:tail
+# 3. Synchronize Blueprint XML Contexts
+# When modifying files in blueprint-xmls-bundles/, synchronize them to deploy dir:
+./bin/sync-karaf-deploy.sh
+
+# 4. Inspect deployment status inside Karaf
+./bin/tail-karaf-log.sh
 ```

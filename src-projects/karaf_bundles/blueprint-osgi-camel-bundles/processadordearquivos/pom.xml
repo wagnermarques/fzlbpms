@@ -149,8 +149,7 @@
 							<goal>copy-resources</goal>
 						</goals>
 						<configuration>
-							<outputDirectory>
-								/home/wgn/mnt/ext4/env-Projects/infra-apache-karaf-container/karaf_deploy</outputDirectory>
+							<outputDirectory>${project.basedir}/../../../karaf_deploy_dir</outputDirectory>
 							<resources>
 								<resource>
 									<directory>${project.build.directory}</directory>

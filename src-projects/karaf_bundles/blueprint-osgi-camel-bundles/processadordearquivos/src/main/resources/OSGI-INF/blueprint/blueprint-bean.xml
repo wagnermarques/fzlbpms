@@ -26,7 +26,7 @@
 	<camelContext id="FZL_BlueprintOsgiCamelRoute"
 		xmlns="http://camel.apache.org/schema/blueprint">
 		<route id="WatchFile">
-			<from uri="file:/dir_input/?delete=false&amp;readLock=changed" />
+			<from uri="file:/dir_input/?delete=false&amp;readLock=changed&amp;include=.*\\.(urls|txt)$" />
 			<split streaming="true">
 				<tokenize token="\n" />
 				<process ref="fileContentProcessor" />

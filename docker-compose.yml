@@ -234,6 +234,8 @@ services:
     ports:
       - "${FZL_KARAF_REST_PORT:?}:9090"
       - "${FZL_KARAF_MOODLE_REST_PORT:-9091}:9091"
+      # Aproveitamento Docs REST API — direct LAN access / dev port
+      - "${FZL_KARAF_APROVEITAMENTO_PORT:-9092}:9092"
       # Contatemeantes GPS tracking bundle — direct LAN access for mobile app
       # testing, ahead of an nginx proxy. Plain HTTP; dev-only.
       - "${FZL_KARAF_CONTATEMEANTES_PORT:-9093}:9093"

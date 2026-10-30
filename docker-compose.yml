@@ -822,7 +822,7 @@ services:
     # http://fzl-nginx:80) must come from a local ingress config instead; see
     # containers/fzl-cloudflared/config.yml. Still authenticates via token —
     # no credentials-file/tunnel UUID needed for that part.
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run --token ${FZL_CLOUDFLARE_TUNNEL_TOKEN:?}
+    command: tunnel --protocol http2 --no-autoupdate --config /etc/cloudflared/config.yml run --token ${FZL_CLOUDFLARE_TUNNEL_TOKEN:?}
     volumes:
       - ./containers/fzl-cloudflared/config.yml:/etc/cloudflared/config.yml:ro
     # Lets the ssh.fzlbpms.com.br ingress rule (config.yml) reach the HOST's

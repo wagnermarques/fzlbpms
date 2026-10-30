@@ -9,6 +9,9 @@
 # Still uses --token for authentication (no credentials-file/tunnel UUID
 # needed here) — this file only supplies the ingress rules that the token
 # flow doesn't otherwise have anywhere to pull from.
+
+protocol: http2
+
 ingress:
   - hostname: fzlbpms.com.br
     service: http://fzl-nginx:80

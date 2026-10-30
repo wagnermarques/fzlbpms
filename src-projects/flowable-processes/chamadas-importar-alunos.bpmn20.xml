@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  chamadas-importar-alunos
+
+  Lê o arquivo CSV de alunos (ex: alunos-contatos-1mod-2026Sem2.csv) e provisiona
+  os usuários no banco de dados do Chamadas Online (PostgreSQL fzldb / ChamadasUser).
+  Em seguida, atribui uma tarefa humana no Orbeon Forms para conferência e homologação.
+
+  Fluxo:
+    1. startEvent — Inicia a execução.
+    2. loadAndParseCsv (Groovy ScriptTask) — Lê o CSV montado em /opt/fzlbpms/csvs/,
+       filtra alunos cursando, sanitiza os dados e aplica wire-safe UTF-8.
+    3. createStudentInChamadas (HTTP Multi-Instance Task) — Envia cada aluno
+       via POST para a API Camel do Chamadas Online (porta 9094).
+    4. revisarHomologacao (UserTask com Orbeon Forms) — Apresenta o resumo dos alunos
+       e dados de importação no formulário Orbeon fzlbpms/chamadas-revisao-alunos
+       para o responsável validar e homologar.
+    5. finalizarRegistro (Groovy ScriptTask) — Registra o resultado final.
+    6. endEvent — Finaliza o processo.
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://fzlbpms.com.br/processes"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath">
+
+  <process id="chamadas-importar-alunos" name="Chamadas Online — Importação de Alunos via CSV" isExecutable="true">
+
+    <startEvent id="inicio" name="Início"/>
+    <sequenceFlow id="f1" sourceRef="inicio" targetRef="loadAndParseCsv"/>
+
+    <!-- 1. Leitura do arquivo CSV e preparação das variáveis -->
+    <scriptTask id="loadAndParseCsv" name="Carregar e Processar CSV" scriptFormat="groovy">
+      <script><![CDATA[
+        def path = (execution.hasVariable('csvPath') ? execution.getVariable('csvPath')
+                    : '/opt/fzlbpms/csvs/alunos-contatos-1mod-2026Sem2.csv')
+        def f = new File(path)
+        if (!f.exists()) {
+          throw new org.flowable.common.engine.api.FlowableException("Arquivo CSV não encontrado: " + path)
+        }
+
+        def lines = f.readLines('UTF-8').findAll { it != null && it.trim() }
+        if (lines && lines[0].startsWith('\uFEFF')) {
+          lines[0] = lines[0].substring(1)
+        }
+
+        // Trick para preservar acentuação no ServiceTask HTTP do Flowable (que força ISO-8859-1)
+        def toWireSafe = { v -> new String((v ?: '').toString().getBytes('UTF-8'), 'ISO-8859-1') }
+
+        def students = new ArrayList()
+        def summaryList = new StringBuilder()
+        def turmaDetectada = "1º Módulo - Geral"
+
+        // Pula o cabeçalho; delimitador ponto-e-vírgula ';'
+        lines.drop(1).each { line ->
+          def c = line.split(';', -1)
+          if (c.size() >= 4) {
+            def rm = c[0].trim()
+            def nome = c[1].trim()
+            def moduloSerie = (c.size() > 2 ? c[2].trim() : '')
+            def situacao = (c.size() > 3 ? c[3].trim() : '')
+            def emailInst = (c.size() > 8 ? c[8].trim() : '')
+            def emailPess = (c.size() > 7 ? c[7].trim() : '')
+            def email = emailInst ?: (emailPess ?: (rm ? "aluno." + rm + "@fzlbpms.local" : ""))
+
+            if (moduloSerie) {
+              turmaDetectada = moduloSerie
+            }
+
+            // Apenas alunos com RM e ativos (CURSANDO ou não desitentes)
+            if (rm && nome && (!situacao || situacao.equalsIgnoreCase('CURSANDO'))) {
+              def s = new java.util.HashMap()
+              s.put('rm', rm)
+              s.put('name', toWireSafe(nome))
+              s.put('email', email)
+              students.add(s)
+
+              summaryList.append("RM: ").append(rm)
+                         .append(" - ").append(nome)
+                         .append(" (").append(email).append(")\n")
+            }
+          }
+        }
+
+        execution.setVariable('studentsList', students)
+        execution.setVariable('arquivoCsv', path)
+        execution.setVariable('turma', turmaDetectada)
+        execution.setVariable('totalProcessados', String.valueOf(students.size()))
+        execution.setVariable('resumoAlunos', summaryList.toString())
+
+        if (!execution.hasVariable('solicitante')) {
+          execution.setVariable('solicitante', 'fzlbpmsadmin')
+        }
+      ]]></script>
+    </scriptTask>
+
+    <sequenceFlow id="f2" sourceRef="loadAndParseCsv" targetRef="createStudentInChamadas"/>
+
+    <!-- 2. Envio de cada aluno para a API Camel do Chamadas Online -->
+    <serviceTask id="createStudentInChamadas" name="Inserir Aluno no Chamadas Online" flowable:type="http">
+      <extensionElements>
+        <flowable:field name="requestMethod"><flowable:string>POST</flowable:string></flowable:field>
+        <flowable:field name="requestUrl">
+          <flowable:string>http://fzl-karaf-camel-integration:9094/fzlbpms/chamadas/students</flowable:string>
+        </flowable:field>
+        <flowable:field name="requestHeaders">
+          <flowable:string>Content-Type: application/json; charset=UTF-8</flowable:string>
+        </flowable:field>
+        <flowable:field name="requestBody">
+          <flowable:expression>{"registrationNumber":"${student.rm}","name":"${student.name}","email":"${student.email}"}</flowable:expression>
+        </flowable:field>
+        <flowable:field name="responseVariableName"><flowable:string>studentResponse</flowable:string></flowable:field>
+        <flowable:field name="saveResponseParameters"><flowable:string>false</flowable:string></flowable:field>
+      </extensionElements>
+      <multiInstanceLoopCharacteristics isSequential="true"
+          flowable:collection="${studentsList}" flowable:elementVariable="student"/>
+    </serviceTask>
+
+    <sequenceFlow id="f3" sourceRef="createStudentInChamadas" targetRef="revisarHomologacao"/>
+
+    <!-- 3. Tarefa Humana com Formulário Orbeon Forms para Conferência e Homologação -->
+    <userTask id="revisarHomologacao"
+              name="Revisar e Homologar Importação"
+              flowable:assignee="${solicitante}"
+              flowable:formKey="fzlbpms/chamadas-revisao-alunos"/>
+
+    <sequenceFlow id="f4" sourceRef="revisarHomologacao" targetRef="finalizarRegistro"/>
+
+    <!-- 4. Registro final pós-homologação -->
+    <scriptTask id="finalizarRegistro" name="Registrar Conclusão" scriptFormat="groovy">
+      <script><![CDATA[
+        def status = execution.getVariable('statusHomologacao')
+        def obs = execution.getVariable('observacoes')
+        def total = execution.getVariable('totalProcessados')
+        execution.setVariable('resultadoImportacao', "Importação finalizada. Total: " + total + ", Status: " + status + ", Obs: " + obs)
+      ]]></script>
+    </scriptTask>
+
+    <sequenceFlow id="f5" sourceRef="finalizarRegistro" targetRef="fim"/>
+
+    <endEvent id="fim" name="Fim"/>
+
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_chamadas-importar-alunos">
+    <bpmndi:BPMNPlane bpmnElement="chamadas-importar-alunos" id="BPMNPlane_chamadas-importar-alunos">
+      <bpmndi:BPMNShape bpmnElement="inicio" id="S_inicio">
+        <omgdc:Bounds height="30.0" width="30.0" x="80.0" y="160.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="loadAndParseCsv" id="S_loadAndParseCsv">
+        <omgdc:Bounds height="80.0" width="130.0" x="160.0" y="135.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="createStudentInChamadas" id="S_createStudentInChamadas">
+        <omgdc:Bounds height="80.0" width="140.0" x="340.0" y="135.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="revisarHomologacao" id="S_revisarHomologacao">
+        <omgdc:Bounds height="80.0" width="140.0" x="530.0" y="135.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="finalizarRegistro" id="S_finalizarRegistro">
+        <omgdc:Bounds height="80.0" width="120.0" x="720.0" y="135.0"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="fim" id="S_fim">
+        <omgdc:Bounds height="28.0" width="28.0" x="890.0" y="161.0"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge bpmnElement="f1" id="E_f1">
+        <omgdi:waypoint x="110.0" y="175.0"/><omgdi:waypoint x="160.0" y="175.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f2" id="E_f2">
+        <omgdi:waypoint x="290.0" y="175.0"/><omgdi:waypoint x="340.0" y="175.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f3" id="E_f3">
+        <omgdi:waypoint x="480.0" y="175.0"/><omgdi:waypoint x="530.0" y="175.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f4" id="E_f4">
+        <omgdi:waypoint x="670.0" y="175.0"/><omgdi:waypoint x="720.0" y="175.0"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f5" id="E_f5">
+        <omgdi:waypoint x="840.0" y="175.0"/><omgdi:waypoint x="890.0" y="175.0"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

@@ -1,0 +1,169 @@
+<xh:html xmlns:xh="http://www.w3.org/1999/xhtml"
+         xmlns:xf="http://www.w3.org/2002/xforms"
+         xmlns:xs="http://www.w3.org/2001/XMLSchema"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:ev="http://www.w3.org/2001/xml-events"
+         xmlns:xi="http://www.w3.org/2001/XInclude"
+         xmlns:xxi="http://orbeon.org/oxf/xml/xinclude"
+         xmlns:xxf="http://orbeon.org/oxf/xml/xforms"
+         xmlns:fr="http://orbeon.org/oxf/xml/form-runner"
+         xmlns:saxon="http://saxon.sf.net/">
+    <xh:head>
+        <xh:title>Chamadas Online — Revisão e Homologação de Alunos</xh:title>
+        <xf:model id="fr-form-model" xxf:expose-xpath-types="true">
+            <xf:instance id="fr-form-instance" xxf:exclude-result-prefixes="#all">
+                <form>
+                    <dadosImportacao>
+                        <arquivoCsv/>
+                        <turma/>
+                        <totalProcessados/>
+                        <resumoAlunos/>
+                    </dadosImportacao>
+                    <homologacao>
+                        <statusHomologacao/>
+                        <observacoes/>
+                    </homologacao>
+                </form>
+            </xf:instance>
+
+            <xf:bind id="fr-form-binds" ref="instance('fr-form-instance')">
+                <xf:bind id="dadosImportacao-bind" name="dadosImportacao" ref="dadosImportacao">
+                    <xf:bind id="arquivoCsv-bind" name="arquivoCsv" ref="arquivoCsv" readonly="true()"/>
+                    <xf:bind id="turma-bind" name="turma" ref="turma" readonly="true()"/>
+                    <xf:bind id="totalProcessados-bind" name="totalProcessados" ref="totalProcessados" readonly="true()"/>
+                    <xf:bind id="resumoAlunos-bind" name="resumoAlunos" ref="resumoAlunos" readonly="true()"/>
+                </xf:bind>
+                <xf:bind id="homologacao-bind" name="homologacao" ref="homologacao">
+                    <xf:bind id="statusHomologacao-bind" name="statusHomologacao" ref="statusHomologacao" required="true()"/>
+                    <xf:bind id="observacoes-bind" name="observacoes" ref="observacoes"/>
+                </xf:bind>
+            </xf:bind>
+
+            <xf:instance id="fr-form-metadata" xxf:readonly="true" xxf:exclude-result-prefixes="#all">
+                <metadata>
+                    <application-name>fzlbpms</application-name>
+                    <form-name>chamadas-revisao-alunos</form-name>
+                    <title xml:lang="pt">Chamadas Online — Revisão de Alunos</title>
+                    <description xml:lang="pt">Formulário de conferência e homologação da importação de alunos via CSV no Chamadas Online.</description>
+                    <version-comment>1.0.0</version-comment>
+                </metadata>
+            </xf:instance>
+
+            <xf:instance id="fr-form-attachments" xxf:exclude-result-prefixes="#all">
+                <attachments/>
+            </xf:instance>
+
+            <xf:instance id="fr-form-resources" xxf:readonly="false" xxf:exclude-result-prefixes="#all">
+                <resources>
+                    <resource xml:lang="pt">
+                        <dadosImportacao>
+                            <label>Dados da Importação</label>
+                        </dadosImportacao>
+                        <arquivoCsv>
+                            <label>Arquivo CSV de Origem</label>
+                            <hint>Arquivo lido e processado pelo fluxo BPMN</hint>
+                        </arquivoCsv>
+                        <turma>
+                            <label>Turma / Módulo</label>
+                            <hint>Identificação da turma</hint>
+                        </turma>
+                        <totalProcessados>
+                            <label>Total de Alunos Inseridos/Atualizados</label>
+                            <hint>Quantidade de registros inseridos no banco do Chamadas Online</hint>
+                        </totalProcessados>
+                        <resumoAlunos>
+                            <label>Lista de Alunos Processados</label>
+                            <hint>Relação de RM, Nome e E-mail gravados</hint>
+                        </resumoAlunos>
+                        <homologacao>
+                            <label>Homologação da Coordenação / Secretaria</label>
+                        </homologacao>
+                        <statusHomologacao>
+                            <label>Decisão de Homologação</label>
+                            <hint>Informe se a lista foi aprovada para o Chamadas Online</hint>
+                            <item>
+                                <label>Aprovado e Homologado</label>
+                                <value>APROVADO</value>
+                            </item>
+                            <item>
+                                <label>Necessita Correção de Cadastro</label>
+                                <value>PENDENTE_CORRECAO</value>
+                            </item>
+                        </statusHomologacao>
+                        <observacoes>
+                            <label>Observações e Parecer</label>
+                            <hint>Anotações adicionais da coordenação</hint>
+                        </observacoes>
+                    </resource>
+                </resources>
+            </xf:instance>
+        </xf:model>
+    </xh:head>
+    <xh:body>
+        <fr:view>
+            <fr:body>
+                <fr:section id="dadosImportacao-section" bind="dadosImportacao-bind">
+                    <xf:label ref="$form-resources/dadosImportacao/label"/>
+                    <fr:grid id="dadosImportacao-grid">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:input id="arquivoCsv-control" bind="arquivoCsv-bind">
+                                    <xf:label ref="$form-resources/arquivoCsv/label"/>
+                                    <xf:hint ref="$form-resources/arquivoCsv/hint"/>
+                                </xf:input>
+                            </xh:td>
+                            <xh:td>
+                                <xf:input id="turma-control" bind="turma-bind">
+                                    <xf:label ref="$form-resources/turma/label"/>
+                                    <xf:hint ref="$form-resources/turma/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td colspan="2">
+                                <xf:input id="totalProcessados-control" bind="totalProcessados-bind">
+                                    <xf:label ref="$form-resources/totalProcessados/label"/>
+                                    <xf:hint ref="$form-resources/totalProcessados/hint"/>
+                                </xf:input>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td colspan="2">
+                                <xf:textarea id="resumoAlunos-control" bind="resumoAlunos-bind">
+                                    <xf:label ref="$form-resources/resumoAlunos/label"/>
+                                    <xf:hint ref="$form-resources/resumoAlunos/hint"/>
+                                </xf:textarea>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+
+                <fr:section id="homologacao-section" bind="homologacao-bind">
+                    <xf:label ref="$form-resources/homologacao/label"/>
+                    <fr:grid id="homologacao-grid">
+                        <xh:tr>
+                            <xh:td>
+                                <xf:select1 id="statusHomologacao-control" bind="statusHomologacao-bind" appearance="full">
+                                    <xf:label ref="$form-resources/statusHomologacao/label"/>
+                                    <xf:hint ref="$form-resources/statusHomologacao/hint"/>
+                                    <xf:itemset ref="$form-resources/statusHomologacao/item">
+                                        <xf:label ref="label"/>
+                                        <xf:value ref="value"/>
+                                    </xf:itemset>
+                                </xf:select1>
+                            </xh:td>
+                        </xh:tr>
+                        <xh:tr>
+                            <xh:td>
+                                <xf:textarea id="observacoes-control" bind="observacoes-bind">
+                                    <xf:label ref="$form-resources/observacoes/label"/>
+                                    <xf:hint ref="$form-resources/observacoes/hint"/>
+                                </xf:textarea>
+                            </xh:td>
+                        </xh:tr>
+                    </fr:grid>
+                </fr:section>
+            </fr:body>
+        </fr:view>
+    </xh:body>
+</xh:html>

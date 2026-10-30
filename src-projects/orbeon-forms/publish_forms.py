@@ -54,6 +54,14 @@ FORMS = [
         "title": "Aprovação simples",
         "description": "Formulário genérico de aprovação para tarefas humanas do Flowable.",
     },
+    {
+        "dir": "chamadas-revisao-alunos",
+        "app": "fzlbpms",
+        "form": "chamadas-revisao-alunos",
+        "doc_id": "fb-chamadas-revisao-alunos",
+        "title": "Chamadas Online — Revisão de Alunos",
+        "description": "Formulário de conferência e homologação da importação de alunos via CSV no Chamadas Online.",
+    },
 ]
 
 

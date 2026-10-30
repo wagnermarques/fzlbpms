@@ -116,6 +116,9 @@
 			<get path="/students/lookup">
 				<to uri="direct:chamadas-devices-lookup" />
 			</get>
+			<post path="/students" consumes="application/json">
+				<to uri="direct:chamadas-students-create" />
+			</post>
 			<get path="/devices/enrolled">
 				<to uri="direct:chamadas-devices-enrolled" />
 			</get>
@@ -180,6 +183,10 @@
 		</route>
 
 		<!-- Device Binding Routes -->
+		<route id="route-chamadas-students-create">
+			<from uri="direct:chamadas-students-create" />
+			<to uri="bean:deviceProcessor?method=handleCreateOrUpdateStudent" />
+		</route>
 		<route id="route-chamadas-devices-lookup">
 			<from uri="direct:chamadas-devices-lookup" />
 			<to uri="bean:deviceProcessor?method=handleStudentLookup" />

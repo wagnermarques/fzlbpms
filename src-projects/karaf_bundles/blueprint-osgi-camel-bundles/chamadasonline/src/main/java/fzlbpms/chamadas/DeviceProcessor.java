@@ -372,4 +372,66 @@ public class DeviceProcessor implements Processor {
 		LOG.info("Dispositivo desvinculado: id={} linhasAtualizadas={}", id, updated);
 		AuthProcessor.sendJson(exchange, 200, Map.of("status", "ok", "unlinked", updated > 0));
 	}
+
+	public void handleCreateOrUpdateStudent(Exchange exchange) throws Exception {
+		String body = exchange.getIn().getBody(String.class);
+		Map<String, Object> req = Json.parseObject(body);
+		if (req == null || req.isEmpty()) {
+			AuthProcessor.sendJson(exchange, 400, Map.of("error", "bad_request", "message", "Body JSON obrigatorio"));
+			return;
+		}
+
+		String rm = (String) req.get("registrationNumber");
+		String name = (String) req.get("name");
+		String email = (String) req.get("email");
+		String role = (String) req.getOrDefault("role", "STUDENT");
+
+		if (rm == null || rm.isBlank() || name == null || name.isBlank()) {
+			AuthProcessor.sendJson(exchange, 400, Map.of("error", "bad_request", "message", "registrationNumber e name sao obrigatorios"));
+			return;
+		}
+
+		String id = (String) req.get("id");
+		if (id == null || id.isBlank()) {
+			id = "std_" + rm.trim();
+		}
+
+		try (Connection conn = dataSource.getConnection()) {
+			String existingId = null;
+			String checkSql = "SELECT \"id\" FROM \"ChamadasUser\" WHERE \"registrationNumber\" = ?";
+			try (PreparedStatement cs = conn.prepareStatement(checkSql)) {
+				cs.setString(1, rm.trim());
+				try (ResultSet rs = cs.executeQuery()) {
+					if (rs.next()) {
+						existingId = rs.getString("id");
+					}
+				}
+			}
+
+			if (existingId != null) {
+				String updateSql = "UPDATE \"ChamadasUser\" SET \"name\" = ?, \"email\" = COALESCE(?, \"email\"), \"role\" = ?::\"ChamadasRole\" WHERE \"id\" = ?";
+				try (PreparedStatement us = conn.prepareStatement(updateSql)) {
+					us.setString(1, name.trim());
+					us.setString(2, (email != null && !email.isBlank()) ? email.trim() : null);
+					us.setString(3, role);
+					us.setString(4, existingId);
+					us.executeUpdate();
+				}
+				id = existingId;
+			} else {
+				String insertSql = "INSERT INTO \"ChamadasUser\" (\"id\", \"role\", \"registrationNumber\", \"email\", \"name\") VALUES (?, ?::\"ChamadasRole\", ?, ?, ?)";
+				try (PreparedStatement is = conn.prepareStatement(insertSql)) {
+					is.setString(1, id);
+					is.setString(2, role);
+					is.setString(3, rm.trim());
+					is.setString(4, (email != null && !email.isBlank()) ? email.trim() : null);
+					is.setString(5, name.trim());
+					is.executeUpdate();
+				}
+			}
+		}
+
+		LOG.info("Aluno registrado/atualizado com sucesso: id={} rm={} name={}", id, rm, name);
+		AuthProcessor.sendJson(exchange, 201, Map.of("status", "ok", "id", id, "registrationNumber", rm, "name", name));
+	}
 }

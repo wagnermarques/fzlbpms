@@ -27,6 +27,7 @@ containers/fzl-superset/superset-home
 # machine-specific, regenerated per developer, never shared.
 containers/fzl-nginx/certs/*.pem
 containers/fzl-php8.3-fpm/certs/*.crt
+containers/fzl-php8.5-fpm/certs/*.crt
 containers/flowable-ui/certs/*.pem
 containers/fzl-flowable-ui/certs/*.pem
 containers/fzl-karaf-camel-integration/certs/*.pem

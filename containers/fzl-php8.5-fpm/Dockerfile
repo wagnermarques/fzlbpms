@@ -1,0 +1,99 @@
+FROM php:8.5-fpm
+
+LABEL maintainer="wagnerdocri@gmail.com"
+
+# 0. Um hiccup de rede/DNS no host derruba o build inteiro no apt-get abaixo
+#    ("Temporary failure resolving 'deb.debian.org'"). Reter antes de desistir.
+#    Isso NAO cobre DNS totalmente fora do ar — para isso veja
+#    ./bin/docker-dns-preflight.sh e documentation/fresh-clone-first-run.org
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
+    > /etc/apt/apt.conf.d/99fzl-retries
+
+# 1. Instala pacotes do sistema (lib*-dev sao dependencias de compilacao de extensoes PHP)
+#    Inclui dependencias para Composer, Git, e todas as extensoes PHP comuns para Moodle
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Ferramentas gerais
+    curl \
+    unzip \
+    git \
+    gnupg \
+    dirmngr \
+    # Ferramentas auxiliares do Moodle (system paths)
+    ghostscript \
+    poppler-utils \
+    graphviz \
+    aspell \
+    aspell-pt-br \
+    aspell-en \
+    # Dependencias para extensoes PHP
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    libzip-dev \
+    libicu-dev \
+    libxml2-dev \
+    libonig-dev \
+    libcurl4-openssl-dev \
+    libsodium-dev \
+    libmagickwand-dev \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# 2. Instala e configura as extensoes PHP
+# Nota: No PHP 8.5, pdo, xml, mbstring, curl, opcache e sodium ja sao embutidos (built-in).
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
+    pdo_mysql \
+    mysqli \
+    pdo_pgsql \
+    pgsql \
+    gd \
+    intl \
+    zip \
+    soap \
+    bcmath \
+    exif 
+
+RUN pecl install imagick-3.8.1 && docker-php-ext-enable imagick
+
+# 3. Instala o Composer globalmente
+# Baixa o instalador do Composer
+COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
+
+# 4. Configuracao do Xdebug (seus arquivos .ini)
+RUN pecl install xdebug && docker-php-ext-enable xdebug
+COPY 90-xdebug.ini /usr/local/etc/php/conf.d/90-xdebug.ini
+COPY custom-php.ini /usr/local/etc/php/conf.d/custom-php.ini
+
+# 5. Define o diretório de trabalho padrão dentro do container (para php-fpm)
+WORKDIR /var/www/html
+
+# 6. Permissoes de diretorios (importante para volume mounts)
+# Estas permissoes garantem que o usuario 'www-data' (padrao do php-fpm)
+# tenha acesso aos arquivos e possa criar/escrever onde necessario.
+# Para volumes, as permissoes do HOST afetam, mas estas sao boas como base.
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 755 /var/www
+
+# 7. Opcional: Criar diretório de assets e garantir permissões
+# Se este diretório for sempre gerenciado por um volume no docker-compose,
+# essa parte pode ser redundante ou apenas para garantir a existência na imagem.
+# Se o 'assets' for o único diretório que precisa ser gravável pela aplicação
+# (ex: para upload de arquivos), você pode ajustar as permissões aqui.
+# RUN mkdir -p /var/www/html/web/assets \
+#    && chown -R www-data:www-data /var/www/html/web/assets \
+#    && chmod -R 775 /var/www/html/web/assets
+
+# Expondo a porta 9000 (padrao do PHP-FPM)
+EXPOSE 9000
+
+
+COPY docker-entrypoint.sh /usr/local/bin/
+COPY utils.sh /usr/local/bin/
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Comando padrão para iniciar o PHP-FPM (já é o padrão da imagem php-fpm)
+CMD ["php-fpm"]

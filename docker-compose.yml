@@ -87,6 +87,22 @@ services:
        - MOODLE_XMLRPC_ENABLED=0
        - MOODLE_MNET_DISPATCHER_MODE=off
 
+  fzl-php8.5-fpm:
+    build:
+      context: ./containers/fzl-php8.5-fpm/
+      dockerfile: Dockerfile
+    container_name: fzl-php8.5-fpm
+    restart: unless-stopped
+    volumes:
+      - ./src-projects/var_www/html:/var/www/html
+      - ./src-projects/moodledata:/moodledata
+      - ./containers/fzl-php8.5-fpm/certs:/usr/local/share/ca-certificates/mkcert:ro
+    networks:
+      - fzl-network
+    environment:
+       - MOODLE_XMLRPC_ENABLED=0
+       - MOODLE_MNET_DISPATCHER_MODE=off
+
   # One-shot, idempotent Moodle provisioner. Reuses the php-8.3 image (php +
   # curl + tar + pdo_pgsql), shares the web/data bind mounts and the network,
   # runs bin/moodle/install-moodle-in-container.sh, then exits. Safe to re-run:

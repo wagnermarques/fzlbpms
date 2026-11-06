@@ -244,7 +244,18 @@
           enabled: true
           displayName: "FZL BPMS Realm"
           sslRequired: "external"
+          registrationAllowed: true
         status_code: 201
+
+    - name: Ensure User Registration is enabled on Target Realm
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ target_realm }}"
+        method: PUT
+        headers: "{{ auth_header }}"
+        body_format: json
+        body:
+          registrationAllowed: true
+        status_code: [200, 204]
 
     # -------------------------------------------------------------------------
     # 3. Realm Roles Provisioning

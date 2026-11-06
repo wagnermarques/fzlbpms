@@ -522,7 +522,7 @@
         <when>
           <simple>${header.CamelHttpResponseCode} == 404</simple>
           <setBody>
-            <simple>{"realm":"{{FZL_REALM}}","enabled":true,"displayName":"FzlBPMS","registrationAllowed":false,"loginWithEmailAllowed":true,"resetPasswordAllowed":true,"bruteForceProtected":true}</simple>
+            <simple>{"realm":"{{FZL_REALM}}","enabled":true,"displayName":"FzlBPMS","registrationAllowed":true,"loginWithEmailAllowed":true,"resetPasswordAllowed":true,"bruteForceProtected":true}</simple>
           </setBody>
           <removeHeaders pattern="*"/>
           <setHeader name="Authorization">

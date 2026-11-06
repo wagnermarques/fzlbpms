@@ -34,6 +34,15 @@ TOKEN=$(curl -sf "$KC/realms/master/protocol/openid-connect/token" -d grant_type
 [ -n "$TOKEN" ] && [ "$TOKEN" != null ] || { log "admin login to $KC failed"; exit 1; }
 H="Authorization: Bearer $TOKEN"
 
+# --- realm registration ------------------------------------------------------
+REG_ALLOWED=$(curl -sf "$R" -H "$H" | jq -r '.registrationAllowed // false')
+if [ "$REG_ALLOWED" != "true" ]; then
+	curl -sf -X PUT "$R" -H "$H" -H 'Content-Type: application/json' -d '{"registrationAllowed": true}'
+	log "realm user registration enabled (registrationAllowed=true)"
+else
+	log "realm user registration already enabled"
+fi
+
 # --- client ------------------------------------------------------------------
 if [ "$(curl -sf "$R/clients?clientId=fzl-tasktodayapp" -H "$H" | jq length)" = 0 ]; then
 	curl -sf -X POST "$R/clients" -H "$H" -H 'Content-Type: application/json' -d @- <<'JSON'

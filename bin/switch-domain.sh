@@ -286,17 +286,20 @@ if [ -n "$KC_READY" ]; then
     else
         update_client "$MOODLE_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/moodle/admin/oauth2callback.php\",\"https://fzlbpms.local/moodle/admin/oauth2callback.php\",\"http://localhost/moodle/admin/oauth2callback.php\"]" \
-            ""
+            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost\",\"+\"]"
         update_client "$FLOWABLE_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/flowable-ui/*\",\"https://fzlbpms.local/flowable-ui/*\",\"http://localhost/flowable-ui/*\",\"http://localhost:8080/flowable-ui/*\"]" \
-            ""
+            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost\",\"http://localhost:8080\",\"+\"]"
         update_client "$WEBAPP_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/fzlbpmsadmin/*\",\"https://fzlbpms.local/fzlbpmsadmin/*\",\"http://localhost/fzlbpmsadmin/*\",\"http://localhost:4200/*\"]" \
-            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost\",\"http://localhost:4200\"]"
+            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost\",\"http://localhost:4200\",\"+\"]"
         # oauth2-proxy's callback, which gates the Theia IDE at /theia/.
         update_client "$THEIA_CLIENT" \
             "[\"${PROTO}://${DOMAIN}/oauth2/callback\",\"https://fzlbpms.local/oauth2/callback\",\"http://localhost/oauth2/callback\"]" \
-            ""
+            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost\",\"+\"]"
+        update_client "fzl-chamadasonline" \
+            "[\"https://wagnermarques.github.io/fzl-chamadasonline/*\",\"https://wagnermarques.github.io/fzl-chamadasonline\",\"http://localhost:5173/*\",\"${PROTO}://${DOMAIN}/*\",\"https://fzlbpms.local/*\"]" \
+            "[\"${PROTO}://${DOMAIN}\",\"https://fzlbpms.local\",\"http://localhost:5173\",\"https://wagnermarques.github.io\",\"+\"]"
     fi
 else
     log "WARNING — Keycloak never became ready; redirect URIs NOT updated. Re-run this script once it's up."
